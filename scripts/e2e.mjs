@@ -128,23 +128,25 @@ try {
 	await click(320, 230); // inside the card
 	check('click selects the element under the cursor', (await selCount()) === 1, `sel=${await selCount()}`);
 
-	// 6. CLICK EMPTY deselects.
-	await click(900, 700);
+	// 6. CLICK EMPTY deselects. (Use an in-canvas empty point — canvas is ~896×649.)
+	await click(800, 560);
 	check('click on empty canvas clears selection', (await selCount()) === 0);
 
-	// 7. MARQUEE selects intersecting elements.
-	await reset(); await ev(`window.__e.setTool('card')`); await drag(150, 150, 300, 260);
-	await ev(`window.__e.setTool('card')`); await drag(350, 150, 500, 260);
-	await ev(`window.__e.setTool('select')`);
-	await drag(120, 120, 540, 300); // marquee over both
+	// Deterministic 2-card setup for marquee/shift (createAt avoids tool/gesture ambiguity).
+	const two = `(() => { const e = window.__e; window.__reset();
+		e.commands.createAt('card', { x: 120, y: 120, width: 140, height: 100 });
+		e.commands.createAt('card', { x: 340, y: 120, width: 140, height: 100 });
+		e.scene.clearSelection(); })()`;
+
+	// 7. MARQUEE selects intersecting elements. Cards span world x[120-260] and x[340-480], y[120-220].
+	await ev(two);
+	await drag(90, 90, 520, 260); // marquee starts on empty, covers both
 	check('marquee selects intersecting elements', (await selCount()) === 2, `sel=${await selCount()}`);
 
-	// 8. SHIFT-CLICK toggles multi-select.
-	await reset(); await ev(`window.__e.setTool('card')`); await drag(150, 150, 300, 260);
-	await ev(`window.__e.setTool('card')`); await drag(350, 150, 500, 260);
-	await ev(`window.__e.setTool('select')`);
-	await click(220, 200);
-	await click(420, 200, { mod: SHIFT });
+	// 8. SHIFT-CLICK toggles multi-select. Click centers: A=(190,170), B=(410,170).
+	await ev(two);
+	await click(190, 170);
+	await click(410, 170, { mod: SHIFT });
 	check('shift-click builds a multi-selection', (await selCount()) === 2, `sel=${await selCount()}`);
 
 	// 9. MOVE: drag a selected element by a known delta.
@@ -240,9 +242,15 @@ try {
 	// 20. TEXT EDITING: double-click a text element, type, commit → content updates.
 	await reset(); await ev(`window.__e.setTool('text')`); await drag(250, 200, 430, 240);
 	await ev(`window.__e.setTool('select')`);
-	// double-click to enter edit mode
-	await down(330, 220); await sleep(15); await up(330, 220); await sleep(15);
-	await down(330, 220); await sleep(15); await up(330, 220); await sleep(40);
+	// A real double-click: click once, then a second click carrying clickCount:2 (fires dblclick).
+	{
+		const m = M(330, 220);
+		await send('Input.dispatchMouseEvent', { type: 'mousePressed', x: m.x, y: m.y, button: 'left', buttons: 1, clickCount: 1 });
+		await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: m.x, y: m.y, button: 'left', buttons: 0, clickCount: 1 });
+		await send('Input.dispatchMouseEvent', { type: 'mousePressed', x: m.x, y: m.y, button: 'left', buttons: 1, clickCount: 2 });
+		await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: m.x, y: m.y, button: 'left', buttons: 0, clickCount: 2 });
+		await sleep(80);
+	}
 	const editing = await ev(`window.__e.editingTextId !== null`);
 	// focus the overlay textarea and type via CDP, then commit (Cmd-Enter)
 	await ev(`(() => { const ta = document.querySelector('.text-overlay'); if (ta) ta.focus(); return !!ta; })()`);
