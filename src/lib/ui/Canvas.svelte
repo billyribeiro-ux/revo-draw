@@ -1,0 +1,234 @@
+<script lang="ts">
+	import { editor } from '$lib/canvas/editor.svelte.js';
+	import { render } from '$lib/canvas/renderer.js';
+	import type { Vec2 } from '$lib/canvas/geometry.js';
+
+	const { scene, camera } = editor;
+
+	let host = $state<HTMLDivElement>();
+	let canvasEl = $state<HTMLCanvasElement>();
+	let dpr = $state(1);
+	let cursor = $state('default');
+
+	// Re-render whenever anything visual changes. Reading these reactive values inside the effect
+	// registers them as dependencies, so the draw is dirty-flag driven (no constant rAF loop).
+	$effect(() => {
+		const cv = canvasEl;
+		if (!cv) return;
+		const ctx = cv.getContext('2d');
+		if (!ctx) return;
+
+		// Touch every reactive dependency so the effect re-runs on any change.
+		void scene.revision;
+		void scene.selection;
+		void camera.worldToScreen;
+		void editor.marquee;
+		void editor.guides;
+		void editor.dropTargetId;
+		void dpr;
+
+		const cssW = camera.viewportWidth;
+		const cssH = camera.viewportHeight;
+		render({
+			ctx,
+			dpr,
+			cssWidth: cssW,
+			cssHeight: cssH,
+			worldToScreen: camera.worldToScreen,
+			zoom: camera.zoom,
+			canvas: scene.doc.canvas,
+			ordered: scene.ordered,
+			selection: scene.selection,
+			selectionBounds: scene.selectionBounds,
+			handles: editor.currentHandles(),
+			soleSelected: editor.soleSelected,
+			marquee: editor.marquee,
+			guides: editor.guides,
+			dropTargetId: editor.dropTargetId,
+			rotateHandleOffsetWorld: editor.rotateOffsetWorld,
+			handleSizeWorld: editor.handleSizeWorld,
+			gridColor: 'oklch(0.88 0.006 264)',
+			gridStrongColor: 'oklch(0.8 0.01 264)'
+		});
+	});
+
+	// Size the backing store to the device pixel ratio for crisp rendering.
+	function resize(): void {
+		const el = host;
+		const cv = canvasEl;
+		if (!el || !cv) return;
+		const rect = el.getBoundingClientRect();
+		dpr = window.devicePixelRatio || 1;
+		camera.setViewport(rect.width, rect.height);
+		cv.width = Math.round(rect.width * dpr);
+		cv.height = Math.round(rect.height * dpr);
+		cv.style.width = `${rect.width}px`;
+		cv.style.height = `${rect.height}px`;
+	}
+
+	$effect(() => {
+		resize();
+		const ro = new ResizeObserver(() => resize());
+		if (host) ro.observe(host);
+		return () => ro.disconnect();
+	});
+
+	function localPoint(e: PointerEvent | WheelEvent | MouseEvent): Vec2 {
+		const rect = canvasEl?.getBoundingClientRect();
+		return { x: e.clientX - (rect?.left ?? 0), y: e.clientY - (rect?.top ?? 0) };
+	}
+
+	let spaceDown = $state(false);
+
+	function onPointerDown(e: PointerEvent): void {
+		if (e.button !== 0 && e.button !== 1) return;
+		(e.target as Element).setPointerCapture?.(e.pointerId);
+		canvasEl?.focus();
+		editor.pointerDown(localPoint(e), {
+			shift: e.shiftKey,
+			alt: e.altKey,
+			space: spaceDown,
+			middle: e.button === 1
+		});
+		cursor = editor.cursorFor(localPoint(e));
+	}
+
+	function onPointerMove(e: PointerEvent): void {
+		const p = localPoint(e);
+		if (editor.isInteracting) {
+			editor.pointerMove(p, { alt: e.altKey });
+		} else {
+			cursor = editor.cursorFor(p);
+		}
+	}
+
+	function onPointerUp(e: PointerEvent): void {
+		const wasCreating = editor.tool !== 'select';
+		editor.pointerUp();
+		if (wasCreating) editor.finishCreate();
+		cursor = editor.cursorFor(localPoint(e));
+	}
+
+	function onDoubleClick(e: MouseEvent): void {
+		editor.doubleClick(localPoint(e));
+	}
+
+	function onWheel(e: WheelEvent): void {
+		e.preventDefault();
+		// ctrlKey is set for pinch-zoom gestures on macOS trackpads and for ctrl+scroll.
+		editor.wheel(localPoint(e), e.deltaY, e.ctrlKey || e.metaKey);
+	}
+
+	// ---- text-edit overlay -------------------------------------------------------------------
+
+	let textValue = $state('');
+	let textArea = $state<HTMLTextAreaElement>();
+
+	const editingRect = $derived.by(() => {
+		const id = editor.editingTextId;
+		if (!id) return null;
+		return editor.screenRectOf(id);
+	});
+
+	$effect(() => {
+		const id = editor.editingTextId;
+		if (id) {
+			const el = scene.get(id);
+			textValue = el && el.type === 'text' ? el.content : '';
+			queueMicrotask(() => {
+				textArea?.focus();
+				textArea?.select();
+			});
+		}
+	});
+
+	function commitText(): void {
+		const id = editor.editingTextId;
+		if (id) editor.commitTextEdit(id, textValue);
+	}
+
+	function onTextKeydown(e: KeyboardEvent): void {
+		if (e.key === 'Escape') {
+			e.preventDefault();
+			editor.cancelTextEdit();
+		} else if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+			e.preventDefault();
+			commitText();
+		}
+		e.stopPropagation();
+	}
+</script>
+
+<div class="canvas-host" bind:this={host}>
+	<canvas
+		bind:this={canvasEl}
+		tabindex="0"
+		style:cursor
+		onpointerdown={onPointerDown}
+		onpointermove={onPointerMove}
+		onpointerup={onPointerUp}
+		ondblclick={onDoubleClick}
+		onwheel={onWheel}
+	></canvas>
+
+	{#if editor.editingTextId && editingRect}
+		{@const r = editingRect}
+		<textarea
+			bind:this={textArea}
+			bind:value={textValue}
+			class="text-overlay"
+			style:left="{r.left}px"
+			style:top="{r.top}px"
+			style:width="{r.width}px"
+			style:height="{r.height}px"
+			style:transform="rotate({r.rotation}rad)"
+			style:font-size="{15 * camera.zoom}px"
+			onblur={commitText}
+			onkeydown={onTextKeydown}
+		></textarea>
+	{/if}
+</div>
+
+<svelte:window
+	onkeydown={(e) => {
+		if (e.key === ' ') spaceDown = true;
+		editor.spaceHeld = spaceDown;
+	}}
+	onkeyup={(e) => {
+		if (e.key === ' ') spaceDown = false;
+		editor.spaceHeld = spaceDown;
+	}}
+/>
+
+<style>
+	.canvas-host {
+		position: relative;
+		inline-size: 100%;
+		block-size: 100%;
+		overflow: hidden;
+		background: var(--canvas-bg);
+	}
+
+	canvas {
+		display: block;
+		inline-size: 100%;
+		block-size: 100%;
+		outline: none;
+		touch-action: none;
+	}
+
+	.text-overlay {
+		position: absolute;
+		transform-origin: top left;
+		margin: 0;
+		padding: 0;
+		border: 1px solid var(--accent);
+		background: var(--surface);
+		color: var(--ink);
+		font-family: var(--font-sans);
+		line-height: 1.35;
+		resize: none;
+		outline: none;
+		box-shadow: var(--shadow-sm);
+	}
+</style>

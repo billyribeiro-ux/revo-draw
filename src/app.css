@@ -1,0 +1,77 @@
+/* Global base styles. Real design tokens live in tokens.css (imported below). */
+@import './lib/ui/tokens.css';
+
+@layer reset, tokens, app, components;
+
+@layer reset {
+	*,
+	*::before,
+	*::after {
+		box-sizing: border-box;
+		margin: 0;
+		padding: 0;
+	}
+
+	html,
+	body {
+		block-size: 100%;
+		inline-size: 100%;
+		overflow: hidden;
+	}
+
+	body {
+		font-family: var(--font-sans);
+		font-size: var(--text-sm);
+		color: var(--ink);
+		background: var(--bg);
+		-webkit-font-smoothing: antialiased;
+		text-rendering: optimizeLegibility;
+	}
+
+	button {
+		font: inherit;
+		color: inherit;
+		cursor: pointer;
+		border: none;
+		background: none;
+	}
+
+	input,
+	textarea,
+	select {
+		font: inherit;
+		color: inherit;
+	}
+
+	::selection {
+		background: var(--accent-soft);
+		color: var(--ink);
+	}
+
+	:focus-visible {
+		outline: 2px solid var(--accent);
+		outline-offset: 1px;
+		border-radius: var(--radius-xs);
+	}
+
+	/* Refined, unobtrusive scrollbars for the panels. */
+	* {
+		scrollbar-width: thin;
+		scrollbar-color: var(--line-strong) transparent;
+	}
+	*::-webkit-scrollbar {
+		inline-size: 10px;
+		block-size: 10px;
+	}
+	*::-webkit-scrollbar-thumb {
+		background: var(--line-strong);
+		border: 3px solid var(--surface);
+		border-radius: var(--radius-pill);
+	}
+	*::-webkit-scrollbar-thumb:hover {
+		background: var(--ink-ghost);
+	}
+	*::-webkit-scrollbar-track {
+		background: transparent;
+	}
+}

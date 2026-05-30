@@ -1,0 +1,50 @@
+{
+	"$schema": "https://schema.tauri.app/config/2",
+	"productName": "LayoutForge",
+	"version": "0.1.0",
+	"identifier": "com.layoutforge.app",
+	"build": {
+		"beforeDevCommand": "pnpm dev",
+		"devUrl": "http://localhost:1420",
+		"beforeBuildCommand": "pnpm build",
+		"frontendDist": "../build"
+	},
+	"app": {
+		"windows": [
+			{
+				"title": "LayoutForge",
+				"width": 1440,
+				"height": 900,
+				"minWidth": 1024,
+				"minHeight": 700,
+				"resizable": true,
+				"fullscreen": false,
+				"center": true,
+				"titleBarStyle": "Overlay",
+				"hiddenTitle": true
+			}
+		],
+		"security": {
+			"csp": "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost"
+		}
+	},
+	"plugins": {
+		"sql": {
+			"preload": ["sqlite:layoutforge-index.db"]
+		}
+	},
+	"bundle": {
+		"active": true,
+		"targets": ["app", "dmg"],
+		"icon": [
+			"icons/32x32.png",
+			"icons/128x128.png",
+			"icons/128x128@2x.png",
+			"icons/icon.icns",
+			"icons/icon.ico"
+		],
+		"category": "DeveloperTool",
+		"shortDescription": "Semantic layout/wireframe tool",
+		"longDescription": "LayoutForge — draw semantic UI layouts on an infinite canvas and export Claude-Code-ready Markdown specs."
+	}
+}

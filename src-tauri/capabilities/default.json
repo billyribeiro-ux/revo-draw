@@ -1,0 +1,52 @@
+{
+	"$schema": "../gen/schemas/desktop-schema.json",
+	"identifier": "default",
+	"description": "Core capabilities for LayoutForge: native file dialogs, scoped filesystem access for documents + app data, and the library index database.",
+	"windows": ["main"],
+	"permissions": [
+		"core:default",
+		"core:window:allow-start-dragging",
+		"core:window:allow-set-title",
+
+		"dialog:default",
+		"dialog:allow-open",
+		"dialog:allow-save",
+		"dialog:allow-message",
+		"dialog:allow-ask",
+		"dialog:allow-confirm",
+
+		"fs:default",
+		"fs:allow-read-text-file",
+		"fs:allow-write-text-file",
+		"fs:allow-read-file",
+		"fs:allow-write-file",
+		"fs:allow-mkdir",
+		"fs:allow-exists",
+		"fs:allow-remove",
+		"fs:allow-rename",
+		"fs:allow-copy-file",
+		{
+			"identifier": "fs:scope",
+			"allow": [
+				{ "path": "$APPDATA" },
+				{ "path": "$APPDATA/**" },
+				{ "path": "$APPCONFIG" },
+				{ "path": "$APPCONFIG/**" },
+				{ "path": "$DOCUMENT" },
+				{ "path": "$DOCUMENT/**" },
+				{ "path": "$DESKTOP" },
+				{ "path": "$DESKTOP/**" },
+				{ "path": "$DOWNLOAD" },
+				{ "path": "$DOWNLOAD/**" },
+				{ "path": "$HOME" },
+				{ "path": "$HOME/**" }
+			]
+		},
+
+		"sql:default",
+		"sql:allow-load",
+		"sql:allow-execute",
+		"sql:allow-select",
+		"sql:allow-close"
+	]
+}

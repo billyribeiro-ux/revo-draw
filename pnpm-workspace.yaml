@@ -1,0 +1,16 @@
+# Declares this project as its own pnpm workspace root, shadowing any ancestor
+# pnpm-workspace.yaml (e.g. one in $HOME). Without this, pnpm walks up the tree,
+# treats the home directory as the workspace root, and no-ops install here.
+packages:
+  - '.'
+
+# esbuild arrives only transitively; Vite 8 bundles with Rolldown, so esbuild's native
+# postinstall is never needed. Explicitly disallow its build so pnpm does NOT flag it as a
+# pending/ignored build (which otherwise escalates to ERR_PNPM_IGNORED_BUILDS).
+allowBuilds:
+  esbuild: false
+
+# Don't auto-run `pnpm install` (and its build-script gate) before every pnpm-invoked script.
+# We manage installs explicitly; this keeps `tauri dev`'s `beforeDevCommand: pnpm dev` from
+# tripping the deps-status check. (pnpm 11 defaults this to "install".)
+verifyDepsBeforeRun: false

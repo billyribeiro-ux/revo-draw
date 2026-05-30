@@ -1,0 +1,18 @@
+# Dependencies
+node_modules/
+
+# Build output
+build/
+.svelte-kit/
+dist/
+
+# Tauri
+src-tauri/target/
+src-tauri/gen/
+
+# OS / editor
+.DS_Store
+*.log
+
+# Local data
+*.lfdoc.bak

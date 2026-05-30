@@ -1,0 +1,771 @@
+/**
+ * The editor controller: the brain that wires scene graph + camera + history + commands together
+ * and owns all transient interaction state (active tool, in-flight drag/resize/rotate/marquee,
+ * snap guides, the text-edit target). Svelte components are thin: they translate DOM events into
+ * calls on this controller and read its reactive state to render overlays.
+ *
+ * Pointer math is done entirely in WORLD coordinates (the camera converts once at the boundary),
+ * so every interaction behaves identically at any pan/zoom. Gestures are wrapped in a single
+ * history transaction (begin on pointerdown, commit on pointerup) so a whole drag = one undo.
+ */
+import { Camera } from './camera.svelte.js';
+import { scene, type SceneGraph } from './scene-graph.svelte.js';
+import { History } from '../commands/history.svelte.js';
+import { Commands } from '../commands/commands.svelte.js';
+import {
+	clamp,
+	orientedBBox,
+	rotate,
+	type BBox,
+	type Vec2
+} from './geometry.js';
+import {
+	hitHandle,
+	hitTestMarquee,
+	hitTestPoint,
+	marqueeRect,
+	orientedHandles,
+	selectionHandles,
+	type Handle,
+	type HandleKind
+} from './hit-test.js';
+import { resolveSnap, type SnapGuide } from './snapping.js';
+import { isContainerType, type ClipboardPayload, type Element, type ElementId, type SemanticType } from '../elements/types.js';
+import { createElement } from '../elements/defaults.js';
+
+export type Tool =
+	| 'select'
+	| 'frame'
+	| 'container'
+	| 'card'
+	| 'nav'
+	| 'sidebar'
+	| 'text'
+	| 'button'
+	| 'input'
+	| 'table'
+	| 'chart'
+	| 'image'
+	| 'list'
+	| 'tabs'
+	| 'modal'
+	| 'icon'
+	| 'divider';
+
+type DragMode =
+	| { kind: 'none' }
+	| { kind: 'pan'; lastScreen: Vec2 }
+	| { kind: 'marquee'; startWorld: Vec2; additive: boolean }
+	| { kind: 'move'; startWorld: Vec2; lastWorld: Vec2; moved: boolean }
+	| {
+			kind: 'resize';
+			handle: HandleKind;
+			startWorld: Vec2;
+			origin: BBox;
+			origins: Map<ElementId, BBox>;
+			aspect: boolean;
+			/** Set when a single rotated element is resized in its own local frame. */
+			sole: { id: ElementId; box: BBox; rotation: number } | null;
+	  }
+	| { kind: 'rotate'; center: Vec2; startAngle: number; origins: Map<ElementId, number> }
+	| {
+			kind: 'create';
+			type: SemanticType;
+			startWorld: Vec2;
+			id: ElementId | null;
+			placedCentered: boolean;
+	  };
+
+const HANDLE_SCREEN_PX = 9; // size + hit radius of transform handles
+const ROTATE_OFFSET_SCREEN = 26;
+const SNAP_SCREEN_PX = 6;
+const MIN_SIZE = 4;
+
+export class Editor {
+	readonly scene: SceneGraph = scene;
+	readonly camera = new Camera();
+	readonly history = new History(this.scene);
+	readonly commands = new Commands(this.scene, this.history);
+
+	tool = $state<Tool>('select');
+	/** When set, snapping is bypassed (alt held). */
+	snapBypass = $state(false);
+	/** Whether space is held (pan mode hint for the cursor). */
+	spaceHeld = $state(false);
+
+	/** Pending icon to place when the icon tool is used (set by the icon picker). */
+	pendingIcon = $state<{ name: string; svgPath: string; viewBox: string } | null>(null);
+
+	/** Live overlay state read by the renderer. */
+	marquee = $state<BBox | null>(null);
+	guides = $state<SnapGuide[]>([]);
+	dropTargetId = $state<ElementId | null>(null);
+
+	/** The element currently being text-edited (double-click), or null. */
+	editingTextId = $state<ElementId | null>(null);
+
+	/** Live world-space cursor position (for the status bar). */
+	cursorWorld = $state<Vec2>({ x: 0, y: 0 });
+
+	/** Internal clipboard (also mirrors the OS clipboard via the Canvas component). */
+	clipboard: ClipboardPayload | null = null;
+
+	#drag: DragMode = { kind: 'none' };
+
+	// Derived helpers in screen units the renderer needs.
+	get handleSizeWorld(): number {
+		return this.camera.screenDistanceToWorld(HANDLE_SCREEN_PX);
+	}
+	get rotateOffsetWorld(): number {
+		return this.camera.screenDistanceToWorld(ROTATE_OFFSET_SCREEN);
+	}
+
+	get isPanning(): boolean {
+		return this.#drag.kind === 'pan';
+	}
+	get isInteracting(): boolean {
+		return this.#drag.kind !== 'none';
+	}
+
+	/**
+	 * When exactly one element is selected, the transform applies to THAT element — including its
+	 * rotation. Returns it iff it's the sole selection, so resize/handles can use its local frame.
+	 */
+	get soleSelected(): Element | null {
+		if (this.scene.selection.size !== 1) return null;
+		const els = this.scene.selectedElements;
+		return els.length === 1 ? (els[0] ?? null) : null;
+	}
+
+	/**
+	 * The active transform handles. For a single element they sit on its (possibly rotated) box;
+	 * for a multi-selection they sit on the axis-aligned union bounds.
+	 */
+	currentHandles(): Handle[] {
+		const sole = this.soleSelected;
+		if (sole) return orientedHandles(sole, sole.rotation, this.rotateOffsetWorld);
+		const bounds = this.scene.selectionBounds;
+		return bounds ? selectionHandles(bounds, this.rotateOffsetWorld) : [];
+	}
+
+	// ---- tool selection ---------------------------------------------------------------------
+
+	setTool(tool: Tool): void {
+		this.tool = tool;
+		if (tool !== 'select') this.editingTextId = null;
+	}
+
+	// ---- pointer lifecycle ------------------------------------------------------------------
+
+	/** screen = CSS px relative to canvas top-left. */
+	pointerDown(screen: Vec2, opts: { shift: boolean; alt: boolean; space: boolean; middle: boolean }): void {
+		this.snapBypass = opts.alt;
+		const world = this.camera.toWorld(screen);
+
+		// Pan: space-drag or middle button.
+		if (opts.space || opts.middle) {
+			this.#drag = { kind: 'pan', lastScreen: screen };
+			return;
+		}
+
+		// Creation tools: start a rubber-band create (or click-to-place default size).
+		if (this.tool !== 'select') {
+			this.#beginCreate(world);
+			return;
+		}
+
+		// Transform handle hit?
+		if (this.scene.selection.size > 0) {
+			const handles = this.currentHandles();
+			const radius = this.camera.screenDistanceToWorld(HANDLE_SCREEN_PX);
+			const handle = hitHandle(handles, world, radius);
+			if (handle) {
+				const bounds = this.scene.selectionBounds;
+				if (handle.kind === 'rotate') {
+					if (bounds) this.#beginRotate(world, bounds);
+				} else {
+					this.#beginResize(handle.kind, world, opts.shift);
+				}
+				return;
+			}
+		}
+
+		// Element hit?
+		const hit = hitTestPoint(this.scene.ordered, world);
+		if (hit) {
+			if (opts.shift) {
+				this.scene.toggleSelection(hit.id);
+			} else if (!this.scene.isSelected(hit.id)) {
+				this.scene.selectOne(hit.id);
+			}
+			// Start a move of the current selection.
+			if (this.scene.selection.size > 0) {
+				this.history.begin('Move');
+				this.#drag = { kind: 'move', startWorld: world, lastWorld: world, moved: false };
+			}
+			return;
+		}
+
+		// Empty space → marquee select.
+		if (!opts.shift) this.scene.clearSelection();
+		this.#drag = { kind: 'marquee', startWorld: world, additive: opts.shift };
+	}
+
+	pointerMove(screen: Vec2, opts: { alt: boolean }): void {
+		this.snapBypass = opts.alt;
+		const world = this.camera.toWorld(screen);
+		this.cursorWorld = world;
+
+		switch (this.#drag.kind) {
+			case 'pan': {
+				const dx = screen.x - this.#drag.lastScreen.x;
+				const dy = screen.y - this.#drag.lastScreen.y;
+				this.camera.panBy(dx, dy);
+				this.#drag.lastScreen = screen;
+				break;
+			}
+			case 'marquee': {
+				this.marquee = marqueeRect(this.#drag.startWorld, world);
+				const ids = hitTestMarquee(this.scene.ordered, this.marquee);
+				if (this.#drag.additive) {
+					const next = new Set(this.scene.selection);
+					for (const id of ids) next.add(id);
+					this.scene.select(next);
+				} else {
+					this.scene.select(ids);
+				}
+				break;
+			}
+			case 'move': {
+				let dx = world.x - this.#drag.lastWorld.x;
+				let dy = world.y - this.#drag.lastWorld.y;
+				if (dx === 0 && dy === 0) break;
+				this.#drag.moved = true;
+
+				// Snap the primary (first) selected element's box; apply the resulting delta to all.
+				if (!this.snapBypass) {
+					const snapped = this.#applySnap(dx, dy);
+					dx = snapped.dx;
+					dy = snapped.dy;
+				} else {
+					this.guides = [];
+				}
+
+				for (const el of this.#moveRoots()) this.scene.translateSubtree(el.id, dx, dy);
+				this.#drag.lastWorld = { x: this.#drag.lastWorld.x + dx, y: this.#drag.lastWorld.y + dy };
+
+				// Reparent drop-target preview.
+				this.dropTargetId = this.#dropTargetUnder(world);
+				break;
+			}
+			case 'resize':
+				this.#updateResize(world);
+				break;
+			case 'rotate':
+				this.#updateRotate(world);
+				break;
+			case 'create':
+				this.#updateCreate(world);
+				break;
+			case 'none':
+				break;
+		}
+	}
+
+	pointerUp(): void {
+		const drag = this.#drag;
+		this.#drag = { kind: 'none' };
+		this.marquee = null;
+		this.guides = [];
+
+		switch (drag.kind) {
+			case 'move': {
+				const dropId = this.dropTargetId;
+				this.dropTargetId = null;
+				if (dropId) {
+					for (const el of this.#moveRoots()) {
+						// Only reparent when the target actually differs from the current parent and
+						// isn't the element itself or one of its descendants (cycle-safe).
+						if (
+							el.id !== dropId &&
+							el.parentId !== dropId &&
+							!this.scene.isAncestor(el.id, dropId)
+						) {
+							this.scene.reparent(el.id, dropId);
+						}
+					}
+				}
+				if (drag.moved) this.history.commit();
+				else this.history.cancel();
+				break;
+			}
+			case 'resize':
+			case 'rotate':
+			case 'create':
+				this.history.commit();
+				break;
+			case 'pan':
+			case 'marquee':
+			case 'none':
+				break;
+		}
+	}
+
+	/** Abort the current gesture (Escape). Also exits a sticky creation tool back to Select. */
+	cancelGesture(): void {
+		if (this.#drag.kind === 'move' || this.#drag.kind === 'resize' || this.#drag.kind === 'rotate' || this.#drag.kind === 'create') {
+			this.history.cancel();
+		}
+		if (this.tool !== 'select') {
+			this.tool = 'select';
+			this.pendingIcon = null;
+		}
+		this.#drag = { kind: 'none' };
+		this.marquee = null;
+		this.guides = [];
+		this.dropTargetId = null;
+	}
+
+	// ---- creation ---------------------------------------------------------------------------
+
+	#beginCreate(world: Vec2): void {
+		const type = this.tool as SemanticType;
+		this.history.begin(`Add ${type}`);
+		// Place with default size immediately; rubber-band in updateCreate overrides size if dragged.
+		// A new element is positioned with its CENTER at the click so it appears under the cursor.
+		const size = createElement(type, { x: 0, y: 0 });
+		const el =
+			type === 'icon' && this.pendingIcon
+				? this.#makeIcon(world)
+				: createElement(type, { x: world.x - size.width / 2, y: world.y - size.height / 2 });
+		// Auto-parent into a container under the point (except frames, which live at root).
+		if (type !== 'frame') {
+			const parent = this.#dropTargetUnder(world);
+			if (parent) {
+				el.parentId = parent;
+				el.z = this.scene.childrenOf(parent).length;
+			}
+		}
+		this.scene.addElement(el as Element);
+		this.scene.selectOne(el.id);
+		this.#drag = { kind: 'create', type, startWorld: world, id: el.id, placedCentered: true };
+	}
+
+	#makeIcon(world: Vec2): Element {
+		const icon = this.pendingIcon!;
+		const el = createElement('icon', { x: world.x, y: world.y, width: 32, height: 32 });
+		el.iconName = icon.name;
+		el.svgPath = icon.svgPath;
+		el.viewBox = icon.viewBox;
+		return el;
+	}
+
+	#updateCreate(world: Vec2): void {
+		if (this.#drag.kind !== 'create' || !this.#drag.id) return;
+		const el = this.scene.get(this.#drag.id);
+		if (!el) return;
+		const w = Math.abs(world.x - this.#drag.startWorld.x);
+		const h = Math.abs(world.y - this.#drag.startWorld.y);
+		// Once the drag is meaningfully large, switch from centered placement to a corner-anchored
+		// rubber-band sized by the drag — the element grows from the initial click point.
+		if (w > MIN_SIZE * 2 && h > MIN_SIZE * 2) {
+			this.#drag.placedCentered = false;
+			this.scene.updateElement(el.id, {
+				x: Math.min(this.#drag.startWorld.x, world.x),
+				y: Math.min(this.#drag.startWorld.y, world.y),
+				width: w,
+				height: h
+			});
+		}
+	}
+
+	/**
+	 * After a create gesture, keep the tool active (sticky) so several elements can be placed in a
+	 * row — the way Figma/Excalidraw behave. Switch to Select via the toolbar, the V key, or Escape.
+	 * The icon tool is the exception: it consumes its pending icon and returns to Select.
+	 */
+	finishCreate(): void {
+		if (this.tool === 'icon') {
+			this.tool = 'select';
+			this.pendingIcon = null;
+		}
+	}
+
+	// ---- move / snapping --------------------------------------------------------------------
+
+	#moveRoots(): Element[] {
+		const sel = this.scene.selection;
+		return this.scene.selectedElements.filter(
+			(el) => el.parentId === null || !sel.has(el.parentId)
+		);
+	}
+
+	#applySnap(dx: number, dy: number): { dx: number; dy: number } {
+		const roots = this.#moveRoots();
+		const primary = roots[0];
+		if (!primary) return { dx, dy };
+		const cand: BBox = {
+			x: primary.x + dx,
+			y: primary.y + dy,
+			width: primary.width,
+			height: primary.height
+		};
+		const selIds = new Set(this.scene.selection);
+		const others: BBox[] = this.scene.ordered
+			.filter((el) => !selIds.has(el.id) && !el.hidden)
+			.map((el) => orientedBBox(el, el.rotation));
+		const threshold = this.camera.screenDistanceToWorld(SNAP_SCREEN_PX);
+		const res = resolveSnap(cand, others, {
+			thresholdWorld: threshold,
+			spacingToleranceWorld: threshold
+		});
+		this.guides = res.guides;
+		return { dx: dx + (res.x - cand.x), dy: dy + (res.y - cand.y) };
+	}
+
+	#dropTargetUnder(world: Vec2): ElementId | null {
+		const selIds = new Set(this.scene.selection);
+		// Don't treat the moving elements' own descendants as drop targets (would create a cycle),
+		// and don't highlight a container that ALL moving roots already live in (an in-place move).
+		const roots = this.#moveRoots();
+		const movingParents = new Set(roots.map((r) => r.parentId));
+		const sameParentForAll = movingParents.size === 1;
+		const currentParent = sameParentForAll ? [...movingParents][0] : undefined;
+
+		for (let i = this.scene.ordered.length - 1; i >= 0; i--) {
+			const el = this.scene.ordered[i];
+			if (!el || !isContainerType(el.type) || selIds.has(el.id)) continue;
+			// Skip descendants of any moving element.
+			if (roots.some((r) => this.scene.isAncestor(r.id, el.id))) continue;
+			// Skip the container the moving elements are already in.
+			if (sameParentForAll && el.id === currentParent) continue;
+			if (
+				world.x >= el.x &&
+				world.x <= el.x + el.width &&
+				world.y >= el.y &&
+				world.y <= el.y + el.height
+			) {
+				return el.id;
+			}
+		}
+		return null;
+	}
+
+	// ---- resize -----------------------------------------------------------------------------
+
+	#beginResize(handle: HandleKind, world: Vec2, aspect: boolean): void {
+		this.history.begin('Resize');
+		const origins = new Map<ElementId, BBox>();
+		for (const el of this.scene.selectedElements) {
+			origins.set(el.id, { x: el.x, y: el.y, width: el.width, height: el.height });
+		}
+		const sole = this.soleSelected;
+		const bounds = this.scene.selectionBounds ?? { x: 0, y: 0, width: 1, height: 1 };
+		this.#drag = {
+			kind: 'resize',
+			handle,
+			startWorld: world,
+			origin: { ...bounds },
+			origins,
+			aspect,
+			// A single rotated element resizes in its own local frame; everything else uses AABB.
+			sole:
+				sole && sole.rotation !== 0
+					? {
+							id: sole.id,
+							box: { x: sole.x, y: sole.y, width: sole.width, height: sole.height },
+							rotation: sole.rotation
+						}
+					: null
+		};
+	}
+
+	#updateResize(world: Vec2): void {
+		if (this.#drag.kind !== 'resize') return;
+		if (this.#drag.sole) {
+			this.#updateResizeRotated(world, this.#drag.sole, this.#drag.handle, this.#drag.aspect);
+			return;
+		}
+
+		const { handle, origin, origins } = this.#drag;
+		const dx = world.x - this.#drag.startWorld.x;
+		const dy = world.y - this.#drag.startWorld.y;
+
+		// Compute the new selection-bounds rect based on which handle is dragged.
+		let { x, y, width, height } = origin;
+		const right = origin.x + origin.width;
+		const bottom = origin.y + origin.height;
+
+		if (handle.includes('w')) {
+			x = origin.x + dx;
+			width = right - x;
+		}
+		if (handle.includes('e')) {
+			width = origin.width + dx;
+		}
+		if (handle.includes('n')) {
+			y = origin.y + dy;
+			height = bottom - y;
+		}
+		if (handle.includes('s')) {
+			height = origin.height + dy;
+		}
+
+		// Aspect lock (shift): preserve original aspect ratio from the active corner.
+		if (this.#drag.aspect && origin.width > 0 && origin.height > 0) {
+			const ar = origin.width / origin.height;
+			if (Math.abs(width) / ar > Math.abs(height)) height = (Math.sign(height || 1) * Math.abs(width)) / ar;
+			else width = Math.sign(width || 1) * Math.abs(height) * ar;
+			if (handle.includes('w')) x = right - width;
+			if (handle.includes('n')) y = bottom - height;
+		}
+
+		if (width < MIN_SIZE) width = MIN_SIZE;
+		if (height < MIN_SIZE) height = MIN_SIZE;
+
+		const sx = width / origin.width;
+		const sy = height / origin.height;
+
+		for (const [id, ob] of origins) {
+			const nx = x + (ob.x - origin.x) * sx;
+			const ny = y + (ob.y - origin.y) * sy;
+			this.scene.updateElement(id, {
+				x: nx,
+				y: ny,
+				width: Math.max(MIN_SIZE, ob.width * sx),
+				height: Math.max(MIN_SIZE, ob.height * sy)
+			});
+		}
+	}
+
+	/**
+	 * Resize a single ROTATED element in its own local frame. We transform the pointer into the
+	 * element's local (un-rotated) coordinates, move the dragged edge(s) there, keep the OPPOSITE
+	 * edge/corner fixed in world space, and recompute the element's world position so the anchor
+	 * doesn't drift. This is what makes resizing a rotated element feel correct rather than
+	 * skewing along world axes.
+	 */
+	#updateResizeRotated(
+		world: Vec2,
+		sole: { id: ElementId; box: BBox; rotation: number },
+		handle: HandleKind,
+		aspect: boolean
+	): void {
+		const { box, rotation } = sole;
+		const center = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+
+		// Pointer in local space (rotate world point back by -rotation about the original center).
+		const local = rotate(world, -rotation, center);
+
+		// Original local edges.
+		let left = box.x;
+		let right = box.x + box.width;
+		let top = box.y;
+		let bottom = box.y + box.height;
+
+		if (handle.includes('w')) left = Math.min(local.x, right - MIN_SIZE);
+		if (handle.includes('e')) right = Math.max(local.x, left + MIN_SIZE);
+		if (handle.includes('n')) top = Math.min(local.y, bottom - MIN_SIZE);
+		if (handle.includes('s')) bottom = Math.max(local.y, top + MIN_SIZE);
+
+		let newW = right - left;
+		let newH = bottom - top;
+
+		// Aspect lock around the anchor corner.
+		if (aspect && box.width > 0 && box.height > 0) {
+			const ar = box.width / box.height;
+			if (newW / ar > newH) newH = newW / ar;
+			else newW = newH * ar;
+			if (handle.includes('w')) left = right - newW;
+			else right = left + newW;
+			if (handle.includes('n')) top = bottom - newH;
+			else bottom = top + newH;
+		}
+
+		// The anchor is the local corner OPPOSITE the drag, fixed in WORLD space.
+		const anchorLocal = {
+			x: handle.includes('w') ? box.x + box.width : box.x,
+			y: handle.includes('n') ? box.y + box.height : box.y
+		};
+		const anchorWorld = rotate(anchorLocal, rotation, center);
+
+		// New local center relative to that anchor, then map back to world to find the new x/y.
+		const newCenterLocal = { x: (left + right) / 2, y: (top + bottom) / 2 };
+		// Vector from anchor to new center in local space, rotated into world space.
+		const offset = rotate(
+			{ x: newCenterLocal.x - anchorLocal.x, y: newCenterLocal.y - anchorLocal.y },
+			rotation,
+			{ x: 0, y: 0 }
+		);
+		const newCenterWorld = { x: anchorWorld.x + offset.x, y: anchorWorld.y + offset.y };
+
+		this.scene.updateElement(sole.id, {
+			width: Math.max(MIN_SIZE, newW),
+			height: Math.max(MIN_SIZE, newH),
+			x: newCenterWorld.x - newW / 2,
+			y: newCenterWorld.y - newH / 2
+		});
+	}
+
+	// ---- rotate -----------------------------------------------------------------------------
+
+	#beginRotate(world: Vec2, bounds: BBox): void {
+		this.history.begin('Rotate');
+		const center = { x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2 };
+		const startAngle = Math.atan2(world.y - center.y, world.x - center.x);
+		const origins = new Map<ElementId, number>();
+		for (const el of this.scene.selectedElements) origins.set(el.id, el.rotation);
+		this.#drag = { kind: 'rotate', center, startAngle, origins };
+	}
+
+	#updateRotate(world: Vec2): void {
+		if (this.#drag.kind !== 'rotate') return;
+		const { center, startAngle, origins } = this.#drag;
+		const angle = Math.atan2(world.y - center.y, world.x - center.x);
+		let delta = angle - startAngle;
+		// 15° snapping when alt is NOT held (alt = free rotate, matching bypass semantics).
+		if (!this.snapBypass) {
+			const step = Math.PI / 12;
+			delta = Math.round(delta / step) * step;
+		}
+		for (const [id, base] of origins) {
+			const el = this.scene.get(id);
+			if (!el) continue;
+			// Rotate each element's center around the selection center, and add the angle delta.
+			const ec = { x: el.x + el.width / 2, y: el.y + el.height / 2 };
+			const rc = rotate(ec, delta - (el.rotation - base), center);
+			this.scene.updateElement(id, {
+				rotation: base + delta,
+				x: rc.x - el.width / 2,
+				y: rc.y - el.height / 2
+			});
+		}
+	}
+
+	// ---- zoom -------------------------------------------------------------------------------
+
+	wheel(screen: Vec2, deltaY: number, ctrl: boolean): void {
+		if (ctrl) {
+			// Pinch / ctrl-scroll → zoom anchored at the cursor.
+			const factor = Math.exp(-deltaY * 0.01);
+			this.camera.zoomBy(factor, screen);
+		} else {
+			// Trackpad two-finger scroll → pan.
+			this.camera.panBy(0, -deltaY);
+		}
+	}
+
+	trackpadPan(dx: number, dy: number): void {
+		this.camera.panBy(-dx, -dy);
+	}
+
+	zoomIn(): void {
+		this.camera.zoomBy(1.2, { x: this.camera.viewportWidth / 2, y: this.camera.viewportHeight / 2 });
+	}
+	zoomOut(): void {
+		this.camera.zoomBy(1 / 1.2, { x: this.camera.viewportWidth / 2, y: this.camera.viewportHeight / 2 });
+	}
+	zoomToFit(): void {
+		this.camera.fit(this.scene.contentBounds, 80);
+	}
+	zoomReset(): void {
+		this.camera.zoomTo(1, { x: this.camera.viewportWidth / 2, y: this.camera.viewportHeight / 2 });
+	}
+
+	// ---- text editing -----------------------------------------------------------------------
+
+	beginTextEdit(id: ElementId): void {
+		const el = this.scene.get(id);
+		if (!el || el.type !== 'text') return;
+		this.editingTextId = id;
+	}
+
+	commitTextEdit(id: ElementId, content: string): void {
+		const el = this.scene.get(id);
+		if (el && el.type === 'text' && el.content !== content) {
+			this.commands.patch(id, { content } as Partial<Element>, 'Edit text');
+		}
+		this.editingTextId = null;
+	}
+
+	cancelTextEdit(): void {
+		this.editingTextId = null;
+	}
+
+	/** Double-click: enter text edit if a text element is under the point. */
+	doubleClick(screen: Vec2): void {
+		const world = this.camera.toWorld(screen);
+		const hit = hitTestPoint(this.scene.ordered, world);
+		if (hit && hit.type === 'text') {
+			this.scene.selectOne(hit.id);
+			this.beginTextEdit(hit.id);
+		}
+	}
+
+	// ---- handle geometry for the text-edit overlay & cursors --------------------------------
+
+	/** Screen-space rect of an element (for positioning the text-edit overlay). */
+	screenRectOf(id: ElementId): { left: number; top: number; width: number; height: number; rotation: number } | null {
+		const el = this.scene.get(id);
+		if (!el) return null;
+		const tl = this.camera.toScreen({ x: el.x, y: el.y });
+		return {
+			left: tl.x,
+			top: tl.y,
+			width: el.width * this.camera.zoom,
+			height: el.height * this.camera.zoom,
+			rotation: el.rotation
+		};
+	}
+
+	/** The cursor to show for a given world point in select mode. */
+	cursorFor(screen: Vec2): string {
+		if (this.spaceHeld || this.isPanning) return 'grab';
+		if (this.tool !== 'select') return 'crosshair';
+		const world = this.camera.toWorld(screen);
+		if (this.scene.selection.size > 0) {
+			const handles = this.currentHandles();
+			const radius = this.camera.screenDistanceToWorld(HANDLE_SCREEN_PX);
+			const h: Handle | null = hitHandle(handles, world, radius);
+			if (h) return cursorForHandle(h.kind, this.soleSelected?.rotation ?? 0);
+		}
+		const hit = hitTestPoint(this.scene.ordered, world);
+		return hit ? 'move' : 'default';
+	}
+
+	/** Resolve a desired zoom percentage for the UI control. */
+	get zoomPercent(): number {
+		return Math.round(this.camera.zoom * 100);
+	}
+
+	setZoomPercent(pct: number): void {
+		const z = clamp(pct / 100, 0.05, 8);
+		this.camera.zoomTo(z, { x: this.camera.viewportWidth / 2, y: this.camera.viewportHeight / 2 });
+	}
+}
+
+/**
+ * Resize cursor for a handle, rotated by the element's rotation so the double-arrow points along
+ * the actual edge of a rotated element. We map the handle's base angle + rotation onto the eight
+ * directional resize cursors.
+ */
+function cursorForHandle(kind: HandleKind, rotation: number): string {
+	if (kind === 'rotate') return 'crosshair';
+	const baseAngle: Record<Exclude<HandleKind, 'rotate'>, number> = {
+		e: 0,
+		se: 45,
+		s: 90,
+		sw: 135,
+		w: 180,
+		nw: 225,
+		n: 270,
+		ne: 315
+	};
+	const deg = (((baseAngle[kind] + (rotation * 180) / Math.PI) % 180) + 180) % 180;
+	// Snap to the nearest 45° bucket → one of four bidirectional resize cursors.
+	const bucket = Math.round(deg / 45) % 4;
+	return ['ew-resize', 'nwse-resize', 'ns-resize', 'nesw-resize'][bucket] ?? 'ew-resize';
+}
+
+/** Singleton editor for the session. */
+export const editor = new Editor();

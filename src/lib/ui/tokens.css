@@ -1,0 +1,114 @@
+/*
+ * LayoutForge design tokens — restrained, editorial, post-print.
+ * OKLCH throughout, logical properties, @layer-friendly. Light warm-paper surfaces, near-black
+ * ink, a single precise accent. No skeuomorphism, no decorative gradients. Every value is a token
+ * so the whole system is tunable from one place.
+ */
+@layer tokens {
+	:root {
+		/* Type */
+		--font-sans:
+			'Inter', 'InterVariable', ui-sans-serif, system-ui, -apple-system, 'Helvetica Neue',
+			sans-serif;
+		--font-mono: ui-monospace, 'SF Mono', 'JetBrains Mono', 'Menlo', monospace;
+		--text-2xs: 0.6875rem; /* 11px */
+		--text-xs: 0.75rem; /* 12px */
+		--text-sm: 0.8125rem; /* 13px */
+		--text-md: 0.9375rem; /* 15px */
+		--text-lg: 1.125rem; /* 18px */
+		--text-xl: 1.5rem; /* 24px */
+		--tracking-tight: -0.01em;
+		--tracking-wide: 0.04em;
+		--tracking-caps: 0.06em;
+
+		/* Surfaces — warm-neutral paper, layered light→dark by elevation */
+		--bg: oklch(0.97 0.003 110);
+		--surface: oklch(1 0 0);
+		--surface-2: oklch(0.975 0.003 110);
+		--surface-3: oklch(0.96 0.004 110);
+		--surface-sunken: oklch(0.945 0.005 110);
+		--surface-inset: oklch(0.99 0.002 110);
+
+		/* Ink */
+		--ink: oklch(0.24 0.014 264);
+		--ink-soft: oklch(0.46 0.013 264);
+		--ink-faint: oklch(0.64 0.011 264);
+		--ink-ghost: oklch(0.74 0.008 264);
+
+		/* Lines */
+		--line: oklch(0.915 0.004 264);
+		--line-soft: oklch(0.94 0.003 264);
+		--line-strong: oklch(0.84 0.007 264);
+
+		/* Accent — a precise editorial indigo-blue */
+		--accent: oklch(0.55 0.17 264);
+		--accent-hover: oklch(0.5 0.18 264);
+		--accent-soft: oklch(0.95 0.035 264);
+		--accent-softer: oklch(0.97 0.02 264);
+		--accent-ink: oklch(0.99 0.012 264);
+		--accent-ring: oklch(0.55 0.17 264 / 0.35);
+
+		/* Semantic state */
+		--danger: oklch(0.56 0.2 25);
+		--danger-soft: oklch(0.95 0.04 25);
+		--warn: oklch(0.74 0.15 75);
+		--ok: oklch(0.62 0.14 150);
+
+		/* Canvas */
+		--canvas-bg: oklch(0.952 0.004 110);
+		--canvas-grid: oklch(0.885 0.005 264);
+		--canvas-grid-strong: oklch(0.83 0.008 264);
+		--selection: oklch(0.55 0.17 264);
+		--guide: oklch(0.62 0.23 16);
+
+		/* Radii */
+		--radius-xs: 3px;
+		--radius-sm: 5px;
+		--radius-md: 7px;
+		--radius-lg: 11px;
+		--radius-xl: 16px;
+		--radius-pill: 999px;
+
+		/* Spacing */
+		--space-1: 4px;
+		--space-2: 8px;
+		--space-3: 12px;
+		--space-4: 16px;
+		--space-5: 24px;
+		--space-6: 32px;
+		--space-7: 48px;
+
+		/* Elevation — soft, low-spread, layered */
+		--shadow-xs: 0 1px 1px oklch(0.2 0.02 264 / 0.05);
+		--shadow-sm:
+			0 1px 2px oklch(0.2 0.02 264 / 0.06), 0 1px 3px oklch(0.2 0.02 264 / 0.05);
+		--shadow-md:
+			0 2px 6px oklch(0.2 0.02 264 / 0.07), 0 6px 16px oklch(0.2 0.02 264 / 0.08);
+		--shadow-lg:
+			0 4px 12px oklch(0.2 0.02 264 / 0.1), 0 12px 32px oklch(0.2 0.02 264 / 0.12);
+		--ring: 0 0 0 1px oklch(0.84 0.007 264);
+		--ring-accent: 0 0 0 3px var(--accent-ring);
+
+		/* Motion */
+		--ease: cubic-bezier(0.32, 0.72, 0, 1);
+		--ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+		--dur-1: 0.09s;
+		--dur-2: 0.16s;
+		--dur-3: 0.26s;
+
+		/* Chrome dimensions */
+		--titlebar-h: 40px;
+		--toolrail-h: 46px;
+		--panel-w: 272px;
+		--statusbar-h: 26px;
+		--traffic-gutter: 78px; /* room for macOS window controls under overlay title bar */
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		:root {
+			--dur-1: 0s;
+			--dur-2: 0s;
+			--dur-3: 0s;
+		}
+	}
+}
