@@ -1,12 +1,26 @@
 # Needs Human Testing
 
-Per §12.4: web search and type-checking close factual/API gaps, and the app has been launched
-(the macOS window boots, the Rust shell + fs/sql/dialog plugins load, the frontend renders, no
-panics). What a verification pass **cannot** confirm is the subjective *feel* of the interactions.
-The following require you to exercise the running app (`pnpm tauri dev`) and judge by hand.
+UPDATE (evidence pass): several items previously listed here are now proven by automated tests —
+see `EVIDENCE_LEDGER.md`. Specifically VERIFIED by test/measurement: undo/redo coalescing (one entry
+per gesture), the do/undo/redo fuzz invariant (5 seeds × 500 ops), click-locates-element and
+create-lands-where-you-click (geometry-contract tests + a real headless-Chrome click with
+`dx=dy=0.00`), atomic autosave + validated load + lossless round-trip, and the render hot-path
+frame time (0.70–1.19 ms avg, well under the 16.7 ms budget). The app also boots clean in a real
+browser (Chrome headless, no console errors) and in the Tauri window.
 
-I have verified the **correctness of the code and APIs**. I have **not** verified the items below
-by hand-use, and I am not claiming they are "fixed" — they are built and need your eyes.
+What automated checks here **cannot** confirm — these still need your hands:
+
+### Run it in the browser
+`pnpm dev` → open http://localhost:1420 . Everything is expected to work (Save/Open/Export use
+browser download + file-input; the Library is desktop-only and shows empty). Then run the desktop
+app with `pnpm tauri dev`.
+
+### Items only hands-on use can validate
+1. **GPU rasterization cost at scale.** The perf harness measured the JS render hot path (≈1.2 ms at
+   2,000 elements); it does NOT include real canvas fill/stroke on the GPU. Open a doc with
+   1,000–2,000 elements and confirm pan/zoom/drag feel smooth (no dropped frames).
+2. **Runtime idle-paint count.** Proven statically (no rAF/interval; reactive-deps-only effect).
+   Confirm visually that an idle canvas does not repaint (e.g. via a devtools paint-flash overlay).
 
 1. **Drag/resize coalescing → exactly one undo entry.**
    The history layer wraps each gesture in a single `begin`/`commit` transaction, so a drag should
