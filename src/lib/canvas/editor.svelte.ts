@@ -197,7 +197,14 @@ export class Editor {
 			return;
 		}
 
-		// Creation tools: start a rubber-band create (or click-to-place default size).
+		// Text tool (Excalidraw `handleTextOnPointerDown`): don't drag-to-size — drop a text element
+		// at the click and immediately enter the inline editor so you can type right away.
+		if (this.tool === 'text') {
+			this.#createTextAndEdit(world);
+			return;
+		}
+
+		// Other creation tools: start a rubber-band create (or click-to-place default size).
 		if (this.tool !== 'select') {
 			this.#beginCreate(world);
 			return;
@@ -386,6 +393,33 @@ export class Editor {
 	}
 
 	// ---- creation ---------------------------------------------------------------------------
+
+	/**
+	 * Text tool: create a text element at the click and immediately enter inline editing — mirrors
+	 * Excalidraw's `handleTextOnPointerDown` + `startTextEditing` (no drag-to-size for text). The
+	 * tool reverts to select afterward unless the lock is engaged.
+	 */
+	#createTextAndEdit(world: Vec2): void {
+		const def = createElement('text', { x: 0, y: 0 });
+		const el = createElement('text', {
+			x: world.x - def.width / 2,
+			y: world.y - def.height / 2
+		});
+		if (Object.keys(this.currentStyle).length > 0) el.style = { ...el.style, ...this.currentStyle };
+		// New text starts empty so the placeholder/caret is ready for typing.
+		el.content = '';
+		const parent = this.#dropTargetUnder(world);
+		if (parent) {
+			el.parentId = parent;
+			el.z = this.scene.childrenOf(parent).length;
+		}
+		this.history.transact('Add text', () => {
+			this.scene.addElement(el as Element);
+			this.scene.selectOne(el.id);
+		});
+		this.editingTextId = el.id;
+		if (!this.toolLocked) this.tool = 'select';
+	}
 
 	#beginCreate(world: Vec2): void {
 		const type = this.tool as SemanticType;
@@ -763,10 +797,18 @@ export class Editor {
 
 	commitTextEdit(id: ElementId, content: string): void {
 		const el = this.scene.get(id);
-		if (el && el.type === 'text' && el.content !== content) {
+		this.editingTextId = null;
+		if (!el || el.type !== 'text') return;
+		const trimmed = content.trim();
+		// An empty text element is discarded on commit (Excalidraw behavior) so a click that placed
+		// a text box but typed nothing doesn't leave an invisible element behind.
+		if (trimmed === '') {
+			this.commands.deleteById(id, 'Discard empty text');
+			return;
+		}
+		if (el.content !== content) {
 			this.commands.patch(id, { content } as Partial<Element>, 'Edit text');
 		}
-		this.editingTextId = null;
 	}
 
 	cancelTextEdit(): void {

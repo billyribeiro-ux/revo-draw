@@ -115,13 +115,15 @@
 	function onPointerDown(e: PointerEvent): void {
 		if (e.button !== 0 && e.button !== 1) return;
 		(e.target as Element).setPointerCapture?.(e.pointerId);
-		canvasEl?.focus();
 		editor.pointerDown(localPoint(e), {
 			shift: e.shiftKey,
 			alt: e.altKey,
 			space: spaceDown,
 			middle: e.button === 1
 		});
+		// Focus the canvas for keyboard shortcuts — but NOT when a text edit just opened, or we'd
+		// steal focus from (and blur-commit) the inline text editor that pointerDown just started.
+		if (editor.editingTextId === null) canvasEl?.focus();
 		cursor = editor.cursorFor(localPoint(e));
 	}
 
@@ -181,12 +183,16 @@
 		return editor.screenRectOf(id);
 	});
 
+	let textFocused = $state(false);
+
 	$effect(() => {
 		const id = editor.editingTextId;
 		if (id) {
 			const el = scene.get(id);
 			textValue = el && el.type === 'text' ? el.content : '';
-			queueMicrotask(() => {
+			textFocused = false;
+			// Focus on the next frame so the textarea is mounted and laid out first.
+			requestAnimationFrame(() => {
 				textArea?.focus();
 				textArea?.select();
 			});
@@ -194,6 +200,10 @@
 	});
 
 	function commitText(): void {
+		// Ignore a blur that happens before the textarea was ever focused — otherwise opening the
+		// editor and immediately losing focus (e.g. canvas focus race) would commit an empty string
+		// and discard a brand-new text box before the user can type.
+		if (!textFocused) return;
 		const id = editor.editingTextId;
 		if (id) editor.commitTextEdit(id, textValue);
 	}
@@ -226,6 +236,7 @@
 			style:height="{r.height}px"
 			style:transform="rotate({r.rotation}rad)"
 			style:font-size="{15 * camera.zoom}px"
+			onfocus={() => (textFocused = true)}
 			onblur={commitText}
 			onkeydown={onTextKeydown}
 		></textarea>

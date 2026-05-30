@@ -77,6 +77,15 @@ export class Commands {
 		});
 	}
 
+	/** Delete a single element by id (used e.g. to discard an empty text box). */
+	deleteById(id: ElementId, label = 'Delete element'): void {
+		if (!this.#scene.has(id)) return;
+		this.#history.transact(label, () => {
+			this.#scene.removeElement(id);
+			this.#scene.clearSelection();
+		});
+	}
+
 	duplicateSelection(offset = 24): ElementId[] {
 		const roots = this.#topLevelSelection();
 		if (roots.length === 0) return [];
