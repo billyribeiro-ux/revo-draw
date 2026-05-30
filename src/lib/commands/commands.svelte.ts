@@ -15,6 +15,7 @@ import {
 	type Element,
 	type ElementByType,
 	type ElementId,
+	type ElementStyle,
 	type LayoutIntent,
 	type SemanticType
 } from '../elements/types.js';
@@ -164,6 +165,22 @@ export class Commands {
 	/** Patch arbitrary fields on an element (used by the inspector). */
 	patch(id: ElementId, patch: Partial<Element>, label = 'Edit'): void {
 		this.#history.transact(label, () => this.#scene.updateElement(id, patch));
+	}
+
+	/**
+	 * Apply a style patch to EVERY selected element as one undo entry (Excalidraw's
+	 * change-property-on-selection flow). Merges into each element's existing style.
+	 */
+	setStyleOnSelection(stylePatch: Partial<ElementStyle>, label = 'Edit style'): void {
+		const ids = [...this.#scene.selection];
+		if (ids.length === 0) return;
+		this.#history.transact(label, () => {
+			for (const id of ids) {
+				const el = this.#scene.get(id);
+				if (!el) continue;
+				this.#scene.updateElement(id, { style: { ...el.style, ...stylePatch } });
+			}
+		});
 	}
 
 	/** Patch the layout intent of a container element. */

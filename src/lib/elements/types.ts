@@ -71,13 +71,36 @@ export interface LayoutIntent {
 	fixedHeight?: number;
 }
 
+/** Visual stroke weight options (px), mirroring Excalidraw's thin/bold/extra-bold. */
+export type StrokeWidth = 'thin' | 'bold' | 'extra';
+export const STROKE_WIDTHS = ['thin', 'bold', 'extra'] as const;
+export const STROKE_WIDTH_PX: Record<StrokeWidth, number> = { thin: 1, bold: 2, extra: 4 };
+
+/** Line dash style. */
+export type StrokeStyle = 'solid' | 'dashed' | 'dotted';
+export const STROKE_STYLES = ['solid', 'dashed', 'dotted'] as const;
+
+/** Background fill treatment. */
+export type FillStyle = 'solid' | 'hachure' | 'cross-hatch';
+export const FILL_STYLES = ['solid', 'hachure', 'cross-hatch'] as const;
+
 export interface ElementStyle {
-	fill?: string; // OKLCH string preferred
+	/** Fill / background color. CSS color string; `'transparent'` or undefined = no fill. */
+	fill?: string;
+	/** Stroke (border) color. CSS color string. */
 	stroke?: string;
+	/** Stroke weight bucket; resolves to px via STROKE_WIDTH_PX. */
+	strokeWidth?: StrokeWidth;
+	/** Stroke dash style. */
+	strokeStyle?: StrokeStyle;
+	/** Background fill treatment (solid vs hatched). */
+	fillStyle?: FillStyle;
+	/** Corner radius in px. */
 	radius?: number;
 	fontSize?: number;
 	fontWeight?: number;
-	opacity?: number; // 0..1
+	/** Opacity 0..1. */
+	opacity?: number;
 }
 
 export interface BaseElement {

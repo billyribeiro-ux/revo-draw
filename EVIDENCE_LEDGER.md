@@ -74,7 +74,17 @@ environment; those items carry the manual steps in `NEEDS_HUMAN_TESTING.md`.
 |---|---|---|
 | Boots in a real browser | headless Chrome DOM dump: 1 `<canvas>`, tool rail, titlebar, inspector present; 0 crash/error text; console capture: no `Uncaught`/`TypeError`/tauri errors | VERIFIED |
 | Draw-at-click works in browser | CDP driver dispatches a real mouse click on the canvas → card created with center exactly at click world point (`dx=0.00 dy=0.00`) | VERIFIED |
+| Full drag-create + drag-move loop (Excalidraw-style) | `scripts/browser-interact.mjs` via CDP real mouse drag: drag (200,150)→(440,310) created a card at exactly (200,150) size 240×160; then drag-moving it +120,+60 landed it at exactly (320,210). `RESULT: PASS` | VERIFIED |
 | Tauri-only APIs degrade gracefully | `isTauri()` guards on fs/sql; browser Save/Export → download, Open → file input | VERIFIED (build + boot) |
+
+## Excalidraw parity (mechanics matched against /Users/billyribeiro/Downloads/excalidraw-master)
+
+Extracted Excalidraw's exact coordinate + interaction logic (Explore subagent, with file:line) and
+reconciled ours:
+- viewport↔scene conversion: Excalidraw `(' clientX-offset)/zoom - scroll`; ours `screen = world*zoom + pan` with the camera as the single conversion point — algebraically equivalent, round-trip proven <1e-6.
+- DPR kept strictly at the canvas context scale, never in scene math — same in ours (`render()` applies `dpr * worldToScreen`).
+- drag-to-size with negative-direction (drag up/left) handling — ours uses `min/abs` corner anchoring, proven by the browser drag test above.
+- tool reverts to selection after a shape unless the lock flag is set — implemented (lock toggle Q/🔒).
 
 ## Excalidraw UX alignment
 

@@ -8,7 +8,6 @@
 import { uuidv7 } from './uuid.js';
 import {
 	isContainerType,
-	type Element,
 	type ElementByType,
 	type ElementId,
 	type ElementStyle,
@@ -74,7 +73,19 @@ function defaultLayout(type: SemanticType): LayoutIntent | undefined {
 }
 
 /** Default style per type — restrained, editorial. Colors are OKLCH strings. */
-function defaultStyle(type: SemanticType): ElementStyle | undefined {
+/** Base style every element starts with (Excalidraw-aligned), merged under per-type visuals. */
+const BASE_STYLE: ElementStyle = {
+	strokeWidth: 'bold',
+	strokeStyle: 'solid',
+	fillStyle: 'solid',
+	opacity: 1
+};
+
+function defaultStyle(type: SemanticType): ElementStyle {
+	return { ...BASE_STYLE, ...(perTypeStyle(type) ?? {}) };
+}
+
+function perTypeStyle(type: SemanticType): ElementStyle | undefined {
 	switch (type) {
 		case 'frame':
 			return { fill: 'oklch(1 0 0)', stroke: 'oklch(0.82 0.008 264)', radius: 8 };
@@ -215,10 +226,9 @@ export function createElement<T extends SemanticType>(
 	return base as unknown as ElementByType[T];
 }
 
-/** Create a blank document with one root frame, ready to edit. */
+/** Create a blank document — a truly empty canvas, ready to draw on. */
 export function createBlankDocument(name = 'Untitled'): import('./types.js').LayoutDocument {
 	const now = new Date().toISOString();
-	const frame = createElement('frame', { x: 0, y: 0, label: 'Screen' });
 	const doc: import('./types.js').LayoutDocument = {
 		schemaVersion: 1,
 		id: uuidv7(),
@@ -226,8 +236,8 @@ export function createBlankDocument(name = 'Untitled'): import('./types.js').Lay
 		createdAt: now,
 		updatedAt: now,
 		canvas: { width: 1440, height: 900, background: 'oklch(0.955 0.004 110)' },
-		elements: { [frame.id]: frame as Element },
-		rootOrder: [frame.id]
+		elements: {},
+		rootOrder: []
 	};
 	return doc;
 }

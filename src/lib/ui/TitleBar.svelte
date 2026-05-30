@@ -53,10 +53,11 @@
 				<PhIcon name="zoom-out" size={16} />
 			</button>
 			{#if editingZoom}
-				<input
+				<!-- svelte-ignore a11y_autofocus -->
+				<input name="titlebar-f1" autocomplete="off"
 					class="zoom-input"
-					value={zoomInput}
-					oninput={(e) => (zoomInput = (e.currentTarget as HTMLInputElement).value)}
+					bind:value={zoomInput}
+					autofocus
 					onblur={commitZoom}
 					onkeydown={(e) => {
 						if (e.key === 'Enter') commitZoom();

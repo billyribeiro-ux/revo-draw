@@ -81,6 +81,8 @@ const HANDLE_SCREEN_PX = 9; // size + hit radius of transform handles
 const ROTATE_OFFSET_SCREEN = 26;
 const SNAP_SCREEN_PX = 6;
 const MIN_SIZE = 4;
+/** Click-vs-drag travel threshold in screen px before a move actually moves (Excalidraw = 10). */
+const DRAG_THRESHOLD_PX = 6;
 
 export class Editor {
 	readonly scene: SceneGraph = scene;
@@ -91,6 +93,11 @@ export class Editor {
 	tool = $state<Tool>('select');
 	/** When true, a creation tool stays active after drawing (Excalidraw's 🔒 lock). Default off. */
 	toolLocked = $state(false);
+	/**
+	 * Last-used style — new elements adopt it, and the style panel writes here so the next shape
+	 * keeps the chosen look (Excalidraw's `currentItem*` pattern). Empty means "use type defaults".
+	 */
+	currentStyle = $state<Partial<import('../elements/types.js').ElementStyle>>({});
 	/** When set, snapping is bypassed (alt held). */
 	snapBypass = $state(false);
 	/** Whether space is held (pan mode hint for the cursor). */
@@ -240,6 +247,14 @@ export class Editor {
 				break;
 			}
 			case 'move': {
+				// Click-vs-drag threshold (Excalidraw uses 10px). Until the pointer travels past it,
+				// treat the gesture as a click — don't nudge the element on a jittery click.
+				if (!this.#drag.moved) {
+					const distScreen =
+						Math.hypot(world.x - this.#drag.startWorld.x, world.y - this.#drag.startWorld.y) *
+						this.camera.zoom;
+					if (distScreen < DRAG_THRESHOLD_PX) break;
+				}
 				let dx = world.x - this.#drag.lastWorld.x;
 				let dy = world.y - this.#drag.lastWorld.y;
 				if (dx === 0 && dy === 0) break;
@@ -341,6 +356,10 @@ export class Editor {
 			type === 'icon' && this.pendingIcon
 				? this.#makeIcon(world)
 				: createElement(type, { x: world.x - size.width / 2, y: world.y - size.height / 2 });
+		// Adopt the last-used style so consecutive shapes keep the chosen look.
+		if (Object.keys(this.currentStyle).length > 0) {
+			el.style = { ...el.style, ...this.currentStyle };
+		}
 		// Auto-parent into a container under the point (except frames, which live at root).
 		if (type !== 'frame') {
 			const parent = this.#dropTargetUnder(world);

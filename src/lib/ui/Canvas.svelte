@@ -102,16 +102,35 @@
 		cursor = editor.cursorFor(localPoint(e));
 	}
 
+	// During an active gesture, coalesce pointer moves to one per animation frame (matching
+	// Excalidraw's throttleRAF). This caps gesture math at the display refresh rate so rapid
+	// pointer streams stay smooth instead of doing redundant work between paints.
+	let rafId: number | null = null;
+	let pendingMove: { x: number; y: number; alt: boolean } | null = null;
+	function flushMove(): void {
+		rafId = null;
+		const m = pendingMove;
+		pendingMove = null;
+		if (m) editor.pointerMove({ x: m.x, y: m.y }, { alt: m.alt });
+	}
+
 	function onPointerMove(e: PointerEvent): void {
 		const p = localPoint(e);
 		if (editor.isInteracting) {
-			editor.pointerMove(p, { alt: e.altKey });
+			pendingMove = { x: p.x, y: p.y, alt: e.altKey };
+			if (rafId === null) rafId = requestAnimationFrame(flushMove);
 		} else {
 			cursor = editor.cursorFor(p);
 		}
 	}
 
 	function onPointerUp(e: PointerEvent): void {
+		// Apply any pending (RAF-throttled) move so the gesture ends at the true final position.
+		if (rafId !== null) {
+			cancelAnimationFrame(rafId);
+			rafId = null;
+		}
+		if (pendingMove) flushMove();
 		const wasCreating = editor.tool !== 'select';
 		editor.pointerUp();
 		if (wasCreating) editor.finishCreate();
@@ -182,7 +201,7 @@
 
 	{#if editor.editingTextId && editingRect}
 		{@const r = editingRect}
-		<textarea
+		<textarea name="canvas-f1" autocomplete="off"
 			bind:this={textArea}
 			bind:value={textValue}
 			class="text-overlay"

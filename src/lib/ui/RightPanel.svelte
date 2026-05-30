@@ -56,7 +56,7 @@
 				<label class="field">
 					<span class="label">Type</span>
 					<div class="select-wrap">
-						<select
+						<select name="rightpanel-f1" autocomplete="off"
 							value={e.type}
 							onchange={(ev) =>
 								commands.changeType(e.id, (ev.currentTarget as HTMLSelectElement).value as SemanticType)}
@@ -70,7 +70,7 @@
 
 				<label class="field">
 					<span class="label">Label</span>
-					<input
+					<input name="rightpanel-f2" autocomplete="off"
 						type="text"
 						placeholder="e.g. Revenue card"
 						value={e.label ?? ''}
@@ -85,23 +85,23 @@
 				<div class="grid-2">
 					<label class="field">
 						<span class="label">X</span>
-						<input type="number" value={num(e.x)} oninput={(ev) => patch({ x: +(ev.currentTarget as HTMLInputElement).value }, 'Move')} />
+						<input name="rightpanel-f3" autocomplete="off" type="number" value={num(e.x)} oninput={(ev) => patch({ x: +(ev.currentTarget as HTMLInputElement).value }, 'Move')} />
 					</label>
 					<label class="field">
 						<span class="label">Y</span>
-						<input type="number" value={num(e.y)} oninput={(ev) => patch({ y: +(ev.currentTarget as HTMLInputElement).value }, 'Move')} />
+						<input name="rightpanel-f4" autocomplete="off" type="number" value={num(e.y)} oninput={(ev) => patch({ y: +(ev.currentTarget as HTMLInputElement).value }, 'Move')} />
 					</label>
 					<label class="field">
 						<span class="label">W</span>
-						<input type="number" min="1" value={num(e.width)} oninput={(ev) => patch({ width: Math.max(1, +(ev.currentTarget as HTMLInputElement).value) }, 'Resize')} />
+						<input name="rightpanel-f5" autocomplete="off" type="number" min="1" value={num(e.width)} oninput={(ev) => patch({ width: Math.max(1, +(ev.currentTarget as HTMLInputElement).value) }, 'Resize')} />
 					</label>
 					<label class="field">
 						<span class="label">H</span>
-						<input type="number" min="1" value={num(e.height)} oninput={(ev) => patch({ height: Math.max(1, +(ev.currentTarget as HTMLInputElement).value) }, 'Resize')} />
+						<input name="rightpanel-f6" autocomplete="off" type="number" min="1" value={num(e.height)} oninput={(ev) => patch({ height: Math.max(1, +(ev.currentTarget as HTMLInputElement).value) }, 'Resize')} />
 					</label>
 					<label class="field">
 						<span class="label">Rotation°</span>
-						<input
+						<input name="rightpanel-f7" autocomplete="off"
 							type="number"
 							value={num((e.rotation * 180) / Math.PI)}
 							oninput={(ev) => patch({ rotation: (+(ev.currentTarget as HTMLInputElement).value * Math.PI) / 180 }, 'Rotate')}
@@ -118,7 +118,7 @@
 					<label class="field">
 						<span class="label">Mode</span>
 						<div class="select-wrap">
-							<select value={ly.mode} onchange={(ev) => patchLayout({ mode: (ev.currentTarget as HTMLSelectElement).value as LayoutIntent['mode'] })}>
+							<select name="rightpanel-f8" autocomplete="off" value={ly.mode} onchange={(ev) => patchLayout({ mode: (ev.currentTarget as HTMLSelectElement).value as LayoutIntent['mode'] })}>
 								{#each LAYOUT_MODES as m (m)}
 									<option value={m}>{m}</option>
 								{/each}
@@ -128,24 +128,24 @@
 					<div class="grid-2">
 						<label class="field">
 							<span class="label">Gap</span>
-							<input type="number" min="0" value={ly.gap ?? 0} oninput={(ev) => patchLayout({ gap: +(ev.currentTarget as HTMLInputElement).value })} />
+							<input name="rightpanel-f9" autocomplete="off" type="number" min="0" value={ly.gap ?? 0} oninput={(ev) => patchLayout({ gap: +(ev.currentTarget as HTMLInputElement).value })} />
 						</label>
 						<label class="field">
 							<span class="label">Padding</span>
-							<input type="number" min="0" value={ly.padding ?? 0} oninput={(ev) => patchLayout({ padding: +(ev.currentTarget as HTMLInputElement).value })} />
+							<input name="rightpanel-f10" autocomplete="off" type="number" min="0" value={ly.padding ?? 0} oninput={(ev) => patchLayout({ padding: +(ev.currentTarget as HTMLInputElement).value })} />
 						</label>
 					</div>
 					{#if ly.mode === 'grid'}
 						<label class="field">
 							<span class="label">Grid columns</span>
-							<input type="number" min="1" value={ly.gridCols ?? 2} oninput={(ev) => patchLayout({ gridCols: Math.max(1, +(ev.currentTarget as HTMLInputElement).value) })} />
+							<input name="rightpanel-f11" autocomplete="off" type="number" min="1" value={ly.gridCols ?? 2} oninput={(ev) => patchLayout({ gridCols: Math.max(1, +(ev.currentTarget as HTMLInputElement).value) })} />
 						</label>
 					{/if}
 					<div class="grid-2">
 						<label class="field">
 							<span class="label">Justify</span>
 							<div class="select-wrap">
-								<select value={ly.justify ?? ''} onchange={(ev) => patchLayout({ justify: ((ev.currentTarget as HTMLSelectElement).value || undefined) as LayoutIntent['justify'] })}>
+								<select name="rightpanel-f12" autocomplete="off" value={ly.justify ?? ''} onchange={(ev) => patchLayout({ justify: ((ev.currentTarget as HTMLSelectElement).value || undefined) as LayoutIntent['justify'] })}>
 									<option value="">—</option>
 									{#each ALIGNMENTS as a (a)}<option value={a}>{a}</option>{/each}
 								</select>
@@ -154,7 +154,7 @@
 						<label class="field">
 							<span class="label">Align</span>
 							<div class="select-wrap">
-								<select value={ly.align ?? ''} onchange={(ev) => patchLayout({ align: ((ev.currentTarget as HTMLSelectElement).value || undefined) as LayoutIntent['align'] })}>
+								<select name="rightpanel-f13" autocomplete="off" value={ly.align ?? ''} onchange={(ev) => patchLayout({ align: ((ev.currentTarget as HTMLSelectElement).value || undefined) as LayoutIntent['align'] })}>
 									<option value="">—</option>
 									{#each ALIGNMENTS as a (a)}<option value={a}>{a}</option>{/each}
 								</select>
@@ -164,7 +164,7 @@
 					<label class="field">
 						<span class="label">Responsive</span>
 						<div class="select-wrap">
-							<select value={ly.responsive ?? 'none'} onchange={(ev) => patchLayout({ responsive: (ev.currentTarget as HTMLSelectElement).value as LayoutIntent['responsive'] })}>
+							<select name="rightpanel-f14" autocomplete="off" value={ly.responsive ?? 'none'} onchange={(ev) => patchLayout({ responsive: (ev.currentTarget as HTMLSelectElement).value as LayoutIntent['responsive'] })}>
 								{#each RESPONSIVE_INTENTS as r (r)}<option value={r}>{r}</option>{/each}
 							</select>
 						</div>
@@ -172,11 +172,11 @@
 					<div class="grid-2">
 						<label class="field">
 							<span class="label">Fixed W</span>
-							<input type="number" min="0" placeholder="auto" value={ly.fixedWidth ?? ''} oninput={(ev) => patchLayout({ fixedWidth: (ev.currentTarget as HTMLInputElement).value ? +(ev.currentTarget as HTMLInputElement).value : undefined })} />
+							<input name="rightpanel-f15" autocomplete="off" type="number" min="0" placeholder="auto" value={ly.fixedWidth ?? ''} oninput={(ev) => patchLayout({ fixedWidth: (ev.currentTarget as HTMLInputElement).value ? +(ev.currentTarget as HTMLInputElement).value : undefined })} />
 						</label>
 						<label class="field">
 							<span class="label">Fixed H</span>
-							<input type="number" min="0" placeholder="auto" value={ly.fixedHeight ?? ''} oninput={(ev) => patchLayout({ fixedHeight: (ev.currentTarget as HTMLInputElement).value ? +(ev.currentTarget as HTMLInputElement).value : undefined })} />
+							<input name="rightpanel-f16" autocomplete="off" type="number" min="0" placeholder="auto" value={ly.fixedHeight ?? ''} oninput={(ev) => patchLayout({ fixedHeight: (ev.currentTarget as HTMLInputElement).value ? +(ev.currentTarget as HTMLInputElement).value : undefined })} />
 						</label>
 					</div>
 				</section>
@@ -188,12 +188,12 @@
 				{#if e.type === 'text'}
 					<label class="field">
 						<span class="label">Text</span>
-						<textarea rows="2" value={e.content} oninput={(ev) => patch({ content: (ev.currentTarget as HTMLTextAreaElement).value }, 'Edit text')}></textarea>
+						<textarea name="rightpanel-f17" autocomplete="off" rows="2" value={e.content} oninput={(ev) => patch({ content: (ev.currentTarget as HTMLTextAreaElement).value }, 'Edit text')}></textarea>
 					</label>
 					<label class="field">
 						<span class="label">Role</span>
 						<div class="select-wrap">
-							<select value={e.textRole ?? 'body'} onchange={(ev) => patch({ textRole: (ev.currentTarget as HTMLSelectElement).value as typeof e.textRole }, 'Edit text role')}>
+							<select name="rightpanel-f18" autocomplete="off" value={e.textRole ?? 'body'} onchange={(ev) => patch({ textRole: (ev.currentTarget as HTMLSelectElement).value as typeof e.textRole }, 'Edit text role')}>
 								{#each TEXT_ROLES as r (r)}<option value={r}>{r}</option>{/each}
 							</select>
 						</div>
@@ -201,12 +201,12 @@
 				{:else if e.type === 'button'}
 					<label class="field">
 						<span class="label">Caption</span>
-						<input type="text" value={e.content} oninput={(ev) => patch({ content: (ev.currentTarget as HTMLInputElement).value }, 'Edit button')} />
+						<input name="rightpanel-f19" autocomplete="off" type="text" value={e.content} oninput={(ev) => patch({ content: (ev.currentTarget as HTMLInputElement).value }, 'Edit button')} />
 					</label>
 					<label class="field">
 						<span class="label">Variant</span>
 						<div class="select-wrap">
-							<select value={e.variant ?? 'primary'} onchange={(ev) => patch({ variant: (ev.currentTarget as HTMLSelectElement).value as typeof e.variant }, 'Edit variant')}>
+							<select name="rightpanel-f20" autocomplete="off" value={e.variant ?? 'primary'} onchange={(ev) => patch({ variant: (ev.currentTarget as HTMLSelectElement).value as typeof e.variant }, 'Edit variant')}>
 								<option value="primary">primary</option>
 								<option value="secondary">secondary</option>
 								<option value="ghost">ghost</option>
@@ -217,12 +217,12 @@
 				{:else if e.type === 'input'}
 					<label class="field">
 						<span class="label">Placeholder</span>
-						<input type="text" value={e.placeholder ?? ''} oninput={(ev) => patch({ placeholder: (ev.currentTarget as HTMLInputElement).value }, 'Edit input')} />
+						<input name="rightpanel-f21" autocomplete="off" type="text" value={e.placeholder ?? ''} oninput={(ev) => patch({ placeholder: (ev.currentTarget as HTMLInputElement).value }, 'Edit input')} />
 					</label>
 					<label class="field">
 						<span class="label">Kind</span>
 						<div class="select-wrap">
-							<select value={e.inputKind ?? 'text'} onchange={(ev) => patch({ inputKind: (ev.currentTarget as HTMLSelectElement).value as typeof e.inputKind }, 'Edit input kind')}>
+							<select name="rightpanel-f22" autocomplete="off" value={e.inputKind ?? 'text'} onchange={(ev) => patch({ inputKind: (ev.currentTarget as HTMLSelectElement).value as typeof e.inputKind }, 'Edit input kind')}>
 								<option value="text">text</option>
 								<option value="email">email</option>
 								<option value="password">password</option>
@@ -237,7 +237,7 @@
 					<label class="field">
 						<span class="label">Chart kind</span>
 						<div class="select-wrap">
-							<select value={e.chartKind} onchange={(ev) => patch({ chartKind: (ev.currentTarget as HTMLSelectElement).value as typeof e.chartKind }, 'Edit chart')}>
+							<select name="rightpanel-f23" autocomplete="off" value={e.chartKind} onchange={(ev) => patch({ chartKind: (ev.currentTarget as HTMLSelectElement).value as typeof e.chartKind }, 'Edit chart')}>
 								{#each CHART_KINDS as c (c)}<option value={c}>{c}</option>{/each}
 							</select>
 						</div>
@@ -245,7 +245,7 @@
 				{:else if e.type === 'table'}
 					<label class="field">
 						<span class="label">Columns (comma-separated)</span>
-						<input
+						<input name="rightpanel-f24" autocomplete="off"
 							type="text"
 							value={(e.columns ?? []).join(', ')}
 							oninput={(ev) => patch({ columns: (ev.currentTarget as HTMLInputElement).value.split(',').map((s) => s.trim()).filter(Boolean) }, 'Edit columns')}
@@ -253,12 +253,12 @@
 					</label>
 					<label class="field">
 						<span class="label">Row count hint</span>
-						<input type="number" min="0" value={e.rowCountHint ?? 0} oninput={(ev) => patch({ rowCountHint: +(ev.currentTarget as HTMLInputElement).value }, 'Edit rows')} />
+						<input name="rightpanel-f25" autocomplete="off" type="number" min="0" value={e.rowCountHint ?? 0} oninput={(ev) => patch({ rowCountHint: +(ev.currentTarget as HTMLInputElement).value }, 'Edit rows')} />
 					</label>
 				{:else if e.type === 'tabs'}
 					<label class="field">
 						<span class="label">Tabs (comma-separated)</span>
-						<input type="text" value={(e.tabs ?? []).join(', ')} oninput={(ev) => patch({ tabs: (ev.currentTarget as HTMLInputElement).value.split(',').map((s) => s.trim()).filter(Boolean) }, 'Edit tabs')} />
+						<input name="rightpanel-f26" autocomplete="off" type="text" value={(e.tabs ?? []).join(', ')} oninput={(ev) => patch({ tabs: (ev.currentTarget as HTMLInputElement).value.split(',').map((s) => s.trim()).filter(Boolean) }, 'Edit tabs')} />
 					</label>
 				{:else if e.type === 'icon'}
 					<div class="icon-row">
@@ -270,7 +270,7 @@
 				{:else if e.type === 'image'}
 					<label class="field">
 						<span class="label">Alt text</span>
-						<input type="text" value={e.alt ?? ''} oninput={(ev) => patch({ alt: (ev.currentTarget as HTMLInputElement).value }, 'Edit alt')} />
+						<input name="rightpanel-f27" autocomplete="off" type="text" value={e.alt ?? ''} oninput={(ev) => patch({ alt: (ev.currentTarget as HTMLInputElement).value }, 'Edit alt')} />
 					</label>
 				{:else}
 					<p class="hint">No extra content fields for this type.</p>
@@ -283,19 +283,19 @@
 				<div class="grid-2">
 					<label class="field">
 						<span class="label">Fill</span>
-						<input type="text" placeholder="oklch / #hex" value={e.style?.fill ?? ''} oninput={(ev) => patch({ style: { ...e.style, fill: (ev.currentTarget as HTMLInputElement).value || undefined } }, 'Edit style')} />
+						<input name="rightpanel-f28" autocomplete="off" type="text" placeholder="oklch / #hex" value={e.style?.fill ?? ''} oninput={(ev) => patch({ style: { ...e.style, fill: (ev.currentTarget as HTMLInputElement).value || undefined } }, 'Edit style')} />
 					</label>
 					<label class="field">
 						<span class="label">Stroke</span>
-						<input type="text" placeholder="oklch / #hex" value={e.style?.stroke ?? ''} oninput={(ev) => patch({ style: { ...e.style, stroke: (ev.currentTarget as HTMLInputElement).value || undefined } }, 'Edit style')} />
+						<input name="rightpanel-f29" autocomplete="off" type="text" placeholder="oklch / #hex" value={e.style?.stroke ?? ''} oninput={(ev) => patch({ style: { ...e.style, stroke: (ev.currentTarget as HTMLInputElement).value || undefined } }, 'Edit style')} />
 					</label>
 					<label class="field">
 						<span class="label">Radius</span>
-						<input type="number" min="0" value={e.style?.radius ?? 0} oninput={(ev) => patch({ style: { ...e.style, radius: +(ev.currentTarget as HTMLInputElement).value } }, 'Edit style')} />
+						<input name="rightpanel-f30" autocomplete="off" type="number" min="0" value={e.style?.radius ?? 0} oninput={(ev) => patch({ style: { ...e.style, radius: +(ev.currentTarget as HTMLInputElement).value } }, 'Edit style')} />
 					</label>
 					<label class="field">
 						<span class="label">Opacity</span>
-						<input type="number" min="0" max="1" step="0.05" value={e.style?.opacity ?? 1} oninput={(ev) => patch({ style: { ...e.style, opacity: +(ev.currentTarget as HTMLInputElement).value } }, 'Edit style')} />
+						<input name="rightpanel-f31" autocomplete="off" type="number" min="0" max="1" step="0.05" value={e.style?.opacity ?? 1} oninput={(ev) => patch({ style: { ...e.style, opacity: +(ev.currentTarget as HTMLInputElement).value } }, 'Edit style')} />
 					</label>
 				</div>
 			</section>

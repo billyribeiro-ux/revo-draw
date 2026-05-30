@@ -73,7 +73,7 @@
 		<header>
 			<div class="search">
 				<PhIcon name="search" size={15} />
-				<input
+				<input name="iconpicker-f1" autocomplete="off"
 					bind:this={searchEl}
 					bind:value={query}
 					type="search"

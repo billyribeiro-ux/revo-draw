@@ -32,8 +32,9 @@ export class SceneGraph {
 	/** The active document. Reassigned wholesale on open/new/undo (raw replacement). */
 	doc = $state<LayoutDocument>(createBlankDocument());
 
-	/** Selected element ids. Editor state, not part of the document. */
-	selection = $state<Set<ElementId>>(new SvelteSet());
+	/** Selected element ids. Editor state, not part of the document. A reactive SvelteSet so that
+	 *  membership reads (`.has`/`.size`/iteration) inside `$derived`/`$effect` track correctly. */
+	selection = $state<SvelteSet<ElementId>>(new SvelteSet());
 
 	/** Marks the document dirty since last save (drives the title-bar indicator + autosave). */
 	dirty = $state(false);

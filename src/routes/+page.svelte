@@ -22,6 +22,7 @@
 	import LeftPanel from '$lib/ui/LeftPanel.svelte';
 	import RightPanel from '$lib/ui/RightPanel.svelte';
 	import Canvas from '$lib/ui/Canvas.svelte';
+	import StylePanel from '$lib/ui/StylePanel.svelte';
 	import StatusBar from '$lib/ui/StatusBar.svelte';
 	import FileMenu from '$lib/ui/FileMenu.svelte';
 	import IconPicker from '$lib/ui/IconPicker.svelte';
@@ -358,6 +359,7 @@
 		<LeftPanel />
 		<main class="canvas-area">
 			<Canvas />
+			<StylePanel />
 		</main>
 		<RightPanel onPickIcon={openIconReplace} />
 	</div>

@@ -214,6 +214,33 @@ function roundRect(
 	ctx.roundRect(x, y, w, h, rr);
 }
 
+/** Resolve the user-chosen stroke weight bucket (thin/bold/extra → 1/2/4 px), else a base. */
+function userStrokeWidth(el: Element, zoom: number, fallbackBase = 1): number {
+	const bucket = el.style?.strokeWidth;
+	const px = bucket === 'thin' ? 1 : bucket === 'extra' ? 4 : bucket === 'bold' ? 2 : fallbackBase;
+	return strokeWidthFor(zoom, px);
+}
+
+/** Apply the element's stroke-style dash pattern to the context (scaled to stay constant on screen). */
+function applyDash(ctx: CanvasRenderingContext2D, el: Element, zoom: number): void {
+	const widthPx = el.style?.strokeWidth === 'thin' ? 1 : el.style?.strokeWidth === 'extra' ? 4 : 2;
+	switch (el.style?.strokeStyle) {
+		case 'dashed':
+			ctx.setLineDash([(8 / zoom), (8 + widthPx) / zoom]);
+			break;
+		case 'dotted':
+			ctx.setLineDash([1.5 / zoom, (6 + widthPx) / zoom]);
+			break;
+		default:
+			ctx.setLineDash([]);
+	}
+}
+
+/** Is a fill color meaningfully present (not undefined/transparent)? */
+function hasFill(color: string | undefined): color is string {
+	return !!color && color !== 'transparent' && !/\/\s*0\s*\)$/.test(color);
+}
+
 function fillStroke(
 	ctx: CanvasRenderingContext2D,
 	el: Element,
@@ -222,16 +249,21 @@ function fillStroke(
 ): void {
 	const radius = el.style?.radius ?? defaults.radius ?? 0;
 	roundRect(ctx, el.x, el.y, el.width, el.height, radius);
+
 	const fill = el.style?.fill ?? defaults.fill;
-	if (fill) {
+	if (hasFill(fill)) {
 		ctx.fillStyle = fill;
 		ctx.fill();
 	}
+
 	const stroke = el.style?.stroke ?? defaults.stroke;
-	if (stroke) {
+	if (hasFill(stroke)) {
+		ctx.save();
 		ctx.strokeStyle = stroke;
-		ctx.lineWidth = strokeWidthFor(zoom, defaults.strokeBase ?? 1);
+		ctx.lineWidth = userStrokeWidth(el, zoom, defaults.strokeBase ?? 1);
+		applyDash(ctx, el, zoom);
 		ctx.stroke();
+		ctx.restore();
 	}
 }
 
@@ -260,18 +292,22 @@ function drawFrame(ctx: CanvasRenderingContext2D, el: Element, zoom: number): vo
 }
 
 function drawContainer(ctx: CanvasRenderingContext2D, el: Element, zoom: number): void {
-	// Dashed outline — a layout region, no fill.
 	const radius = el.style?.radius ?? 6;
 	roundRect(ctx, el.x, el.y, el.width, el.height, radius);
-	if (el.style?.fill) {
-		ctx.fillStyle = el.style.fill;
+	const fill = el.style?.fill;
+	if (hasFill(fill)) {
+		ctx.fillStyle = fill;
 		ctx.fill();
 	}
-	ctx.strokeStyle = el.style?.stroke ?? 'oklch(0.8 0.01 264)';
-	ctx.lineWidth = strokeWidthFor(zoom, 1);
-	ctx.setLineDash([6 / zoom, 4 / zoom]);
+	ctx.save();
+	ctx.strokeStyle = hasFill(el.style?.stroke) ? el.style.stroke : 'oklch(0.8 0.01 264)';
+	ctx.lineWidth = userStrokeWidth(el, zoom, 1);
+	// A container is a layout region: default to a dashed outline, but honor an explicit choice.
+	if (el.style?.strokeStyle && el.style.strokeStyle !== 'solid') applyDash(ctx, el, zoom);
+	else if (el.style?.strokeStyle === 'solid') ctx.setLineDash([]);
+	else ctx.setLineDash([6 / zoom, 4 / zoom]);
 	ctx.stroke();
-	ctx.setLineDash([]);
+	ctx.restore();
 	if (el.label) labelText(ctx, el, el.label, zoom);
 }
 
