@@ -169,7 +169,7 @@
 		flex-direction: column;
 		gap: var(--space-2);
 		padding: var(--space-3);
-		inline-size: 216px;
+		inline-size: 240px;
 		background: var(--surface);
 		border: 1px solid var(--line-strong);
 		border-radius: var(--radius-lg);
@@ -200,6 +200,8 @@
 		display: flex;
 		align-items: center;
 		gap: 5px;
+		min-inline-size: 0;
+		flex: 1;
 	}
 	.swatch {
 		inline-size: 20px;
@@ -243,11 +245,15 @@
 	.grid-pop {
 		position: absolute;
 		inset-block-start: calc(100% + 6px);
-		inset-inline-start: 0;
+		/* Anchor to the trigger's RIGHT edge so the grid grows leftward and never overflows the
+		   panel's right border (the trigger sits at the far-right of the row). */
+		inset-inline-end: 0;
 		display: flex;
 		flex-direction: column;
 		gap: 4px;
 		padding: 8px;
+		inline-size: max-content;
+		max-inline-size: 200px;
 		background: var(--surface);
 		border: 1px solid var(--line-strong);
 		border-radius: var(--radius-md);
