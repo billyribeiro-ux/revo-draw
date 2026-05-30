@@ -30,6 +30,13 @@
 
 	const { scene, commands, history } = editor;
 
+	// Inspector visibility — Excalidraw's `showSelectedShapeActions` rule: mount the properties panel
+	// only when something is selected (or a drawing tool is active), plus the user's explicit pin.
+	// It is NOT a permanent column; the canvas owns the viewport on a blank load.
+	const showInspector = $derived(
+		editor.inspectorPinned || scene.selectedElements.length > 0 || editor.tool !== 'select'
+	);
+
 	let currentPath = $state<string | null>(null);
 	let iconPickerOpen = $state(false);
 	let libraryOpen = $state(false);
@@ -356,12 +363,20 @@
 	<Toolbar onIconTool={openIconToolPicker} />
 
 	<div class="workspace">
-		<LeftPanel />
 		<main class="canvas-area">
 			<Canvas />
 			<StylePanel />
+			{#if editor.layersOpen}
+				<div class="panel-dock left">
+					<LeftPanel />
+				</div>
+			{/if}
+			{#if showInspector}
+				<div class="panel-dock right">
+					<RightPanel onPickIcon={openIconReplace} />
+				</div>
+			{/if}
 		</main>
-		<RightPanel onPickIcon={openIconReplace} />
 	</div>
 
 	<StatusBar />
@@ -403,6 +418,41 @@
 		flex: 1;
 		position: relative;
 		min-inline-size: 0;
+	}
+
+	/* Floating side panels: they overlay the full-bleed canvas (Excalidraw model) rather than
+	   stealing layout columns. Both are hidden by default and mount on demand. */
+	.panel-dock {
+		position: absolute;
+		inset-block: 0;
+		z-index: 20;
+		display: flex;
+		background: var(--surface);
+		box-shadow: var(--shadow-lg);
+		animation: dock-in var(--dur-2) var(--ease-out);
+	}
+	.panel-dock.left {
+		inset-inline-start: 0;
+		border-inline-end: 1px solid var(--line);
+	}
+	.panel-dock.right {
+		inset-inline-end: 0;
+		border-inline-start: 1px solid var(--line);
+	}
+	@keyframes dock-in {
+		from {
+			opacity: 0;
+			transform: translateX(calc(-1 * var(--space-3)));
+		}
+	}
+	.panel-dock.right {
+		animation-name: dock-in-right;
+	}
+	@keyframes dock-in-right {
+		from {
+			opacity: 0;
+			transform: translateX(var(--space-3));
+		}
 	}
 
 	.toast {

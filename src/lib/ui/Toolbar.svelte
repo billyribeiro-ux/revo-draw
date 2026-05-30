@@ -87,6 +87,30 @@
 				</span>
 			</button>
 		</div>
+
+		<span class="divider" aria-hidden="true"></span>
+		<div class="grp">
+			<button
+				class="tool"
+				class:active={editor.layersOpen}
+				aria-pressed={editor.layersOpen}
+				aria-label="Toggle Layers panel"
+				onclick={() => editor.toggleLayers()}
+			>
+				<PhIcon name="list" size={17} />
+				<span class="tip">Layers</span>
+			</button>
+			<button
+				class="tool"
+				class:active={editor.inspectorPinned}
+				aria-pressed={editor.inspectorPinned}
+				aria-label="Toggle Inspector panel"
+				onclick={() => editor.toggleInspector()}
+			>
+				<PhIcon name="sidebar" size={17} />
+				<span class="tip">Inspector</span>
+			</button>
+		</div>
 	</div>
 </div>
 

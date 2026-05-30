@@ -116,6 +116,23 @@ export class Editor {
 	/** Pending icon to place when the icon tool is used (set by the icon picker). */
 	pendingIcon = $state<{ name: string; svgPath: string; viewBox: string } | null>(null);
 
+	/**
+	 * Side-panel visibility (Layers tree + Inspector). Both default CLOSED so the canvas owns the
+	 * full viewport on load — matching Excalidraw, where the Layers sidebar starts closed
+	 * (`openSidebar: null`) and the Inspector mounts only contextually. The Inspector additionally
+	 * auto-reveals on selection (Excalidraw's `showSelectedShapeActions` rule); these flags are the
+	 * user's *explicit* open/close intent layered on top of that.
+	 */
+	layersOpen = $state(false);
+	inspectorPinned = $state(false);
+
+	toggleLayers(): void {
+		this.layersOpen = !this.layersOpen;
+	}
+	toggleInspector(): void {
+		this.inspectorPinned = !this.inspectorPinned;
+	}
+
 	/** Live overlay state read by the renderer. */
 	marquee = $state<BBox | null>(null);
 	guides = $state<SnapGuide[]>([]);

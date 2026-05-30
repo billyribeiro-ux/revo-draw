@@ -14,6 +14,50 @@
 
 	let strokeOpen = $state(false);
 	let bgOpen = $state(false);
+	let panelEl = $state<HTMLDivElement | null>(null);
+
+	function closePopovers(): void {
+		strokeOpen = false;
+		bgOpen = false;
+	}
+	// Mutually-exclusive popovers (Excalidraw's atomic openPopup: only one at a time).
+	function toggleStroke(): void {
+		const next = !strokeOpen;
+		closePopovers();
+		strokeOpen = next;
+	}
+	function toggleBg(): void {
+		const next = !bgOpen;
+		closePopovers();
+		bgOpen = next;
+	}
+
+	// Close the open palette on outside-click or Escape (matches Excalidraw's pointerDownOutside /
+	// Escape handling on its color Popover). A picked swatch already closes inline.
+	$effect(() => {
+		if (!strokeOpen && !bgOpen) return;
+		const onDown = (e: PointerEvent): void => {
+			if (panelEl && e.target instanceof Node && !panelEl.contains(e.target)) closePopovers();
+		};
+		const onKey = (e: KeyboardEvent): void => {
+			if (e.key === 'Escape') {
+				closePopovers();
+				e.stopPropagation();
+			}
+		};
+		// Capture phase so we see the click before it lands on the canvas.
+		window.addEventListener('pointerdown', onDown, true);
+		window.addEventListener('keydown', onKey, true);
+		return () => {
+			window.removeEventListener('pointerdown', onDown, true);
+			window.removeEventListener('keydown', onKey, true);
+		};
+	});
+
+	// If the selection clears (panel hides), drop any open popover so it can't resurrect on reselect.
+	$effect(() => {
+		if (!show) closePopovers();
+	});
 
 	function setStroke(color: string): void {
 		commands.setStyleOnSelection({ stroke: color }, 'Stroke color');
@@ -57,7 +101,7 @@
 </script>
 
 {#if show}
-	<div class="style-panel" role="group" aria-label="Style">
+	<div class="style-panel" class:shifted={editor.layersOpen} role="group" aria-label="Style" bind:this={panelEl}>
 		<!-- Stroke color -->
 		<div class="row">
 			<span class="row-label">Stroke</span>
@@ -66,7 +110,7 @@
 					<button class="swatch" class:active={curStroke === c} class:bordered={isLight(c)} style:background={c} onclick={() => setStroke(c)} aria-label="Stroke {c}"></button>
 				{/each}
 				<div class="more">
-					<button class="swatch current" class:bordered={isLight(curStroke)} style:background={curStroke} onclick={() => (strokeOpen = !strokeOpen)} aria-label="More stroke colors"></button>
+					<button class="swatch current" class:bordered={isLight(curStroke)} style:background={curStroke} onclick={toggleStroke} aria-label="More stroke colors"></button>
 					{#if strokeOpen}
 						<div class="grid-pop">
 							{#each PALETTE_GRID as row (row.name)}
@@ -90,7 +134,7 @@
 					<button class="swatch" class:active={curBg === c} class:transparent={c === TRANSPARENT} class:bordered={isLight(c)} style:background={c === TRANSPARENT ? 'transparent' : c} onclick={() => setBg(c)} aria-label="Fill {c}"></button>
 				{/each}
 				<div class="more">
-					<button class="swatch current" class:transparent={curBg === TRANSPARENT} class:bordered={isLight(curBg)} style:background={curBg === TRANSPARENT ? 'transparent' : curBg} onclick={() => (bgOpen = !bgOpen)} aria-label="More fill colors"></button>
+					<button class="swatch current" class:transparent={curBg === TRANSPARENT} class:bordered={isLight(curBg)} style:background={curBg === TRANSPARENT ? 'transparent' : curBg} onclick={toggleBg} aria-label="More fill colors"></button>
 					{#if bgOpen}
 						<div class="grid-pop">
 							<div class="grid-row">
@@ -165,6 +209,7 @@
 		inset-block-start: var(--space-3);
 		inset-inline-start: var(--space-3);
 		z-index: 25;
+		transition: inset-inline-start var(--dur-2) var(--ease);
 		display: flex;
 		flex-direction: column;
 		gap: var(--space-2);
@@ -175,6 +220,10 @@
 		border-radius: var(--radius-lg);
 		box-shadow: var(--shadow-lg);
 		animation: pop var(--dur-2) var(--ease-out);
+	}
+	/* When the Layers dock is open on the left, slide the style panel clear of it. */
+	.style-panel.shifted {
+		inset-inline-start: calc(var(--panel-w) + var(--space-3));
 	}
 	@keyframes pop {
 		from {
