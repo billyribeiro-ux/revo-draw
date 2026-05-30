@@ -239,27 +239,31 @@ try {
 	const afterActive = await ev(`window.__e.gestureActive`);
 	check('gesture flag true during draw, false after (style gated)', midActive === true && afterActive === false, `mid=${midActive} after=${afterActive}`);
 
-	// 20. TEXT EDITING: double-click a text element, type, commit → content updates.
-	await reset(); await ev(`window.__e.setTool('text')`); await drag(250, 200, 430, 240);
-	await ev(`window.__e.setTool('select')`);
-	// A real double-click: click once, then a second click carrying clickCount:2 (fires dblclick).
+	// 20. TEXT TOOL: a single click drops a text box AND immediately enters edit mode → type.
+	await reset(); await ev(`window.__e.setTool('text')`); await click(330, 220);
+	const editing = await ev(`window.__e.editingTextId !== null`);
+	await ev(`document.querySelector('.text-overlay')?.focus()`);
+	await send('Input.insertText', { text: 'Hello' });
+	await sleep(30);
+	await ev(`(() => { const id = window.__e.editingTextId; if (id) window.__e.commitTextEdit(id, document.querySelector('.text-overlay')?.value ?? ''); })()`);
+	await sleep(40);
+	const textContent = await ev(`(() => { const t = Object.values(window.__e.scene.doc.elements).find(e=>e.type==='text'); return t ? t.content : null; })()`);
+	check('text tool: click → type immediately edits content', editing && typeof textContent === 'string' && textContent.includes('Hello'), `editing=${editing} content=${JSON.stringify(textContent)}`);
+
+	// 21. DOUBLE-CLICK an existing text element re-enters edit mode.
+	await reset();
+	await ev(`(() => { const e = window.__e; const id = e.commands.createAt('text', { x: 250, y: 200, width: 180, height: 40 }); e.scene.get(id).content = 'existing'; e.scene.selectOne(id); })()`);
 	{
-		const m = M(330, 220);
+		const m = M(330, 215);
 		await send('Input.dispatchMouseEvent', { type: 'mousePressed', x: m.x, y: m.y, button: 'left', buttons: 1, clickCount: 1 });
 		await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: m.x, y: m.y, button: 'left', buttons: 0, clickCount: 1 });
 		await send('Input.dispatchMouseEvent', { type: 'mousePressed', x: m.x, y: m.y, button: 'left', buttons: 1, clickCount: 2 });
 		await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: m.x, y: m.y, button: 'left', buttons: 0, clickCount: 2 });
 		await sleep(80);
 	}
-	const editing = await ev(`window.__e.editingTextId !== null`);
-	// focus the overlay textarea and type via CDP, then commit (Cmd-Enter)
-	await ev(`(() => { const ta = document.querySelector('.text-overlay'); if (ta) ta.focus(); return !!ta; })()`);
-	await send('Input.insertText', { text: 'Hello' });
-	await sleep(30);
-	await ev(`(() => { const id = window.__e.editingTextId; if (id) window.__e.commitTextEdit(id, document.querySelector('.text-overlay')?.value ?? ''); })()`);
-	await sleep(40);
-	const textContent = await ev(`(() => { const t = Object.values(window.__e.scene.doc.elements).find(e=>e.type==='text'); return t ? t.content : null; })()`);
-	check('double-click + type edits text content', editing && typeof textContent === 'string' && textContent.includes('Hello'), `editing=${editing} content=${JSON.stringify(textContent)}`);
+	check('double-click an existing text element enters edit mode', (await ev(`window.__e.editingTextId !== null`)) === true);
+	// commit any open edit to clean up
+	await ev(`(() => { const id = window.__e.editingTextId; if (id) window.__e.commitTextEdit(id, 'existing'); })()`);
 
 	// NO console errors during the whole session.
 	// (collected separately below)

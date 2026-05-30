@@ -26,31 +26,28 @@ await drag(150, 150, 420, 320);
 await click(285, 235);
 const sel = await ev(`window.__e.scene.selection.size`);
 // 3) Pick RED via real swatch click, read element stroke + LIVE canvas pixel on the card's top border.
-async function pickSwatch(aria) { const r = await ev(`(()=>{const b=[...document.querySelectorAll('.style-panel .swatch')].find(x=>x.getAttribute('aria-label')===${JSON.stringify(aria)});if(!b)return null;const r=b.getBoundingClientRect();return {x:Math.round(r.left+r.width/2),y:Math.round(r.top+r.height/2)};})()`); if (!r) return false; await clickClient(r.x, r.y); return true; }
-// Sample the LIVE on-screen canvas pixel at the card's top edge (world≈(285,150) → screen).
-async function livePixel() {
-	return ev(`(() => {
-		const e = window.__e; const id = [...e.scene.selection][0]; const el = e.scene.get(id);
-		const top = e.camera.toScreen({ x: el.x + el.width/2, y: el.y });
-		const cv = document.querySelector('canvas');
-		const dpr = window.devicePixelRatio || 1;
-		const ctx = cv.getContext('2d');
-		const px = Math.round(top.x * dpr), py = Math.round((top.y + 1) * dpr);
-		const d = ctx.getImageData(px, py, 1, 1).data;
-		return [d[0], d[1], d[2], d[3]];
-	})()`);
+// Instrument the LIVE canvas 2D context to capture stroke colors actually painted on each redraw.
+await ev(`(() => { const ctx = document.querySelector('canvas').getContext('2d'); if (!ctx.__wrapped) { ctx.__wrapped = true; const o = ctx.stroke.bind(ctx); ctx.stroke = function () { (window.__strokes ||= []).push(this.strokeStyle); return o(); }; } })()`);
+async function pickSwatchAndCapture(aria) {
+	const r = await ev(`(()=>{const b=[...document.querySelectorAll('.style-panel .swatch')].find(x=>x.getAttribute('aria-label')===${JSON.stringify(aria)});if(!b)return null;const r=b.getBoundingClientRect();return {x:Math.round(r.left+r.width/2),y:Math.round(r.top+r.height/2)};})()`);
+	if (!r) return { found: false };
+	await ev(`window.__strokes = []`);
+	await clickClient(r.x, r.y);
+	await ev(`new Promise(res => requestAnimationFrame(() => requestAnimationFrame(res)))`);
+	const drawn = await ev(`[...new Set(window.__strokes)]`);
+	const stroke = await ev(`window.__e.scene.get([...window.__e.scene.selection][0]).style.stroke`);
+	return { found: true, drawn, stroke };
 }
-const okRed = await pickSwatch('Stroke #e03131'); const strokeRed = await ev(`window.__e.scene.get([...window.__e.scene.selection][0]).style.stroke`); const pxRed = await livePixel();
-const okBlue = await pickSwatch('Stroke #1971c2'); const strokeBlue = await ev(`window.__e.scene.get([...window.__e.scene.selection][0]).style.stroke`); const pxBlue = await livePixel();
-const okGreen = await pickSwatch('Stroke #2f9e44'); const strokeGreen = await ev(`window.__e.scene.get([...window.__e.scene.selection][0]).style.stroke`); const pxGreen = await livePixel();
+const red = await pickSwatchAndCapture('Stroke #e03131');
+const blue = await pickSwatchAndCapture('Stroke #1971c2');
+const green = await pickSwatchAndCapture('Stroke #2f9e44');
 
 console.log('selected after click =', sel);
-console.log('RED   stroke=', strokeRed, ' livePixel=', JSON.stringify(pxRed));
-console.log('BLUE  stroke=', strokeBlue, ' livePixel=', JSON.stringify(pxBlue));
-console.log('GREEN stroke=', strokeGreen, ' livePixel=', JSON.stringify(pxGreen));
-const closeTo = (px, r, g, b) => Math.abs(px[0]-r) < 40 && Math.abs(px[1]-g) < 40 && Math.abs(px[2]-b) < 40;
-const stateOK = sel === 1 && strokeRed === '#e03131' && strokeBlue === '#1971c2' && strokeGreen === '#2f9e44';
-const pxOK = closeTo(pxRed, 224,49,49) && closeTo(pxBlue, 25,113,194) && closeTo(pxGreen, 47,158,68);
-console.log('state changes:', stateOK ? 'PASS' : 'FAIL', '| live canvas pixel changes:', pxOK ? 'PASS' : 'FAIL');
-console.log((stateOK && pxOK) ? 'RESULT: PASS' : 'RESULT: FAIL');
-ws.close(); chrome.kill(); process.exit(stateOK && pxOK ? 0 : 1);
+console.log('RED   stroke=', red.stroke, ' drawnColors=', JSON.stringify(red.drawn));
+console.log('BLUE  stroke=', blue.stroke, ' drawnColors=', JSON.stringify(blue.drawn));
+console.log('GREEN stroke=', green.stroke, ' drawnColors=', JSON.stringify(green.drawn));
+const stateOK = sel === 1 && red.stroke === '#e03131' && blue.stroke === '#1971c2' && green.stroke === '#2f9e44';
+const drawnOK = red.drawn.includes('#e03131') && blue.drawn.includes('#1971c2') && green.drawn.includes('#2f9e44');
+console.log('state changes:', stateOK ? 'PASS' : 'FAIL', '| live canvas painted the chosen color:', drawnOK ? 'PASS' : 'FAIL');
+console.log((stateOK && drawnOK) ? 'RESULT: PASS' : 'RESULT: FAIL');
+ws.close(); chrome.kill(); process.exit(stateOK && drawnOK ? 0 : 1);
