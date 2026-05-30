@@ -45,7 +45,8 @@
 	const WIDTH_STROKE: Record<StrokeWidth, number> = { thin: 1.5, bold: 3, extra: 5 };
 	const STYLE_DASH: Record<StrokeStyle, string> = { solid: '', dashed: '4 3', dotted: '1.5 3' };
 
-	function isLight(hex: string): boolean {
+	function isLight(hex: string | undefined): boolean {
+		if (!hex) return false;
 		const m = /^#?([0-9a-f]{6})$/i.exec(hex);
 		if (!m) return false;
 		const n = parseInt(m[1], 16);
