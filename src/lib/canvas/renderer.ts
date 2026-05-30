@@ -742,12 +742,21 @@ function drawSelection(input: RenderInput): void {
 	const { ctx, zoom, selection, ordered, soleSelected } = input;
 	if (selection.size === 0) return;
 
-	// Per-element oriented outlines (thin accent) for every selected element.
+	// Per-element oriented outlines (thin accent) for every selected element. The outline is OUTSET
+	// by a few screen px so it sits OUTSIDE the element's own border — otherwise it would paint over
+	// the element's stroke and hide stroke-color changes while selected.
 	ctx.strokeStyle = ACCENT;
 	ctx.lineWidth = strokeWidthFor(zoom, 1.5);
+	const pad = 3 / zoom; // outset in world units, constant on screen
 	for (const el of ordered) {
 		if (!selection.has(el.id)) continue;
-		const corners = orientedCorners(el, el.rotation);
+		const grown = {
+			x: el.x - pad,
+			y: el.y - pad,
+			width: el.width + pad * 2,
+			height: el.height + pad * 2
+		};
+		const corners = orientedCorners(grown, el.rotation);
 		ctx.beginPath();
 		corners.forEach((p, i) => (i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y)));
 		ctx.closePath();
@@ -759,14 +768,14 @@ function drawSelection(input: RenderInput): void {
 	const handles = input.handles;
 	if (handles.length === 0) return;
 
-	if (soleSelected && soleSelected.rotation !== 0) {
-		// Rotated single element — the per-element outline above already drew the frame.
-	} else {
+	// For a single element the outset per-element outline above already IS the frame. Only draw the
+	// union-bounds rectangle for a multi-selection, and outset it so it never paints over borders.
+	if (!soleSelected) {
 		const b = input.selectionBounds;
 		if (b) {
 			ctx.strokeStyle = ACCENT;
 			ctx.lineWidth = strokeWidthFor(zoom, 1);
-			ctx.strokeRect(b.x, b.y, b.width, b.height);
+			ctx.strokeRect(b.x - pad, b.y - pad, b.width + pad * 2, b.height + pad * 2);
 		}
 	}
 
