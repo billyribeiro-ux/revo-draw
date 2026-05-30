@@ -38,6 +38,8 @@
 	);
 
 	let currentPath = $state<string | null>(null);
+	// In-memory style clipboard for copy/paste styles (⌘⌥C / ⌘⌥V), Excalidraw copyStyles/pasteStyles.
+	let styleClipboard: import('$lib/elements/types.js').ElementStyle | null = null;
 	let iconPickerOpen = $state(false);
 	let libraryOpen = $state(false);
 	let restorePromptOpen = $state(false);
@@ -231,6 +233,16 @@
 		b: 'button',
 		i: 'image'
 	};
+	// Numeric tool row (Excalidraw 1–9). Mapped to our semantic analogs; gaps (5–7 = arrow/line/
+	// freedraw) are intentionally unbound because those are out of scope.
+	const NUMERIC_TOOL_KEYS: Record<string, Tool> = {
+		'1': 'select',
+		'2': 'card',
+		'3': 'container',
+		'4': 'frame',
+		'8': 'text',
+		'9': 'image'
+	};
 
 	async function onKeydown(e: KeyboardEvent): Promise<void> {
 		if (isTypingTarget(e.target) || editor.editingTextId) return;
@@ -262,6 +274,26 @@
 			scene.selectAll();
 			return;
 		}
+		// Copy/paste STYLES (⌘⌥C / ⌘⌥V) — must be checked before plain copy/paste.
+		if (mod && e.altKey && e.key.toLowerCase() === 'c') {
+			e.preventDefault();
+			styleClipboard = commands.copyStyles();
+			return;
+		}
+		if (mod && e.altKey && e.key.toLowerCase() === 'v') {
+			e.preventDefault();
+			if (styleClipboard) commands.pasteStyles(styleClipboard);
+			return;
+		}
+		// Cut (⌘X) = copy + delete.
+		if (mod && e.key.toLowerCase() === 'x') {
+			e.preventDefault();
+			const payload = commands.copySelection();
+			editor.clipboard = payload;
+			if (payload) void writeClipboard(payload);
+			commands.deleteSelection();
+			return;
+		}
 		if (mod && e.key.toLowerCase() === 'c') {
 			const payload = commands.copySelection();
 			editor.clipboard = payload;
@@ -277,6 +309,12 @@
 				const payload = fromOs ?? editor.clipboard;
 				if (payload) commands.paste(payload);
 			})();
+			return;
+		}
+		// Lock/unlock selection (⌘⇧L), Excalidraw toggleElementLock.
+		if (mod && e.shiftKey && e.key.toLowerCase() === 'l') {
+			e.preventDefault();
+			commands.toggleLockSelection();
 			return;
 		}
 		if (mod && e.key === ']') {
@@ -323,13 +361,35 @@
 			commands.nudge(dx, dy);
 			return;
 		}
+		// Flip (⇧H / ⇧V), Excalidraw flipHorizontal / flipVertical.
+		if (!mod && e.shiftKey && e.key.toLowerCase() === 'h') {
+			e.preventDefault();
+			commands.flip('x');
+			return;
+		}
+		if (!mod && e.shiftKey && e.key.toLowerCase() === 'v') {
+			e.preventDefault();
+			commands.flip('y');
+			return;
+		}
+		// Zoom-to-fit (⇧1) and zoom-to-fit-selection (⇧2), Excalidraw bindings.
+		if (!mod && e.shiftKey && (e.key === '1' || e.key === '!')) {
+			e.preventDefault();
+			editor.zoomToFit();
+			return;
+		}
+		if (!mod && e.shiftKey && (e.key === '2' || e.key === '@')) {
+			e.preventDefault();
+			editor.zoomToFitSelection();
+			return;
+		}
 		// Tool shortcuts (no modifier).
-		if (!mod && !e.altKey) {
+		if (!mod && !e.altKey && !e.shiftKey) {
 			if (e.key.toLowerCase() === 'q') {
 				editor.toggleToolLock(); // Excalidraw uses Q to toggle the tool lock
 				return;
 			}
-			const tool = TOOL_KEYS[e.key.toLowerCase()];
+			const tool = TOOL_KEYS[e.key.toLowerCase()] ?? NUMERIC_TOOL_KEYS[e.key];
 			if (tool) {
 				editor.setTool(tool);
 				return;

@@ -44,6 +44,16 @@
 	import Search from '~icons/ph/magnifying-glass';
 	import X from '~icons/ph/x';
 	import Plus from '~icons/ph/plus';
+	import AlignLeft from '~icons/ph/align-left-simple';
+	import AlignRight from '~icons/ph/align-right-simple';
+	import AlignTop from '~icons/ph/align-top-simple';
+	import AlignBottom from '~icons/ph/align-bottom-simple';
+	import AlignCenterH from '~icons/ph/align-center-horizontal-simple';
+	import AlignCenterV from '~icons/ph/align-center-vertical-simple';
+	import FlipH from '~icons/ph/flip-horizontal';
+	import FlipV from '~icons/ph/flip-vertical';
+	import Rows from '~icons/ph/rows';
+	import Columns from '~icons/ph/columns';
 
 	const MAP: Record<string, Component> = {
 		select: Cursor,
@@ -86,7 +96,17 @@
 		'caret-down': CaretDown,
 		search: Search,
 		x: X,
-		plus: Plus
+		plus: Plus,
+		'align-left': AlignLeft,
+		'align-right': AlignRight,
+		'align-top': AlignTop,
+		'align-bottom': AlignBottom,
+		'align-center-h': AlignCenterH,
+		'align-center-v': AlignCenterV,
+		'flip-h': FlipH,
+		'flip-v': FlipV,
+		'distribute-h': Columns,
+		'distribute-v': Rows
 	};
 
 	let { name, size = 18 }: { name: string; size?: number } = $props();

@@ -800,6 +800,11 @@ export class Editor {
 	zoomToFit(): void {
 		this.camera.fit(this.scene.contentBounds, 80);
 	}
+	/** Fit the current selection into the viewport (Excalidraw zoomToFitSelection, ⇧2). */
+	zoomToFitSelection(): void {
+		const b = this.scene.selectionBounds;
+		this.camera.fit(b ?? this.scene.contentBounds, 80);
+	}
 	zoomReset(): void {
 		this.camera.zoomTo(1, { x: this.camera.viewportWidth / 2, y: this.camera.viewportHeight / 2 });
 	}

@@ -300,7 +300,28 @@
 				</div>
 			</section>
 
-			<!-- Z-order actions -->
+			<!-- Alignment (Excalidraw alignElements) — needs ≥2 selected. -->
+			{#if sel.length >= 2}
+				<section class="field-group">
+					<h3>Align</h3>
+					<div class="icon-grid">
+						<button class="icon-btn" onclick={() => commands.align('x', 'start')} title="Align left" aria-label="Align left"><PhIcon name="align-left" size={16} /></button>
+						<button class="icon-btn" onclick={() => commands.align('x', 'center')} title="Align center (horizontal)" aria-label="Align center horizontal"><PhIcon name="align-center-v" size={16} /></button>
+						<button class="icon-btn" onclick={() => commands.align('x', 'end')} title="Align right" aria-label="Align right"><PhIcon name="align-right" size={16} /></button>
+						<button class="icon-btn" onclick={() => commands.align('y', 'start')} title="Align top" aria-label="Align top"><PhIcon name="align-top" size={16} /></button>
+						<button class="icon-btn" onclick={() => commands.align('y', 'center')} title="Align middle (vertical)" aria-label="Align middle vertical"><PhIcon name="align-center-h" size={16} /></button>
+						<button class="icon-btn" onclick={() => commands.align('y', 'end')} title="Align bottom" aria-label="Align bottom"><PhIcon name="align-bottom" size={16} /></button>
+					</div>
+					{#if sel.length >= 3}
+						<div class="btn-row">
+							<button class="ghost-btn" onclick={() => commands.distribute('x')} title="Distribute horizontally"><PhIcon name="distribute-h" size={14} /> Distribute H</button>
+							<button class="ghost-btn" onclick={() => commands.distribute('y')} title="Distribute vertically"><PhIcon name="distribute-v" size={14} /> Distribute V</button>
+						</div>
+					{/if}
+				</section>
+			{/if}
+
+			<!-- Z-order + transform actions -->
 			<section class="field-group">
 				<h3>Arrange</h3>
 				<div class="btn-row">
@@ -308,7 +329,16 @@
 					<button class="ghost-btn" onclick={() => commands.sendToBack()} title="Send to back"><PhIcon name="back" size={14} /> Back</button>
 				</div>
 				<div class="btn-row">
+					<button class="ghost-btn" onclick={() => commands.flip('x')} title="Flip horizontal (⇧H)"><PhIcon name="flip-h" size={14} /> Flip H</button>
+					<button class="ghost-btn" onclick={() => commands.flip('y')} title="Flip vertical (⇧V)"><PhIcon name="flip-v" size={14} /> Flip V</button>
+				</div>
+				<div class="btn-row">
+					<button class="ghost-btn" onclick={() => commands.toggleLockSelection()} title="Lock / unlock (⌘⇧L)">
+						<PhIcon name={e.locked ? 'lock' : 'lock-open'} size={14} /> {e.locked ? 'Unlock' : 'Lock'}
+					</button>
 					<button class="ghost-btn" onclick={() => commands.duplicateSelection()} title="Duplicate (⌘D)"><PhIcon name="copy" size={14} /> Duplicate</button>
+				</div>
+				<div class="btn-row">
 					<button class="ghost-btn danger" onclick={() => commands.deleteSelection()} title="Delete (⌫)"><PhIcon name="trash" size={14} /> Delete</button>
 				</div>
 			</section>
@@ -490,6 +520,34 @@
 	.btn-row {
 		display: flex;
 		gap: var(--space-2);
+	}
+
+	.icon-grid {
+		display: grid;
+		grid-template-columns: repeat(6, 1fr);
+		gap: var(--space-1);
+	}
+	.icon-btn {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		block-size: 30px;
+		color: var(--ink-soft);
+		background: var(--surface-2);
+		border: 1px solid var(--line-strong);
+		border-radius: var(--radius-sm);
+		transition:
+			background var(--dur-1) var(--ease),
+			color var(--dur-1) var(--ease);
+
+		&:hover {
+			background: var(--surface);
+			color: var(--ink);
+			box-shadow: var(--shadow-xs);
+		}
+		&:active {
+			transform: translateY(0.5px);
+		}
 	}
 
 	.ghost-btn {
