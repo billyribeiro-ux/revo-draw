@@ -4,6 +4,7 @@
 	// Statically-imported Phosphor icons used throughout the chrome. unplugin-icons inlines each
 	// as a Svelte component at build time (offline). Keyed by a stable slug we reference in code.
 	import Cursor from '~icons/ph/cursor';
+	import HandIcon from '~icons/ph/hand';
 	import Frame from '~icons/ph/frame-corners';
 	import Square from '~icons/ph/square';
 	import CardsIcon from '~icons/ph/cards';
@@ -46,6 +47,7 @@
 
 	const MAP: Record<string, Component> = {
 		select: Cursor,
+		hand: HandIcon,
 		frame: Frame,
 		container: Square,
 		card: CardsIcon,

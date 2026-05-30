@@ -2,6 +2,18 @@
  * 2D geometry primitives: vectors, affine matrices, axis-aligned bounding boxes, and the
  * rotation math used by the camera, hit-testing, transform handles, and snapping.
  *
+ * Coordinate contract:
+ * - Element `x`, `y`, `width`, and `height` are stored in WORLD units. The world origin is the
+ *   top-left of the infinite canvas and positive `y` points down, matching Canvas 2D.
+ * - Child element coordinates are absolute WORLD coordinates, never relative to their parent.
+ *   Reparenting preserves world position.
+ * - Camera mapping is exactly `screen = world * zoom + pan`; inverse is
+ *   `world = (screen - pan) / zoom`. `Camera` is the only source of world/screen conversion.
+ * - Device pixel ratio is applied only to the canvas backing-store/context transform. It is not
+ *   stored in world coordinates and is not part of hit-testing.
+ * - Element rotation is applied about the element center. Rendering, hit-testing, bounds, and
+ *   transform handles all use that same pivot.
+ *
  * Hand-rolled per the hard rules (no graphics library). A 2D affine transform is stored as the
  * six numbers of the matrix
  *

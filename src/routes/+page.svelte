@@ -215,10 +215,13 @@
 
 	const TOOL_KEYS: Record<string, Tool> = {
 		v: 'select',
+		h: 'hand',
 		f: 'frame',
 		c: 'container',
+		r: 'card', // R is muscle-memory for "rectangle" in Excalidraw; maps to our card
 		t: 'text',
-		b: 'button'
+		b: 'button',
+		i: 'image'
 	};
 
 	async function onKeydown(e: KeyboardEvent): Promise<void> {
@@ -314,6 +317,10 @@
 		}
 		// Tool shortcuts (no modifier).
 		if (!mod && !e.altKey) {
+			if (e.key.toLowerCase() === 'q') {
+				editor.toggleToolLock(); // Excalidraw uses Q to toggle the tool lock
+				return;
+			}
 			const tool = TOOL_KEYS[e.key.toLowerCase()];
 			if (tool) {
 				editor.setTool(tool);
@@ -322,10 +329,8 @@
 		}
 	}
 
-	// Fit on first mount.
-	$effect(() => {
-		editor.zoomToFit();
-	});
+	// NOTE: the initial zoom-to-fit is performed by Canvas.svelte once it has a real (non 1×1)
+	// viewport. Fitting here on mount raced the layout and produced a broken camera.
 </script>
 
 <svelte:window onkeydown={onKeydown} />

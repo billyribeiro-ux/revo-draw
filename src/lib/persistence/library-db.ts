@@ -10,6 +10,7 @@
  * sqlx (the plugin's backend) uses `$1, $2, …` positional placeholders for SQLite.
  */
 import Database from '@tauri-apps/plugin-sql';
+import { isTauri } from '@tauri-apps/api/core';
 import type { DocumentRow } from './schema.js';
 
 const DB_URL = 'sqlite:layoutforge-index.db';
@@ -17,6 +18,7 @@ const DB_URL = 'sqlite:layoutforge-index.db';
 let dbPromise: Promise<Database> | null = null;
 
 function db(): Promise<Database> {
+	if (!isTauri()) throw new Error('Library database requires the LayoutForge desktop app.');
 	if (!dbPromise) dbPromise = Database.load(DB_URL);
 	return dbPromise;
 }
@@ -66,6 +68,7 @@ export interface UpsertEntry {
 
 /** Insert or update a library row (keyed by id). */
 export async function upsertEntry(entry: UpsertEntry): Promise<void> {
+	if (!isTauri()) return;
 	const conn = await db();
 	await conn.execute(
 		`INSERT INTO documents (id, name, file_path, thumbnail, tags, created_at, updated_at, last_opened_at)
@@ -92,12 +95,14 @@ export async function upsertEntry(entry: UpsertEntry): Promise<void> {
 
 /** Stamp a document as opened now. */
 export async function markOpened(id: string, isoNow: string): Promise<void> {
+	if (!isTauri()) return;
 	const conn = await db();
 	await conn.execute('UPDATE documents SET last_opened_at = $1 WHERE id = $2', [isoNow, id]);
 }
 
 /** All library entries, most-recently-updated first. */
 export async function listEntries(limit = 200): Promise<LibraryEntry[]> {
+	if (!isTauri()) return [];
 	const conn = await db();
 	const rows = await conn.select<DocumentRow[]>(
 		'SELECT * FROM documents ORDER BY updated_at DESC LIMIT $1',
@@ -108,6 +113,7 @@ export async function listEntries(limit = 200): Promise<LibraryEntry[]> {
 
 /** Recently-opened entries, most-recent first (nulls last). */
 export async function listRecent(limit = 12): Promise<LibraryEntry[]> {
+	if (!isTauri()) return [];
 	const conn = await db();
 	const rows = await conn.select<DocumentRow[]>(
 		`SELECT * FROM documents
@@ -119,6 +125,7 @@ export async function listRecent(limit = 12): Promise<LibraryEntry[]> {
 }
 
 export async function getEntry(id: string): Promise<LibraryEntry | null> {
+	if (!isTauri()) return null;
 	const conn = await db();
 	const rows = await conn.select<DocumentRow[]>('SELECT * FROM documents WHERE id = $1', [id]);
 	const first = rows[0];
@@ -126,12 +133,14 @@ export async function getEntry(id: string): Promise<LibraryEntry | null> {
 }
 
 export async function removeEntry(id: string): Promise<void> {
+	if (!isTauri()) return;
 	const conn = await db();
 	await conn.execute('DELETE FROM documents WHERE id = $1', [id]);
 }
 
 /** Update just the tags for an entry. */
 export async function setTags(id: string, tags: string[], isoNow: string): Promise<void> {
+	if (!isTauri()) return;
 	const conn = await db();
 	await conn.execute('UPDATE documents SET tags = $1, updated_at = $2 WHERE id = $3', [
 		JSON.stringify(tags),

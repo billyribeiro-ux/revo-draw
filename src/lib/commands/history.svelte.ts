@@ -94,10 +94,19 @@ export class History {
 		}
 	}
 
-	/** Begin a deferred transaction (for interactive gestures). The baseline is already current. */
+	/**
+	 * Begin a deferred transaction (for interactive gestures). Captures the CURRENT scene as the
+	 * pre-gesture baseline at the outermost begin, so `commit` records the true before-state and
+	 * `cancel` restores exactly what existed when the gesture started. Re-snapshotting here (rather
+	 * than trusting a previously-stored baseline) is what makes the system robust to any scene
+	 * change that happened outside a transaction — the root cause of the "click deletes my element"
+	 * bug was a baseline that predated such a change.
+	 */
 	begin(label: string): void {
 		if (this.#depth === 0) {
 			this.#pendingLabel = label;
+			this.#baseline = cloneDocument(this.#scene.doc);
+			this.#baselineKey = canonical(this.#scene.doc);
 		}
 		this.#depth++;
 	}

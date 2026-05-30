@@ -52,18 +52,27 @@
 		});
 	});
 
+	let viewportReady = $state(false);
+
 	// Size the backing store to the device pixel ratio for crisp rendering.
 	function resize(): void {
 		const el = host;
 		const cv = canvasEl;
 		if (!el || !cv) return;
 		const rect = el.getBoundingClientRect();
+		if (rect.width < 1 || rect.height < 1) return; // not laid out yet — don't fit a 1×1 viewport
 		dpr = window.devicePixelRatio || 1;
 		camera.setViewport(rect.width, rect.height);
 		cv.width = Math.round(rect.width * dpr);
 		cv.height = Math.round(rect.height * dpr);
 		cv.style.width = `${rect.width}px`;
 		cv.style.height = `${rect.height}px`;
+		// Fit the document ONCE, only after we have a real viewport — otherwise zoom-to-fit would
+		// divide by a 1×1 viewport and produce a wildly off camera (the "everything is off" bug).
+		if (!viewportReady) {
+			viewportReady = true;
+			editor.zoomToFit();
+		}
 	}
 
 	$effect(() => {

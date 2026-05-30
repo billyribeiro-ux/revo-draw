@@ -11,7 +11,10 @@
 	}
 	// Tools grouped by role, separated visually. Keyboard hints shown where bound.
 	const groups: ToolDef[][] = [
-		[{ tool: 'select', label: 'Select', key: 'V' }],
+		[
+			{ tool: 'select', label: 'Select', key: 'V' },
+			{ tool: 'hand', label: 'Pan', key: 'H' }
+		],
 		[
 			{ tool: 'frame', label: 'Frame', key: 'F' },
 			{ tool: 'container', label: 'Container', key: 'C' },
@@ -68,6 +71,22 @@
 				{/each}
 			</div>
 		{/each}
+
+		<span class="divider" aria-hidden="true"></span>
+		<div class="grp">
+			<button
+				class="tool"
+				class:active={editor.toolLocked}
+				aria-pressed={editor.toolLocked}
+				aria-label="Keep tool active after drawing"
+				onclick={() => editor.toggleToolLock()}
+			>
+				<PhIcon name={editor.toolLocked ? 'lock' : 'lock-open'} size={17} />
+				<span class="tip">
+					{editor.toolLocked ? 'Tool locked — stays active' : 'Lock tool active'}
+				</span>
+			</button>
+		</div>
 	</div>
 </div>
 

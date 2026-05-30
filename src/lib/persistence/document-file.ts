@@ -19,6 +19,7 @@ import {
 	writeFile,
 	writeTextFile
 } from '@tauri-apps/plugin-fs';
+import { isTauri } from '@tauri-apps/api/core';
 import { basename } from '@tauri-apps/api/path';
 import { SCHEMA_VERSION, type LayoutDocument } from '../elements/types.js';
 import { migrateDocument } from './migrate.js';
@@ -33,6 +34,7 @@ const PNG_FILTER = { name: 'PNG', extensions: ['png'] };
 const AUTOSAVE_DIR = 'autosave';
 const AUTOSAVE_FILE = 'autosave/current.lfdoc';
 const AUTOSAVE_TMP = 'autosave/current.lfdoc.tmp';
+const TAURI_ONLY_MESSAGE = 'File operations require the LayoutForge desktop app.';
 
 export type ExportFormat = 'lfdoc' | 'json' | 'md' | 'svg' | 'png';
 
@@ -52,10 +54,12 @@ export function isLayoutDocument(value: unknown): value is LayoutDocument {
 	);
 }
 
-function serialize(doc: LayoutDocument): string {
+/** Serialize a document to the on-disk JSON form. Exported so the round-trip test can use it. */
+export function serializeDocument(doc: LayoutDocument): string {
 	// Stable key order via JSON.stringify on a plain snapshot. Pretty-printed for diff-ability.
 	return JSON.stringify(doc, null, 2);
 }
+const serialize = serializeDocument;
 
 export interface SaveResult {
 	path: string;
@@ -68,6 +72,11 @@ export async function saveDocument(
 	currentPath: string | null,
 	thumbnailPng: string | null
 ): Promise<SaveResult | null> {
+	if (!isTauri()) {
+		// Browser: download the .lfdoc. There is no persistent path to remember.
+		browserDownloadText(`${doc.name}.lfdoc`, serialize(doc), 'application/json');
+		return { path: `${doc.name}.lfdoc`, name: doc.name };
+	}
 	let path = currentPath;
 	if (!path) {
 		path = await save({
@@ -88,6 +97,10 @@ export async function saveDocumentAs(
 	doc: LayoutDocument,
 	thumbnailPng: string | null
 ): Promise<SaveResult | null> {
+	if (!isTauri()) {
+		browserDownloadText(`${doc.name}.lfdoc`, serialize(doc), 'application/json');
+		return { path: `${doc.name}.lfdoc`, name: doc.name };
+	}
 	const path = await save({
 		title: 'Save Layout As',
 		defaultPath: `${doc.name}.lfdoc`,
@@ -106,8 +119,18 @@ export interface OpenResult {
 	name: string;
 }
 
-/** Open an existing .lfdoc / .json document via the native picker. */
+/** Open an existing .lfdoc / .json document via the native picker (Tauri) or file input (browser). */
 export async function openDocument(): Promise<OpenResult | null> {
+	if (!isTauri()) {
+		const picked = await browserPickTextFile('.lfdoc,.json,application/json');
+		if (!picked) return null;
+		const parsed: unknown = JSON.parse(picked.text);
+		const migrated = migrateDocument(parsed);
+		if (!migrated || !isLayoutDocument(migrated)) {
+			throw new Error('Not a valid LayoutForge document (schema mismatch).');
+		}
+		return { doc: migrated, path: picked.name, name: picked.name.replace(/\.(lfdoc|json)$/i, '') };
+	}
 	const selected = await open({
 		title: 'Open Layout',
 		multiple: false,
@@ -120,6 +143,7 @@ export async function openDocument(): Promise<OpenResult | null> {
 
 /** Open a document from a known path (used by the Library/Recent view). */
 export async function openDocumentAtPath(path: string): Promise<OpenResult | null> {
+	ensureTauriRuntime();
 	const text = await readTextFile(path);
 	const parsed: unknown = JSON.parse(text);
 	// Run through the forward-only migration seam first, then validate the result.
@@ -144,6 +168,16 @@ export async function exportDocument(
 	format: ExportFormat,
 	payload: { markdown?: string; svg?: string; png?: Uint8Array }
 ): Promise<string | null> {
+	const ext = format;
+	if (!isTauri()) {
+		// Browser: trigger a download in the chosen format.
+		const file = `${doc.name}.${ext}`;
+		if (format === 'lfdoc' || format === 'json') browserDownloadText(file, serialize(doc), 'application/json');
+		else if (format === 'md') browserDownloadText(file, payload.markdown ?? '', 'text/markdown');
+		else if (format === 'svg') browserDownloadText(file, payload.svg ?? '', 'image/svg+xml');
+		else if (format === 'png' && payload.png) browserDownloadBytes(file, payload.png);
+		return file;
+	}
 	const filters = {
 		lfdoc: [LFDOC_FILTER],
 		json: [JSON_FILTER],
@@ -151,7 +185,6 @@ export async function exportDocument(
 		svg: [SVG_FILTER],
 		png: [PNG_FILTER]
 	}[format];
-	const ext = format;
 	const path = await save({
 		title: `Export ${format.toUpperCase()}`,
 		defaultPath: `${doc.name}.${ext}`,
@@ -180,33 +213,72 @@ export async function exportDocument(
 // ---- autosave -------------------------------------------------------------------------------
 
 async function ensureAutosaveDir(): Promise<void> {
+	if (!isTauri()) return;
 	const present = await exists(AUTOSAVE_DIR, { baseDir: BaseDirectory.AppData });
 	if (!present) await mkdir(AUTOSAVE_DIR, { baseDir: BaseDirectory.AppData, recursive: true });
 }
 
 /**
- * Atomically write the document to the app-data autosave slot. We write to a temp file, then
- * rename it over the target — a crash mid-write can never corrupt the existing autosave, because
- * rename is atomic on the same filesystem (the target is either the old file or the fully-written
- * new one, never a half-written file).
+ * The injectable filesystem primitives the atomic-write algorithm needs. Real callers pass the
+ * Tauri fs ops; tests pass an in-memory fake so the crash-safety invariant can be proven without
+ * a Tauri runtime.
+ */
+export interface AtomicFs {
+	writeText(path: string, data: string): Promise<void>;
+	rename(from: string, to: string): Promise<void>;
+	remove(path: string): Promise<void>;
+}
+
+/**
+ * Atomic write: write to `tmp`, then rename `tmp` over `target`. A crash between the write and the
+ * rename can never corrupt `target` — rename is atomic on one filesystem, so `target` is either
+ * the old file or the fully-written new one, never half-written. If the platform rejects rename
+ * onto an existing target, fall back to a backup swap that keeps the old target restorable until
+ * the new target is in place. This function is pure w.r.t. its `fs` argument, which is what makes
+ * the crash-simulation test possible.
+ */
+export async function atomicWrite(
+	fs: AtomicFs,
+	tmp: string,
+	target: string,
+	data: string
+): Promise<void> {
+	await fs.writeText(tmp, data);
+	try {
+		await fs.rename(tmp, target);
+	} catch {
+		const backup = `${target}.bak`;
+		await fs.remove(backup).catch(() => undefined);
+		await fs.rename(target, backup);
+		try {
+			await fs.rename(tmp, target);
+		} catch (error) {
+			await fs.rename(backup, target).catch(() => undefined);
+			throw error;
+		}
+		await fs.remove(backup).catch(() => undefined);
+	}
+}
+
+/** The real Tauri-backed fs ops for app-data, used by writeAutosave. */
+const appDataFs: AtomicFs = {
+	writeText: (path, data) => writeTextFile(path, data, { baseDir: BaseDirectory.AppData }),
+	rename: (from, to) =>
+		rename(from, to, {
+			oldPathBaseDir: BaseDirectory.AppData,
+			newPathBaseDir: BaseDirectory.AppData
+		}),
+	remove: (path) => remove(path, { baseDir: BaseDirectory.AppData })
+};
+
+/**
+ * Atomically write the document to the app-data autosave slot via {@link atomicWrite}, so a crash
+ * mid-write can never corrupt the existing autosave.
  */
 export async function writeAutosave(doc: LayoutDocument): Promise<void> {
+	if (!isTauri()) return;
 	await ensureAutosaveDir();
-	const data = serialize(doc);
-	await writeTextFile(AUTOSAVE_TMP, data, { baseDir: BaseDirectory.AppData });
-	try {
-		await rename(AUTOSAVE_TMP, AUTOSAVE_FILE, {
-			oldPathBaseDir: BaseDirectory.AppData,
-			newPathBaseDir: BaseDirectory.AppData
-		});
-	} catch {
-		// Some platforms reject rename onto an existing target; fall back to remove-then-rename.
-		await remove(AUTOSAVE_FILE, { baseDir: BaseDirectory.AppData }).catch(() => undefined);
-		await rename(AUTOSAVE_TMP, AUTOSAVE_FILE, {
-			oldPathBaseDir: BaseDirectory.AppData,
-			newPathBaseDir: BaseDirectory.AppData
-		});
-	}
+	await atomicWrite(appDataFs, AUTOSAVE_TMP, AUTOSAVE_FILE, serialize(doc));
 }
 
 /**
@@ -215,6 +287,7 @@ export async function writeAutosave(doc: LayoutDocument): Promise<void> {
  * (returns null) rather than crashing the launch path.
  */
 export async function readAutosave(): Promise<LayoutDocument | null> {
+	if (!isTauri()) return null;
 	const present = await exists(AUTOSAVE_FILE, { baseDir: BaseDirectory.AppData });
 	if (!present) return null;
 	try {
@@ -272,6 +345,57 @@ async function safeBasename(path: string, fallback: string): Promise<string> {
 	} catch {
 		return fallback;
 	}
+}
+
+function ensureTauriRuntime(): void {
+	if (!isTauri()) throw new Error(TAURI_ONLY_MESSAGE);
+}
+
+// ---- browser file I/O fallbacks -------------------------------------------------------------
+// The app runs in two hosts: the Tauri desktop shell (native dialogs + fs) and a plain browser.
+// In the browser there is no filesystem, so Save/Export trigger a download and Open uses a file
+// picker. These are used only when `isTauri()` is false, so the desktop path is unchanged.
+
+function browserDownloadText(filename: string, text: string, mime: string): void {
+	browserDownloadBlob(filename, new Blob([text], { type: mime }));
+}
+
+function browserDownloadBytes(filename: string, bytes: Uint8Array): void {
+	browserDownloadBlob(filename, new Blob([bytes as BlobPart], { type: 'image/png' }));
+}
+
+function browserDownloadBlob(filename: string, blob: Blob): void {
+	const url = URL.createObjectURL(blob);
+	const a = document.createElement('a');
+	a.href = url;
+	a.download = filename;
+	document.body.appendChild(a);
+	a.click();
+	a.remove();
+	// Revoke on the next tick so the download has started.
+	setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
+/** Browser open: present a file picker and read the chosen .lfdoc/.json as text. */
+function browserPickTextFile(accept: string): Promise<{ name: string; text: string } | null> {
+	return new Promise((resolve) => {
+		const input = document.createElement('input');
+		input.type = 'file';
+		input.accept = accept;
+		input.onchange = () => {
+			const file = input.files?.[0];
+			if (!file) {
+				resolve(null);
+				return;
+			}
+			const reader = new FileReader();
+			reader.onload = () => resolve({ name: file.name, text: String(reader.result ?? '') });
+			reader.onerror = () => resolve(null);
+			reader.readAsText(file);
+		};
+		// If the user cancels, onchange never fires; that's an acceptable no-op (resolve never).
+		input.click();
+	});
 }
 
 async function indexDocument(

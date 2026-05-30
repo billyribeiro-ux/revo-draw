@@ -35,6 +35,7 @@ import { createElement } from '../elements/defaults.js';
 
 export type Tool =
 	| 'select'
+	| 'hand'
 	| 'frame'
 	| 'container'
 	| 'card'
@@ -88,6 +89,8 @@ export class Editor {
 	readonly commands = new Commands(this.scene, this.history);
 
 	tool = $state<Tool>('select');
+	/** When true, a creation tool stays active after drawing (Excalidraw's 🔒 lock). Default off. */
+	toolLocked = $state(false);
 	/** When set, snapping is bypassed (alt held). */
 	snapBypass = $state(false);
 	/** Whether space is held (pan mode hint for the cursor). */
@@ -162,8 +165,8 @@ export class Editor {
 		this.snapBypass = opts.alt;
 		const world = this.camera.toWorld(screen);
 
-		// Pan: space-drag or middle button.
-		if (opts.space || opts.middle) {
+		// Pan: the Hand tool (H), space-drag, or middle button.
+		if (this.tool === 'hand' || opts.space || opts.middle) {
 			this.#drag = { kind: 'pan', lastScreen: screen };
 			return;
 		}
@@ -380,15 +383,22 @@ export class Editor {
 	}
 
 	/**
-	 * After a create gesture, keep the tool active (sticky) so several elements can be placed in a
-	 * row — the way Figma/Excalidraw behave. Switch to Select via the toolbar, the V key, or Escape.
-	 * The icon tool is the exception: it consumes its pending icon and returns to Select.
+	 * After a create gesture, revert to the Select tool — matching Excalidraw's default, where a
+	 * tool draws one shape then hands back to selection. If the tool lock (🔒) is engaged, the tool
+	 * stays active so several elements can be placed in a row. The icon tool always reverts and
+	 * clears its pending icon.
 	 */
 	finishCreate(): void {
 		if (this.tool === 'icon') {
 			this.tool = 'select';
 			this.pendingIcon = null;
+			return;
 		}
+		if (!this.toolLocked) this.tool = 'select';
+	}
+
+	toggleToolLock(): void {
+		this.toolLocked = !this.toolLocked;
 	}
 
 	// ---- move / snapping --------------------------------------------------------------------
@@ -720,7 +730,7 @@ export class Editor {
 
 	/** The cursor to show for a given world point in select mode. */
 	cursorFor(screen: Vec2): string {
-		if (this.spaceHeld || this.isPanning) return 'grab';
+		if (this.tool === 'hand' || this.spaceHeld || this.isPanning) return 'grab';
 		if (this.tool !== 'select') return 'crosshair';
 		const world = this.camera.toWorld(screen);
 		if (this.scene.selection.size > 0) {
