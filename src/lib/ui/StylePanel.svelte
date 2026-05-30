@@ -5,9 +5,10 @@
 
 	const { scene, commands } = editor;
 
-	// The panel shows whenever there's a selection (multi-select edits all together).
+	// Show when there's a selection AND no gesture is in progress — style controls must not appear
+	// or apply mid-draw (only once the drawing/drag has stopped).
 	const sel = $derived(scene.selectedElements);
-	const show = $derived(sel.length > 0);
+	const show = $derived(sel.length > 0 && !editor.gestureActive);
 	// Representative element for showing the current value (last selected).
 	const primary = $derived(sel.length > 0 ? sel[sel.length - 1] : null);
 

@@ -74,7 +74,11 @@ type DragMode =
 			type: SemanticType;
 			startWorld: Vec2;
 			id: ElementId | null;
-			placedCentered: boolean;
+			/** True once the pointer has dragged past the threshold (element is being sized by drag). */
+			dragged: boolean;
+			/** The type's default size, applied on pointerup if the user only clicked (no drag). */
+			defaultWidth: number;
+			defaultHeight: number;
 	  };
 
 const HANDLE_SCREEN_PX = 9; // size + hit radius of transform handles
@@ -102,6 +106,12 @@ export class Editor {
 	snapBypass = $state(false);
 	/** Whether space is held (pan mode hint for the cursor). */
 	spaceHeld = $state(false);
+	/**
+	 * Reactive flag, true for the duration of any active pointer gesture (create/move/resize/
+	 * rotate/marquee/pan). The style panel reads this to stay hidden while you're drawing — style
+	 * controls should only appear/apply once the gesture has stopped.
+	 */
+	gestureActive = $state(false);
 
 	/** Pending icon to place when the icon tool is used (set by the icon picker). */
 	pendingIcon = $state<{ name: string; svgPath: string; viewBox: string } | null>(null);
@@ -169,6 +179,15 @@ export class Editor {
 
 	/** screen = CSS px relative to canvas top-left. */
 	pointerDown(screen: Vec2, opts: { shift: boolean; alt: boolean; space: boolean; middle: boolean }): void {
+		this.#pointerDownImpl(screen, opts);
+		// A gesture is now active if any drag mode was established. The style panel hides while true.
+		this.gestureActive = this.#drag.kind !== 'none';
+	}
+
+	#pointerDownImpl(
+		screen: Vec2,
+		opts: { shift: boolean; alt: boolean; space: boolean; middle: boolean }
+	): void {
 		this.snapBypass = opts.alt;
 		const world = this.camera.toWorld(screen);
 
@@ -293,6 +312,7 @@ export class Editor {
 	pointerUp(): void {
 		const drag = this.#drag;
 		this.#drag = { kind: 'none' };
+		this.gestureActive = false;
 		this.marquee = null;
 		this.guides = [];
 
@@ -313,13 +333,33 @@ export class Editor {
 						}
 					}
 				}
-				if (drag.moved) this.history.commit();
-				else this.history.cancel();
+				// commit() in both cases: if nothing actually moved, commit detects no document
+				// change and discards the transaction WITHOUT restoring the baseline — which is
+				// crucial, because cancel() would replaceDocument and wipe the click's selection.
+				this.history.commit();
+				break;
+			}
+			case 'create': {
+				const el = drag.id ? this.scene.get(drag.id) : undefined;
+				if (el) {
+					// A click with no drag → place the element at its default size, centered on the
+					// click point (so a single click still drops a usable shape).
+					if (!drag.dragged) {
+						this.scene.updateElement(el.id, {
+							x: drag.startWorld.x - drag.defaultWidth / 2,
+							y: drag.startWorld.y - drag.defaultHeight / 2,
+							width: drag.defaultWidth,
+							height: drag.defaultHeight
+						});
+					}
+					this.history.commit();
+				} else {
+					this.history.cancel();
+				}
 				break;
 			}
 			case 'resize':
 			case 'rotate':
-			case 'create':
 				this.history.commit();
 				break;
 			case 'pan':
@@ -339,6 +379,7 @@ export class Editor {
 			this.pendingIcon = null;
 		}
 		this.#drag = { kind: 'none' };
+		this.gestureActive = false;
 		this.marquee = null;
 		this.guides = [];
 		this.dropTargetId = null;
@@ -349,13 +390,15 @@ export class Editor {
 	#beginCreate(world: Vec2): void {
 		const type = this.tool as SemanticType;
 		this.history.begin(`Add ${type}`);
-		// Place with default size immediately; rubber-band in updateCreate overrides size if dragged.
-		// A new element is positioned with its CENTER at the click so it appears under the cursor.
-		const size = createElement(type, { x: 0, y: 0 });
+		// EXCALIDRAW MODEL: the new element starts at the click point with ZERO size. It grows only
+		// while the pointer is dragged (sized by distance from the origin). If the user just clicks
+		// without dragging, pointerUp gives it the type's default size at the click. This removes the
+		// "pop at full size, then jump to drag size" glitch the old centered-default approach caused.
+		const defaults = createElement(type, { x: 0, y: 0 });
 		const el =
 			type === 'icon' && this.pendingIcon
 				? this.#makeIcon(world)
-				: createElement(type, { x: world.x - size.width / 2, y: world.y - size.height / 2 });
+				: createElement(type, { x: world.x, y: world.y, width: 0, height: 0 });
 		// Adopt the last-used style so consecutive shapes keep the chosen look.
 		if (Object.keys(this.currentStyle).length > 0) {
 			el.style = { ...el.style, ...this.currentStyle };
@@ -370,12 +413,20 @@ export class Editor {
 		}
 		this.scene.addElement(el as Element);
 		this.scene.selectOne(el.id);
-		this.#drag = { kind: 'create', type, startWorld: world, id: el.id, placedCentered: true };
+		this.#drag = {
+			kind: 'create',
+			type,
+			startWorld: world,
+			id: el.id,
+			dragged: false,
+			defaultWidth: defaults.width,
+			defaultHeight: defaults.height
+		};
 	}
 
 	#makeIcon(world: Vec2): Element {
 		const icon = this.pendingIcon!;
-		const el = createElement('icon', { x: world.x, y: world.y, width: 32, height: 32 });
+		const el = createElement('icon', { x: world.x, y: world.y, width: 0, height: 0 });
 		el.iconName = icon.name;
 		el.svgPath = icon.svgPath;
 		el.viewBox = icon.viewBox;
@@ -386,17 +437,18 @@ export class Editor {
 		if (this.#drag.kind !== 'create' || !this.#drag.id) return;
 		const el = this.scene.get(this.#drag.id);
 		if (!el) return;
+		// dragNewElement (Excalidraw): width/height are the absolute distance from the origin;
+		// dragging up/left anchors the corner so the box grows from the click point in any direction.
 		const w = Math.abs(world.x - this.#drag.startWorld.x);
 		const h = Math.abs(world.y - this.#drag.startWorld.y);
-		// Once the drag is meaningfully large, switch from centered placement to a corner-anchored
-		// rubber-band sized by the drag — the element grows from the initial click point.
-		if (w > MIN_SIZE * 2 && h > MIN_SIZE * 2) {
-			this.#drag.placedCentered = false;
+		const distScreen = Math.hypot(w, h) * this.camera.zoom;
+		if (distScreen >= DRAG_THRESHOLD_PX) this.#drag.dragged = true;
+		if (this.#drag.dragged) {
 			this.scene.updateElement(el.id, {
 				x: Math.min(this.#drag.startWorld.x, world.x),
 				y: Math.min(this.#drag.startWorld.y, world.y),
-				width: w,
-				height: h
+				width: Math.max(1, w),
+				height: Math.max(1, h)
 			});
 		}
 	}

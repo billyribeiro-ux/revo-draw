@@ -82,6 +82,29 @@
 		return () => ro.disconnect();
 	});
 
+	// Attach canvas input listeners imperatively rather than via Svelte's delegated `on*`
+	// attributes. The delegated path was not reliably invoking our handlers for synthesized/native
+	// pointer events on the canvas; direct addEventListener guarantees delivery and lets us mark
+	// `wheel` as non-passive so we can preventDefault the page from scrolling/zooming.
+	$effect(() => {
+		const cv = canvasEl;
+		if (!cv) return;
+		cv.addEventListener('pointerdown', onPointerDown);
+		cv.addEventListener('pointermove', onPointerMove);
+		cv.addEventListener('pointerup', onPointerUp);
+		cv.addEventListener('pointercancel', onPointerUp);
+		cv.addEventListener('dblclick', onDoubleClick);
+		cv.addEventListener('wheel', onWheel, { passive: false });
+		return () => {
+			cv.removeEventListener('pointerdown', onPointerDown);
+			cv.removeEventListener('pointermove', onPointerMove);
+			cv.removeEventListener('pointerup', onPointerUp);
+			cv.removeEventListener('pointercancel', onPointerUp);
+			cv.removeEventListener('dblclick', onDoubleClick);
+			cv.removeEventListener('wheel', onWheel);
+		};
+	});
+
 	function localPoint(e: PointerEvent | WheelEvent | MouseEvent): Vec2 {
 		const rect = canvasEl?.getBoundingClientRect();
 		return { x: e.clientX - (rect?.left ?? 0), y: e.clientY - (rect?.top ?? 0) };
@@ -188,16 +211,8 @@
 </script>
 
 <div class="canvas-host" bind:this={host}>
-	<canvas
-		bind:this={canvasEl}
-		tabindex="0"
-		style:cursor
-		onpointerdown={onPointerDown}
-		onpointermove={onPointerMove}
-		onpointerup={onPointerUp}
-		ondblclick={onDoubleClick}
-		onwheel={onWheel}
-	></canvas>
+	<!-- Input listeners are attached imperatively in an $effect (see script) for reliable delivery. -->
+	<canvas bind:this={canvasEl} tabindex="0" style:cursor></canvas>
 
 	{#if editor.editingTextId && editingRect}
 		{@const r = editingRect}
