@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { compileToMarkdown } from './to-markdown.js';
-import type { Element, ElementId, LayoutDocument } from '../elements/types.js';
+import { compileToMarkdown } from './to-markdown.ts';
+import type { Element, ElementId, LayoutDocument } from '../elements/types.ts';
 
 /**
  * Fixture: a 2-column dashboard (sidebar + main) matching the §8 illustrative example, built by

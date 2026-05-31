@@ -5,9 +5,9 @@
  * live editor, framed to the content bounds, and returns PNG bytes (for file export) or a small
  * base64 data URL (for the library thumbnail). No DOM mutation beyond the throwaway canvas.
  */
-import { render } from '../canvas/renderer.js';
-import { multiply, scaling, translation, unionBBox, orientedBBox, type BBox } from '../canvas/geometry.js';
-import { isContainerType, type LayoutDocument } from '../elements/types.js';
+import { render } from '../canvas/renderer.ts';
+import { multiply, scaling, translation, unionBBox, orientedBBox, type BBox } from '../canvas/geometry.ts';
+import { isContainerType, type LayoutDocument } from '../elements/types.ts';
 
 function contentBounds(doc: LayoutDocument): BBox {
 	const boxes = Object.values(doc.elements).map((el) => orientedBBox(el, el.rotation));
@@ -70,14 +70,14 @@ function rasterize(doc: LayoutDocument, opts: RasterOptions): HTMLCanvasElement 
 	return canvas;
 }
 
-function orderedFor(doc: LayoutDocument): import('../elements/types.js').Element[] {
-	const byParent = new Map<string | null, import('../elements/types.js').Element[]>();
+function orderedFor(doc: LayoutDocument): import('../elements/types.ts').Element[] {
+	const byParent = new Map<string | null, import('../elements/types.ts').Element[]>();
 	for (const el of Object.values(doc.elements)) {
 		const list = byParent.get(el.parentId) ?? [];
 		list.push(el);
 		byParent.set(el.parentId, list);
 	}
-	const out: import('../elements/types.js').Element[] = [];
+	const out: import('../elements/types.ts').Element[] = [];
 	const visit = (parentId: string | null): void => {
 		const kids = (byParent.get(parentId) ?? [])
 			.slice()

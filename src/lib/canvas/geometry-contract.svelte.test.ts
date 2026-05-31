@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { Camera } from './camera.svelte.js';
-import { SceneGraph } from './scene-graph.svelte.js';
-import { Editor } from './editor.svelte.js';
-import { hitTestPoint } from './hit-test.js';
-import { createElement } from '../elements/defaults.js';
-import type { Element } from '../elements/types.js';
-import type { Vec2 as V } from './geometry.js';
+import { Camera } from './camera.svelte.ts';
+import { SceneGraph } from './scene-graph.svelte.ts';
+import { Editor } from './editor.svelte.ts';
+import { hitTestPoint } from './hit-test.ts';
+import { createElement } from '../elements/defaults.ts';
+import type { Element } from '../elements/types.ts';
+import type { Vec2 as V } from './geometry.ts';
 
 /**
  * geometry.md diagnostic — proves the coordinate-system contract end to end.

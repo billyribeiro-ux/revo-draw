@@ -11,6 +11,11 @@
 		"strict": true,
 		"moduleResolution": "bundler",
 		"verbatimModuleSyntax": true,
+		// Import the real `.ts` / `.svelte.ts` source extension directly (TS 6 + bundler resolution).
+		// Compatible with `noEmit` (inherited from the SvelteKit tsconfig); no `.js` rewrite-on-emit
+		// needed because Vite/Rolldown bundles, it never tsc-emits. Stops editors flagging `.js`
+		// specifiers that have no on-disk counterpart.
+		"allowImportingTsExtensions": true,
 		"noUncheckedIndexedAccess": true,
 		"noImplicitOverride": true,
 		"noUnusedLocals": true,

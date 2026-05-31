@@ -8,17 +8,17 @@
  * so every interaction behaves identically at any pan/zoom. Gestures are wrapped in a single
  * history transaction (begin on pointerdown, commit on pointerup) so a whole drag = one undo.
  */
-import { Camera } from './camera.svelte.js';
-import { scene, type SceneGraph } from './scene-graph.svelte.js';
-import { History } from '../commands/history.svelte.js';
-import { Commands } from '../commands/commands.svelte.js';
+import { Camera } from './camera.svelte.ts';
+import { scene, type SceneGraph } from './scene-graph.svelte.ts';
+import { History } from '../commands/history.svelte.ts';
+import { Commands } from '../commands/commands.svelte.ts';
 import {
 	clamp,
 	orientedBBox,
 	rotate,
 	type BBox,
 	type Vec2
-} from './geometry.js';
+} from './geometry.ts';
 import {
 	hitHandle,
 	hitTestMarquee,
@@ -28,10 +28,10 @@ import {
 	selectionHandles,
 	type Handle,
 	type HandleKind
-} from './hit-test.js';
-import { resolveSnap, type SnapGuide } from './snapping.js';
-import { isContainerType, type ClipboardPayload, type Element, type ElementId, type SemanticType } from '../elements/types.js';
-import { createElement } from '../elements/defaults.js';
+} from './hit-test.ts';
+import { resolveSnap, type SnapGuide } from './snapping.ts';
+import { isContainerType, type ClipboardPayload, type Element, type ElementId, type SemanticType } from '../elements/types.ts';
+import { createElement } from '../elements/defaults.ts';
 
 export type Tool =
 	| 'select'
@@ -101,7 +101,7 @@ export class Editor {
 	 * Last-used style — new elements adopt it, and the style panel writes here so the next shape
 	 * keeps the chosen look (Excalidraw's `currentItem*` pattern). Empty means "use type defaults".
 	 */
-	currentStyle = $state<Partial<import('../elements/types.js').ElementStyle>>({});
+	currentStyle = $state<Partial<import('../elements/types.ts').ElementStyle>>({});
 	/** When set, snapping is bypassed (alt held). */
 	snapBypass = $state(false);
 	/** Whether space is held (pan mode hint for the cursor). */

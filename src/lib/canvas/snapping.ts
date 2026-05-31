@@ -13,7 +13,7 @@
  * The whole pass is pure: (candidate box, other boxes, threshold) -> (snapped delta, guides).
  * Holding the bypass modifier (alt) simply skips calling this.
  */
-import type { BBox } from './geometry.js';
+import type { BBox } from './geometry.ts';
 
 export interface SnapGuide {
 	/** Orientation of the guide line. */

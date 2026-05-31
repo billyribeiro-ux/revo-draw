@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { uuidv7 } from './uuid.js';
+import { uuidv7 } from './uuid.ts';
 
 /**
  * UUID v7 contract (RFC 9562): well-formed, version 7, variant 10xx, time-ordered, and — the fix

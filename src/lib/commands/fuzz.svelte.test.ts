@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { SceneGraph } from '../canvas/scene-graph.svelte.js';
-import { History } from './history.svelte.js';
-import { Commands } from './commands.svelte.js';
-import { createBlankDocument } from '../elements/defaults.js';
-import { SEMANTIC_TYPES, type Element, type ElementId, type LayoutDocument } from '../elements/types.js';
+import { SceneGraph } from '../canvas/scene-graph.svelte.ts';
+import { History } from './history.svelte.ts';
+import { Commands } from './commands.svelte.ts';
+import { createBlankDocument } from '../elements/defaults.ts';
+import { SEMANTIC_TYPES, type Element, type ElementId, type LayoutDocument } from '../elements/types.ts';
 
 /**
  * §14.3 evidence: a ≥500-op randomized fuzz over EVERY mutating command, asserting the

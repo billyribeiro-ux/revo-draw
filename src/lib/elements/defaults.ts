@@ -5,7 +5,7 @@
  * It produces a fully-typed, complete element — no partially-initialized objects ever enter
  * the scene graph. Defaults are chosen so a freshly-dropped element looks intentional.
  */
-import { uuidv7 } from './uuid.js';
+import { uuidv7 } from './uuid.ts';
 import {
 	isContainerType,
 	type ElementByType,
@@ -13,7 +13,7 @@ import {
 	type ElementStyle,
 	type LayoutIntent,
 	type SemanticType
-} from './types.js';
+} from './types.ts';
 
 /** Default on-canvas size (world px) per semantic type. */
 const DEFAULT_SIZE: Record<SemanticType, { width: number; height: number }> = {
@@ -227,9 +227,9 @@ export function createElement<T extends SemanticType>(
 }
 
 /** Create a blank document — a truly empty canvas, ready to draw on. */
-export function createBlankDocument(name = 'Untitled'): import('./types.js').LayoutDocument {
+export function createBlankDocument(name = 'Untitled'): import('./types.ts').LayoutDocument {
 	const now = new Date().toISOString();
-	const doc: import('./types.js').LayoutDocument = {
+	const doc: import('./types.ts').LayoutDocument = {
 		schemaVersion: 1,
 		id: uuidv7(),
 		name,

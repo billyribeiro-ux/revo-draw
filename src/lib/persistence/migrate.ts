@@ -10,8 +10,8 @@
  * payload is not a recognizable/upgradable LayoutForge document (caller then rejects it cleanly
  * rather than crashing).
  */
-import { SCHEMA_VERSION } from '../elements/types.js';
-import type { LayoutDocument } from '../elements/types.js';
+import { SCHEMA_VERSION } from '../elements/types.ts';
+import type { LayoutDocument } from '../elements/types.ts';
 
 /** Per-version upgrade steps. Each migrates version N -> N+1. Append new steps; never edit old. */
 const STEPS: Record<number, (doc: Record<string, unknown>) => Record<string, unknown>> = {

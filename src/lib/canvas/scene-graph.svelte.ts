@@ -19,14 +19,14 @@ import {
 	unionBBox,
 	type BBox,
 	type Vec2
-} from './geometry.js';
-import { createBlankDocument } from '../elements/defaults.js';
+} from './geometry.ts';
+import { createBlankDocument } from '../elements/defaults.ts';
 import {
 	isContainerType,
 	type Element,
 	type ElementId,
 	type LayoutDocument
-} from '../elements/types.js';
+} from '../elements/types.ts';
 
 export class SceneGraph {
 	/** The active document. Reassigned wholesale on open/new/undo (raw replacement). */

@@ -21,9 +21,9 @@ import {
 } from '@tauri-apps/plugin-fs';
 import { isTauri } from '@tauri-apps/api/core';
 import { basename } from '@tauri-apps/api/path';
-import { SCHEMA_VERSION, type LayoutDocument } from '../elements/types.js';
-import { migrateDocument } from './migrate.js';
-import { markOpened, upsertEntry } from './library-db.js';
+import { SCHEMA_VERSION, type LayoutDocument } from '../elements/types.ts';
+import { migrateDocument } from './migrate.ts';
+import { markOpened, upsertEntry } from './library-db.ts';
 
 const LFDOC_FILTER = { name: 'LayoutForge Document', extensions: ['lfdoc'] };
 const JSON_FILTER = { name: 'JSON', extensions: ['json'] };

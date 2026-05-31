@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { Commands } from '../commands/commands.svelte.js';
-import { History } from '../commands/history.svelte.js';
-import { createBlankDocument, createElement } from '../elements/defaults.js';
-import type { Element, LayoutDocument } from '../elements/types.js';
-import { Camera } from './camera.svelte.js';
-import { Editor } from './editor.svelte.js';
-import { hitTestPoint } from './hit-test.js';
-import { SceneGraph } from './scene-graph.svelte.js';
-import { approxEqual, bboxCenter, rotate, type BBox, type Vec2 } from './geometry.js';
+import { Commands } from '../commands/commands.svelte.ts';
+import { History } from '../commands/history.svelte.ts';
+import { createBlankDocument, createElement } from '../elements/defaults.ts';
+import type { Element, LayoutDocument } from '../elements/types.ts';
+import { Camera } from './camera.svelte.ts';
+import { Editor } from './editor.svelte.ts';
+import { hitTestPoint } from './hit-test.ts';
+import { SceneGraph } from './scene-graph.svelte.ts';
+import { approxEqual, bboxCenter, rotate, type BBox, type Vec2 } from './geometry.ts';
 
 function expectPointClose(actual: Vec2, expected: Vec2, eps = 1e-8): void {
 	expect(approxEqual(actual.x, expected.x, eps), `x ${actual.x} ~= ${expected.x}`).toBe(true);

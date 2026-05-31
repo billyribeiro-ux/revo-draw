@@ -5,11 +5,11 @@
  * single history transaction and (b) discoverable in one place. UI (toolbar, panels, keyboard)
  * calls these; they never poke the scene graph directly for mutations.
  */
-import type { SceneGraph } from '../canvas/scene-graph.svelte.js';
-import type { History } from './history.svelte.js';
-import { createElement, type CreateElementInit } from '../elements/defaults.js';
-import { uuidv7 } from '../elements/uuid.js';
-import { orientedBBox, unionBBox, type BBox } from '../canvas/geometry.js';
+import type { SceneGraph } from '../canvas/scene-graph.svelte.ts';
+import type { History } from './history.svelte.ts';
+import { createElement, type CreateElementInit } from '../elements/defaults.ts';
+import { uuidv7 } from '../elements/uuid.ts';
+import { orientedBBox, unionBBox, type BBox } from '../canvas/geometry.ts';
 import {
 	isContainerType,
 	type ClipboardPayload,
@@ -19,7 +19,7 @@ import {
 	type ElementStyle,
 	type LayoutIntent,
 	type SemanticType
-} from '../elements/types.js';
+} from '../elements/types.ts';
 
 export class Commands {
 	#scene: SceneGraph;

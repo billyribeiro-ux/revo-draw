@@ -6,8 +6,8 @@
  * (stable ordering, rounded numbers) so the same document yields the same SVG. It is not meant to
  * be pixel-perfect with the Canvas 2D renderer — it's a portable visual reference.
  */
-import { bboxCenter } from '../canvas/geometry.js';
-import { isContainerType, type Element, type LayoutDocument } from '../elements/types.js';
+import { bboxCenter } from '../canvas/geometry.ts';
+import { isContainerType, type Element, type LayoutDocument } from '../elements/types.ts';
 
 export function compileToSvg(doc: LayoutDocument): string {
 	const ordered = paintOrder(doc);

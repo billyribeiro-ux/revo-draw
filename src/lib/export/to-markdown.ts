@@ -21,8 +21,8 @@ import {
 	type LayoutDocument,
 	type LayoutIntent,
 	type LayoutMode
-} from '../elements/types.js';
-import { defaultLabel } from '../elements/defaults.js';
+} from '../elements/types.ts';
+import { defaultLabel } from '../elements/defaults.ts';
 
 interface Node {
 	el: Element;

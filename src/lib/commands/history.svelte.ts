@@ -18,8 +18,8 @@
  * outermost `begin`; exactly one entry is pushed at `commit` iff the document actually changed.
  * Nested transactions collapse into the outermost one.
  */
-import type { LayoutDocument } from '../elements/types.js';
-import type { SceneGraph } from '../canvas/scene-graph.svelte.js';
+import type { LayoutDocument } from '../elements/types.ts';
+import type { SceneGraph } from '../canvas/scene-graph.svelte.ts';
 
 interface Snapshot {
 	doc: LayoutDocument;

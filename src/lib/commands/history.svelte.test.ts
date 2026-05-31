@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { SceneGraph } from '../canvas/scene-graph.svelte.js';
-import { History } from './history.svelte.js';
-import { Commands } from './commands.svelte.js';
-import { createBlankDocument } from '../elements/defaults.js';
-import type { LayoutDocument } from '../elements/types.js';
+import { SceneGraph } from '../canvas/scene-graph.svelte.ts';
+import { History } from './history.svelte.ts';
+import { Commands } from './commands.svelte.ts';
+import { createBlankDocument } from '../elements/defaults.ts';
+import type { LayoutDocument } from '../elements/types.ts';
 
 /**
  * Data-integrity invariants for undo/redo (§13.2). We exercise the real SceneGraph + History +

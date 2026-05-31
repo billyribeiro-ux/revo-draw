@@ -6,7 +6,7 @@
  * ignores unrelated clipboard text. This lets a copied selection survive app focus changes and be
  * pasted back; the editor also keeps an in-process copy as a fast, permission-free fallback.
  */
-import type { ClipboardPayload } from '../elements/types.js';
+import type { ClipboardPayload } from '../elements/types.ts';
 
 const MIME_TAG = 'layoutforge/elements';
 

@@ -18,7 +18,7 @@ import {
 	type BBox,
 	type Matrix,
 	type Vec2
-} from './geometry.js';
+} from './geometry.ts';
 
 export const MIN_ZOOM = 0.05;
 export const MAX_ZOOM = 8;

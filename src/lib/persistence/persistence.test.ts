@@ -4,10 +4,10 @@ import {
 	isLayoutDocument,
 	serializeDocument,
 	type AtomicFs
-} from './document-file.js';
-import { migrateDocument } from './migrate.js';
-import { createBlankDocument, createElement } from '../elements/defaults.js';
-import type { Element, ElementId, LayoutDocument } from '../elements/types.js';
+} from './document-file.ts';
+import { migrateDocument } from './migrate.ts';
+import { createBlankDocument, createElement } from '../elements/defaults.ts';
+import type { Element, ElementId, LayoutDocument } from '../elements/types.ts';
 
 /**
  * §14.4 persistence integrity, proven without a Tauri runtime by injecting an in-memory fs into

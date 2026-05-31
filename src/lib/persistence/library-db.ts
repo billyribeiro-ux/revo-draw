@@ -11,7 +11,7 @@
  */
 import Database from '@tauri-apps/plugin-sql';
 import { isTauri } from '@tauri-apps/api/core';
-import type { DocumentRow } from './schema.js';
+import type { DocumentRow } from './schema.ts';
 
 const DB_URL = 'sqlite:layoutforge-index.db';
 

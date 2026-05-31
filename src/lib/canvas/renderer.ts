@@ -10,10 +10,10 @@
  * Each semantic type has a distinct, legible treatment (a placeholder glyph or skeleton) so the
  * wireframe reads at a glance without being skeuomorphic.
  */
-import { bboxCenter, orientedCorners, type BBox, type Matrix, type Vec2 } from './geometry.js';
-import type { Handle } from './hit-test.js';
-import type { SnapGuide } from './snapping.js';
-import type { Element, ElementId } from '../elements/types.js';
+import { bboxCenter, orientedCorners, type BBox, type Matrix, type Vec2 } from './geometry.ts';
+import type { Handle } from './hit-test.ts';
+import type { SnapGuide } from './snapping.ts';
+import type { Element, ElementId } from '../elements/types.ts';
 
 export interface RenderInput {
 	ctx: CanvasRenderingContext2D;

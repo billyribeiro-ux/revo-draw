@@ -14,8 +14,8 @@ import {
 	rotate,
 	type BBox,
 	type Vec2
-} from './geometry.js';
-import type { Element, ElementId } from '../elements/types.js';
+} from './geometry.ts';
+import type { Element, ElementId } from '../elements/types.ts';
 
 export type HandleKind =
 	| 'nw'
