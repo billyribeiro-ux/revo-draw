@@ -212,13 +212,21 @@
 		// and discard a brand-new text box before the user can type.
 		if (!textFocused) return;
 		const id = editor.editingTextId;
-		if (id) editor.commitTextEdit(id, textValue);
+		if (!id) return;
+		// Read the LIVE textarea value, not the `bind:value` mirror — a synchronous commit (Escape
+		// keydown) can fire before Svelte flushes the binding from the last `input` event, which would
+		// otherwise commit stale/empty text. The DOM element is the source of truth at commit time.
+		const value = textArea?.value ?? textValue;
+		editor.commitTextEdit(id, value);
 	}
 
 	function onTextKeydown(e: KeyboardEvent): void {
+		// Escape COMMITS the text (Excalidraw textWysiwyg.tsx:646 → handleSubmit), it does NOT discard.
+		// An empty text box still gets discarded by commitTextEdit's empty-content rule, so pressing
+		// Escape on an untouched new box correctly removes it — but any typed text is KEPT.
 		if (e.key === 'Escape') {
 			e.preventDefault();
-			editor.cancelTextEdit();
+			commitText();
 		} else if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
 			e.preventDefault();
 			commitText();
