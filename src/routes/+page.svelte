@@ -318,14 +318,18 @@
 			commands.toggleLockSelection();
 			return;
 		}
-		if (mod && e.key === ']') {
+		// Z-order. Match on e.code so the Shift variants work regardless of the shifted character
+		// (']' → '}'). Shift = jump to the very front/back; no Shift = one step (Excalidraw parity).
+		if (mod && e.code === 'BracketRight') {
 			e.preventDefault();
-			commands.bringForward();
+			if (e.shiftKey) commands.bringToFront();
+			else commands.bringForward();
 			return;
 		}
-		if (mod && e.key === '[') {
+		if (mod && e.code === 'BracketLeft') {
 			e.preventDefault();
-			commands.sendBackward();
+			if (e.shiftKey) commands.sendToBack();
+			else commands.sendBackward();
 			return;
 		}
 		if (mod && (e.key === '=' || e.key === '+')) {

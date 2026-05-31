@@ -702,8 +702,16 @@ function parseViewBox(vb: string): { x: number; y: number; w: number; h: number 
 
 function drawDivider(ctx: CanvasRenderingContext2D, el: Element, zoom: number): void {
 	ctx.strokeStyle = el.style?.stroke ?? 'oklch(0.84 0.008 264)';
-	ctx.lineWidth = strokeWidthFor(zoom, Math.max(1, el.height));
-	const orientation = 'orientation' in el ? el.orientation : 'horizontal';
+	// Thickness comes from the chosen stroke-weight bucket (thin/bold/extra → 1/2/4 px), kept crisp
+	// in screen space — exactly like every other shape. It is NEVER derived from the bbox size; a
+	// divider is a 1-D line, so its cross-axis extent is just hit-area, not visual weight.
+	ctx.lineWidth = userStrokeWidth(el, zoom, 1.5);
+	applyDash(ctx, el, zoom);
+	ctx.lineCap = 'round';
+	// Orientation: explicit if set, else inferred from the longer axis (a vertical box is a vertical
+	// line). This makes a divider drawn by dragging downward render vertically.
+	const orientation =
+		'orientation' in el && el.orientation ? el.orientation : el.height > el.width ? 'vertical' : 'horizontal';
 	ctx.beginPath();
 	if (orientation === 'vertical') {
 		const cx = el.x + el.width / 2;
@@ -715,6 +723,7 @@ function drawDivider(ctx: CanvasRenderingContext2D, el: Element, zoom: number): 
 		ctx.lineTo(el.x + el.width, cy);
 	}
 	ctx.stroke();
+	ctx.setLineDash([]);
 }
 
 // ---- overlays --------------------------------------------------------------------------------

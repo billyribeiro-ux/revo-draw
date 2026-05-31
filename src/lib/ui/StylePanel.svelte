@@ -68,10 +68,15 @@
 	function setStroke(color: string): void {
 		commands.setStyleOnSelection({ stroke: color }, 'Stroke color');
 		editor.currentStyle = { ...editor.currentStyle, stroke: color };
+		// Choosing a color always dismisses the expanded palette (Excalidraw closes its color popup
+		// once a swatch is committed). Centralised here so every path — inline row, popover grid,
+		// programmatic — closes consistently.
+		closePopovers();
 	}
 	function setBg(color: string): void {
 		commands.setStyleOnSelection({ fill: color }, 'Fill color');
 		editor.currentStyle = { ...editor.currentStyle, fill: color };
+		closePopovers();
 	}
 	function setWidth(w: StrokeWidth): void {
 		commands.setStyleOnSelection({ strokeWidth: w }, 'Stroke width');

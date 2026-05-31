@@ -500,14 +500,29 @@ export class Editor {
 		const h = Math.abs(world.y - this.#drag.startWorld.y);
 		const distScreen = Math.hypot(w, h) * this.camera.zoom;
 		if (distScreen >= DRAG_THRESHOLD_PX) this.#drag.dragged = true;
-		if (this.#drag.dragged) {
+		if (!this.#drag.dragged) return;
+
+		// A divider is a 1-D line: it follows the DOMINANT drag axis and stays 1px on the cross axis,
+		// so dragging never inflates it into a thick box (thickness is the stroke weight, set in the
+		// renderer). Its orientation is the longer axis of the drag.
+		if (this.#drag.type === 'divider') {
+			const vertical = h >= w;
 			this.scene.updateElement(el.id, {
-				x: Math.min(this.#drag.startWorld.x, world.x),
-				y: Math.min(this.#drag.startWorld.y, world.y),
-				width: Math.max(1, w),
-				height: Math.max(1, h)
-			});
+				x: vertical ? this.#drag.startWorld.x : Math.min(this.#drag.startWorld.x, world.x),
+				y: vertical ? Math.min(this.#drag.startWorld.y, world.y) : this.#drag.startWorld.y,
+				width: vertical ? 1 : Math.max(1, w),
+				height: vertical ? Math.max(1, h) : 1,
+				orientation: vertical ? 'vertical' : 'horizontal'
+			} as Partial<Element>);
+			return;
 		}
+
+		this.scene.updateElement(el.id, {
+			x: Math.min(this.#drag.startWorld.x, world.x),
+			y: Math.min(this.#drag.startWorld.y, world.y),
+			width: Math.max(1, w),
+			height: Math.max(1, h)
+		});
 	}
 
 	/**
