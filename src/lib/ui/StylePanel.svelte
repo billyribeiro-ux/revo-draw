@@ -8,7 +8,9 @@
 	// Show when there's a selection AND no gesture is in progress — style controls must not appear
 	// or apply mid-draw (only once the drawing/drag has stopped).
 	const sel = $derived(scene.selectedElements);
-	const show = $derived(sel.length > 0 && !editor.gestureActive);
+	// Hide while a gesture is active OR while a text element is being edited (the inline editor owns
+	// the surface — style controls must not float over it).
+	const show = $derived(sel.length > 0 && !editor.gestureActive && editor.editingTextId === null);
 	// Representative element for showing the current value (last selected).
 	const primary = $derived(sel.length > 0 ? sel[sel.length - 1] : null);
 
@@ -36,8 +38,12 @@
 	// Escape handling on its color Popover). A picked swatch already closes inline.
 	$effect(() => {
 		if (!strokeOpen && !bgOpen) return;
+		// Read panelEl in the effect body so it is a tracked dependency — if bind:this reassigns it,
+		// the effect re-runs and the listener closes over the current node (Svelte 5 only auto-tracks
+		// reads in the effect body, not inside nested closures).
+		const panel = panelEl;
 		const onDown = (e: PointerEvent): void => {
-			if (panelEl && e.target instanceof Node && !panelEl.contains(e.target)) closePopovers();
+			if (panel && e.target instanceof Node && !panel.contains(e.target)) closePopovers();
 		};
 		const onKey = (e: KeyboardEvent): void => {
 			if (e.key === 'Escape') {

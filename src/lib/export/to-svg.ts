@@ -35,7 +35,9 @@ function paintOrder(doc: LayoutDocument): Element[] {
 	}
 	const out: Element[] = [];
 	const visit = (parentId: string | null): void => {
-		const kids = (byParent.get(parentId) ?? []).slice().sort((a, b) => a.z - b.z || (a.id < b.id ? -1 : 1));
+		const kids = (byParent.get(parentId) ?? [])
+			.slice()
+			.sort((a, b) => a.z - b.z || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
 		for (const el of kids) {
 			out.push(el);
 			if (isContainerType(el.type)) visit(el.id);

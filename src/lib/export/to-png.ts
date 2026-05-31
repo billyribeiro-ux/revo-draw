@@ -7,7 +7,7 @@
  */
 import { render } from '../canvas/renderer.js';
 import { multiply, scaling, translation, unionBBox, orientedBBox, type BBox } from '../canvas/geometry.js';
-import type { LayoutDocument } from '../elements/types.js';
+import { isContainerType, type LayoutDocument } from '../elements/types.js';
 
 function contentBounds(doc: LayoutDocument): BBox {
 	const boxes = Object.values(doc.elements).map((el) => orientedBBox(el, el.rotation));
@@ -79,10 +79,14 @@ function orderedFor(doc: LayoutDocument): import('../elements/types.js').Element
 	}
 	const out: import('../elements/types.js').Element[] = [];
 	const visit = (parentId: string | null): void => {
-		const kids = (byParent.get(parentId) ?? []).slice().sort((a, b) => a.z - b.z || (a.id < b.id ? -1 : 1));
+		const kids = (byParent.get(parentId) ?? [])
+			.slice()
+			.sort((a, b) => a.z - b.z || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
 		for (const el of kids) {
 			out.push(el);
-			visit(el.id);
+			// Only containers parent children; recursing into leaves is wasteful and, with malformed
+			// data, could double-paint. Matches to-svg.ts paint-order traversal.
+			if (isContainerType(el.type)) visit(el.id);
 		}
 	};
 	visit(null);

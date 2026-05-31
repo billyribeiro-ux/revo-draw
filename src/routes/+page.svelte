@@ -295,6 +295,7 @@
 			return;
 		}
 		if (mod && e.key.toLowerCase() === 'c') {
+			e.preventDefault();
 			const payload = commands.copySelection();
 			editor.clipboard = payload;
 			// Also write to the OS clipboard so the selection survives and is inspectable. The

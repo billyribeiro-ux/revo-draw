@@ -393,7 +393,9 @@ function browserPickTextFile(accept: string): Promise<{ name: string; text: stri
 			reader.onerror = () => resolve(null);
 			reader.readAsText(file);
 		};
-		// If the user cancels, onchange never fires; that's an acceptable no-op (resolve never).
+		// Cancel handling: modern browsers fire `cancel` when the picker is dismissed without a
+		// selection. Resolve null so the open flow completes instead of leaving a dangling Promise.
+		input.oncancel = () => resolve(null);
 		input.click();
 	});
 }

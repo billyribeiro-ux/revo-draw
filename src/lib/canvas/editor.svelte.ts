@@ -235,11 +235,17 @@ export class Editor {
 			if (handle) {
 				const bounds = this.scene.selectionBounds;
 				if (handle.kind === 'rotate') {
-					if (bounds) this.#beginRotate(world, bounds);
+					// Only consume the event if a rotate gesture actually starts. With a stale selection
+					// (ids present but elements gone) bounds is null — fall through to normal hit/marquee
+					// instead of swallowing the click.
+					if (bounds) {
+						this.#beginRotate(world, bounds);
+						return;
+					}
 				} else {
 					this.#beginResize(handle.kind, world, opts.shift);
+					return;
 				}
-				return;
 			}
 		}
 

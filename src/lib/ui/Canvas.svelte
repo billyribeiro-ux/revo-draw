@@ -102,6 +102,11 @@
 			cv.removeEventListener('pointercancel', onPointerUp);
 			cv.removeEventListener('dblclick', onDoubleClick);
 			cv.removeEventListener('wheel', onWheel);
+			// Cancel any in-flight throttled move RAF so it can't fire after unmount (mid-gesture nav).
+			if (rafId !== null) {
+				cancelAnimationFrame(rafId);
+				rafId = null;
+			}
 		};
 	});
 
@@ -187,16 +192,18 @@
 
 	$effect(() => {
 		const id = editor.editingTextId;
-		if (id) {
-			const el = scene.get(id);
-			textValue = el && el.type === 'text' ? el.content : '';
-			textFocused = false;
-			// Focus on the next frame so the textarea is mounted and laid out first.
-			requestAnimationFrame(() => {
-				textArea?.focus();
-				textArea?.select();
-			});
-		}
+		if (!id) return;
+		const el = scene.get(id);
+		textValue = el && el.type === 'text' ? el.content : '';
+		textFocused = false;
+		// Focus on the next frame so the textarea is mounted and laid out first. Track the RAF so
+		// that if editing is cancelled before it fires, cleanup cancels it — otherwise focus() would
+		// run against an unmounted textarea.
+		const fid = requestAnimationFrame(() => {
+			textArea?.focus();
+			textArea?.select();
+		});
+		return () => cancelAnimationFrame(fid);
 	});
 
 	function commitText(): void {
@@ -245,12 +252,23 @@
 
 <svelte:window
 	onkeydown={(e) => {
-		if (e.key === ' ') spaceDown = true;
-		editor.spaceHeld = spaceDown;
+		if (e.key !== ' ') return;
+		// Don't hijack space while typing (text overlay / form fields).
+		const t = e.target;
+		const typing =
+			t instanceof HTMLInputElement ||
+			t instanceof HTMLTextAreaElement ||
+			(t instanceof HTMLElement && t.isContentEditable);
+		if (typing || editor.editingTextId !== null) return;
+		spaceDown = true;
+		editor.spaceHeld = true;
+		// Suppress the browser's default space-scroll so space-drag panning is clean.
+		e.preventDefault();
 	}}
 	onkeyup={(e) => {
-		if (e.key === ' ') spaceDown = false;
-		editor.spaceHeld = spaceDown;
+		if (e.key !== ' ') return;
+		spaceDown = false;
+		editor.spaceHeld = false;
 	}}
 />
 

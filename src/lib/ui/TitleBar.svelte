@@ -13,6 +13,11 @@
 		const v = parseInt(zoomInput, 10);
 		if (Number.isFinite(v) && v > 0) editor.setZoomPercent(v);
 		editingZoom = false;
+		zoomInput = '';
+	}
+	function cancelZoom(): void {
+		editingZoom = false;
+		zoomInput = '';
 	}
 </script>
 
@@ -61,7 +66,7 @@
 					onblur={commitZoom}
 					onkeydown={(e) => {
 						if (e.key === 'Enter') commitZoom();
-						if (e.key === 'Escape') editingZoom = false;
+						if (e.key === 'Escape') cancelZoom();
 					}}
 				/>
 			{:else}

@@ -109,7 +109,7 @@ export function resolveSnap(
 	if (snapX !== null && Number.isFinite(bestDX)) {
 		resultX = cand.x + bestDX;
 		// Build a vertical guide spanning candidate + all aligned others.
-		const aligned = others.filter((o) => xFeatures(o).some((f) => Math.abs(f - snapX!) < 0.5));
+		const aligned = others.filter((o) => xFeatures(o).some((f) => Math.abs(f - snapX!) <= t));
 		const ys = [resultY, resultY + cand.height, ...aligned.flatMap((o) => [o.y, o.y + o.height])];
 		guides.push({
 			axis: 'x',
@@ -121,7 +121,7 @@ export function resolveSnap(
 	}
 	if (snapY !== null && Number.isFinite(bestDY)) {
 		resultY = cand.y + bestDY;
-		const aligned = others.filter((o) => yFeatures(o).some((f) => Math.abs(f - snapY!) < 0.5));
+		const aligned = others.filter((o) => yFeatures(o).some((f) => Math.abs(f - snapY!) <= t));
 		const xs = [resultX, resultX + cand.width, ...aligned.flatMap((o) => [o.x, o.x + o.width])];
 		guides.push({
 			axis: 'y',

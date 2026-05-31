@@ -231,7 +231,7 @@ function childSizingHint(node: Node, parent: Node): string {
 	const collectivelyFill = availMain > 0 && total >= availMain * 0.82;
 
 	let mainHint: string;
-	if (explicitFixed) {
+	if (explicitFixed != null) {
 		mainHint = `fixed ${round(explicitFixed)}px`;
 	} else if (equalShare && collectivelyFill) {
 		mainHint = 'flex 1';

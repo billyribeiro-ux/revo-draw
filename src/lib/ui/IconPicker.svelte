@@ -58,17 +58,16 @@
 	});
 </script>
 
+<svelte:window
+	onkeydown={(e) => {
+		if (open && e.key === 'Escape') onClose();
+	}}
+/>
+
 {#if open}
-	<div
-		class="backdrop"
-		role="button"
-		tabindex="-1"
-		aria-label="Close icon picker"
-		onclick={onClose}
-		onkeydown={(e) => {
-			if (e.key === 'Escape') onClose();
-		}}
-	></div>
+	<!-- Presentational overlay: click to dismiss. Keyboard dismissal is handled globally (Escape)
+	     above, so the backdrop itself is not a focus target. -->
+	<div class="backdrop" aria-hidden="true" onclick={onClose}></div>
 	<div class="picker" role="dialog" aria-modal="true" aria-label="Icon picker">
 		<header>
 			<div class="search">
