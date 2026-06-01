@@ -13,7 +13,7 @@
 import { bboxCenter, orientedCorners, type BBox, type Matrix, type Vec2 } from './geometry.ts';
 import type { Handle } from './hit-test.ts';
 import type { SnapGuide } from './snapping.ts';
-import type { Element, ElementId, IconRef } from '../elements/types.ts';
+import type { Element, ElementId, ElementStyle, IconRef } from '../elements/types.ts';
 
 export interface RenderInput {
 	ctx: CanvasRenderingContext2D;
@@ -58,6 +58,17 @@ const GUIDE = 'oklch(0.62 0.23 16)';
 const INK = 'oklch(0.24 0.014 264)';
 const INK_SOFT = 'oklch(0.5 0.013 264)';
 const INK_FAINT = 'oklch(0.7 0.01 264)';
+
+/**
+ * Resolve an icon glyph's ink color. An icon is a monochrome glyph: its visible color is its INK,
+ * not a background fill. The Style panel's prominent "Stroke" swatch is what users reach for to
+ * recolor line-art, and Excalidraw colors glyph-like elements (freedraw) by `strokeColor`. So the
+ * order is stroke → fill → default INK: the Stroke control recolors an icon, while existing docs
+ * (whose icon color lives in `fill`) and the per-type default fill keep rendering unchanged.
+ */
+export function iconInk(style: ElementStyle | undefined): string {
+	return style?.stroke ?? style?.fill ?? INK;
+}
 
 export function render(input: RenderInput): void {
 	const { ctx, dpr, cssWidth, cssHeight } = input;
@@ -862,7 +873,7 @@ function drawIcon(ctx: CanvasRenderingContext2D, el: Element, zoom: number): voi
 	ctx.translate(el.x, el.y);
 	ctx.scale(el.width / vb.w, el.height / vb.h);
 	ctx.translate(-vb.x, -vb.y);
-	ctx.fillStyle = el.style?.fill ?? INK;
+	ctx.fillStyle = iconInk(el.style);
 	try {
 		const path = new Path2D(el.svgPath);
 		ctx.fill(path);
