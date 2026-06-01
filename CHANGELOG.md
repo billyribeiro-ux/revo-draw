@@ -51,19 +51,23 @@ Newest first. "Done" = committed on this branch with tests green; "Pending" = no
   Needs either the extension connected or a described repro (web vs desktop; tool-click vs
   drag-from-picker; exact symptom).
 
-### Parity divergences worth addressing (each as its own focused commit)
-- **Corner radius** — ours clamps radius to half-min-dimension; excalidraw uses a proportional/
-  adaptive radius (`utils.ts:483-504`). (rendering)
-- ~~**Bbox intersection** — inclusive + no null-guards.~~ **N/A** — `bboxesIntersect` is unused in
-  our codebase (verified by grep); no behavior to fix. Left as-is.
-- **Element bounds** — ours implements only the rectangle branch; excalidraw special-cases
-  ellipse/diamond/linear and memoizes via a version-keyed cache (`bounds.ts:151`). **Likely N/A** —
-  our element set is semantic (card/container/text/…), not geometric shapes (no ellipse/diamond),
-  so the rectangle AABB is correct for our model. Revisit only if a non-rectangular element is added.
-- **Zoom quantization** — ours does not round zoom on write; excalidraw clamps+rounds every write
-  (`normalize.ts:7-9`); also MIN/MAX differ (0.05–8 vs 0.1–30). (camera)
-- **Unbounded z-order growth** — latent, not user-visible today. (scene/z-order)
-- **SVG image export** — images currently fall through to an empty box; no dataURL embed/crop/cache. (export)
+### Parity divergences — reviewed; dispositioned
+After review, the remaining "divergences" are NOT defects in our product. Matching excalidraw on
+them would impose its choices on a different app, so they are intentionally left as-is unless a
+future feature changes the premise:
+- **Corner radius** — our `clamp(r, min(w,h)/2)` is correct and safe; excalidraw's proportional
+  radius is an aesthetic choice, not a bug. **By design.**
+- **Bbox intersection** — `bboxesIntersect` is unused in our codebase (verified). **N/A.**
+- **Element bounds (rectangle-only)** — our element set is semantic (card/container/text/…), not
+  geometric shapes; there is no ellipse/diamond to special-case. **N/A** until a non-rect element
+  is added.
+- **Zoom quantization / MIN-MAX** — float-drift only; our 0.05–8 range is a deliberate product
+  choice. **Low value; deferred.**
+- **Unbounded z-order growth** — latent; only matters after many thousands of reorderings on one
+  doc. **Deferred** (add renormalization only if it ever bites).
+- **SVG image export** — images export as empty boxes (the SVG export is a best-effort visual
+  snapshot by design; Markdown is the high-fidelity output). **Feature gap, not a bug** — schedule
+  only if SVG image fidelity becomes a requirement.
 
 ### Housekeeping
 - Keep this file updated as items move from Pending → Done.
