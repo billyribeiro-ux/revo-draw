@@ -137,6 +137,10 @@
 	const WIDTH_STROKE: Record<StrokeWidth, number> = { thin: 1.5, bold: 3, extra: 5 };
 	const STYLE_DASH: Record<StrokeStyle, string> = { solid: '', dashed: '4 3', dotted: '1.5 3' };
 
+	// Picker base-grid hotkey labels (Excalidraw colorPickerUtils.ts `colorPickerHotkeyBindings` —
+	// the 15 base cells map to q/w/e/r/t · a/s/d/f/g · z/x/c/v/b). Rendered as visual chrome.
+	const PICKER_HOTKEYS = ['q', 'w', 'e', 'r', 't', 'a', 's', 'd', 'f', 'g', 'z', 'x', 'c', 'v', 'b'] as const;
+
 	function isLight(hex: string | undefined): boolean {
 		if (!hex) return false;
 		const m = /^#?([0-9a-f]{6})$/i.exec(hex);
@@ -153,7 +157,7 @@
 	<div class="pp">
 		<div class="pp-heading">Colors</div>
 		<div class="pp-grid">
-			{#each PICKER_ORDER as name (name)}
+			{#each PICKER_ORDER as name, i (name)}
 				{@const c = baseColorAt(name, st.gridShade)}
 				<button
 					class="pp-swatch"
@@ -163,7 +167,13 @@
 					title={name}
 					aria-label={name}
 					onclick={() => apply(c)}
-				></button>
+				>
+					{#if PICKER_HOTKEYS[i]}
+						<span class="pp-hotkey" class:on-dark={!isLight(c) && c !== 'transparent'} aria-hidden="true"
+							>{PICKER_HOTKEYS[i]}</span
+						>
+					{/if}
+				</button>
 			{/each}
 		</div>
 		{#if st.shades}
@@ -177,7 +187,9 @@
 						title={`Shade ${i + 1}`}
 						aria-label={`Shade ${i + 1}`}
 						onclick={() => apply(c)}
-					></button>
+					>
+						<span class="pp-hotkey" class:on-dark={!isLight(c)} aria-hidden="true">⇧{i + 1}</span>
+					</button>
 				{/each}
 			</div>
 		{/if}
@@ -189,6 +201,7 @@
 				type="text"
 				autocomplete="off"
 				spellcheck="false"
+				maxlength="9"
 				value={(current ?? '').replace(/^#/, '')}
 				oninput={(e) => setHex((e.currentTarget as HTMLInputElement).value, apply)}
 				aria-label="Hex color"
@@ -209,7 +222,7 @@
 				<div class="more">
 					<button class="swatch current" class:bordered={isLight(curStroke)} style:background={curStroke} onclick={toggleStroke} aria-label="More stroke colors"></button>
 					{#if strokeOpen}
-						<div class="grid-pop">{@render pickerBox(curStroke, STROKE_DEFAULT_SHADE, applyStroke)}</div>
+						<div class="grid-pop" role="dialog" aria-label="Color picker">{@render pickerBox(curStroke, STROKE_DEFAULT_SHADE, applyStroke)}</div>
 					{/if}
 				</div>
 			</div>
@@ -225,7 +238,7 @@
 				<div class="more">
 					<button class="swatch current" class:transparent={curBg === TRANSPARENT} class:bordered={isLight(curBg)} style:background={curBg === TRANSPARENT ? 'transparent' : curBg} onclick={toggleBg} aria-label="More fill colors"></button>
 					{#if bgOpen}
-						<div class="grid-pop">{@render pickerBox(curBg, BG_DEFAULT_SHADE, applyBg)}</div>
+						<div class="grid-pop" role="dialog" aria-label="Color picker">{@render pickerBox(curBg, BG_DEFAULT_SHADE, applyBg)}</div>
 					{/if}
 				</div>
 			</div>
@@ -274,9 +287,12 @@
 				max="1"
 				step="0.05"
 				value={curOpacity}
+				style:background="linear-gradient(to right, var(--accent) {curOpacity *
+					100}%, var(--surface-2) {curOpacity * 100}%)"
 				oninput={(e) => setOpacity(+(e.currentTarget as HTMLInputElement).value)}
 				aria-label="Opacity"
 			/>
+			<span class="opacity-value">{Math.round(curOpacity * 100)}</span>
 		</div>
 	</div>
 {/if}
@@ -359,8 +375,11 @@
 	.row-label {
 		inline-size: 48px;
 		flex-shrink: 0;
-		font-size: var(--text-2xs);
-		font-weight: 550;
+		/* Match Excalidraw control-label typography (styles.scss :158-167 → 0.75rem / weight 400).
+		   The row (label-left) layout is an intentional compact-panel divergence; only the
+		   label weight/size is brought to parity. */
+		font-size: 0.75rem;
+		font-weight: 400;
 		color: var(--ink-faint);
 	}
 
@@ -455,10 +474,33 @@
 		transition: transform var(--dur-1) var(--ease);
 	}
 	.pp-swatch:hover:not(.active) {
-		transform: scale(1.075);
+		/* Excalidraw large grid swatches do NOT scale on hover; they gain a gray-30 outline
+		   (ColorPicker.scss .color-picker__button--large hover → box-shadow gray-30 #d6d6d6). */
+		box-shadow:
+			inset 0 0 0 1px #d9d9d9,
+			0 0 0 1px #d6d6d6;
 	}
 	.pp-swatch.active {
-		box-shadow: 0 0 0 1px var(--accent);
+		/* Keep the swatch's #d9d9d9 edge under a darker primary ring (--color-primary-darkest =
+		   #4a47b1), offset 1px outward to hug the outside (ColorPicker.scss :106-119). */
+		box-shadow:
+			inset 0 0 0 1px #d9d9d9,
+			0 0 0 1px #4a47b1;
+	}
+	/* Per-swatch hotkey overlay (Excalidraw ColorPicker.scss .color-picker__button__hotkey-label:
+	   absolute right:5px bottom:3px, 11px / weight 500, contrast-flipped by color luminance). */
+	.pp-hotkey {
+		position: absolute;
+		inset-inline-end: 5px;
+		inset-block-end: 3px;
+		font-size: 11px;
+		font-weight: 500;
+		line-height: 1;
+		pointer-events: none;
+		color: #000;
+	}
+	.pp-hotkey.on-dark {
+		color: #fff;
 	}
 	.pp-swatch.transparent {
 		background-image:
@@ -498,6 +540,15 @@
 		letter-spacing: 0.4px;
 	}
 
+	/* Keyboard focus ring on the interactive buttons (Excalidraw styles.scss :221-225 —
+	   button:focus-visible / label:focus-within → box-shadow 0 0 0 1px brand-hover). */
+	.swatch:focus-visible,
+	.seg-btn:focus-visible,
+	.pp-swatch:focus-visible {
+		outline: none;
+		box-shadow: 0 0 0 1px var(--accent);
+	}
+
 	.seg {
 		display: flex;
 		gap: 2px;
@@ -521,8 +572,11 @@
 		color: var(--ink);
 	}
 	.seg-btn.active {
-		background: var(--accent);
-		color: var(--accent-ink);
+		/* Excalidraw's selected segmented button is a light primary-container tint with dark
+		   on-container text (variables.module.scss .active → surface-primary-container #e0dfff /
+		   on-primary-container #030064), not a saturated solid accent fill. */
+		background: #e0dfff;
+		color: #030064;
 	}
 
 	.sep {
@@ -531,8 +585,43 @@
 		margin-block: 1px;
 	}
 
+	/* Excalidraw Range (Range.scss): 4px track radius 2px, filled-progress gradient (set inline),
+	   16px round thumb, plus a numeric value readout. */
 	.opacity {
 		flex: 1;
-		accent-color: var(--accent);
+		min-inline-size: 0;
+		appearance: none;
+		-webkit-appearance: none;
+		block-size: 4px;
+		border-radius: 2px;
+		background: var(--surface-2);
+		cursor: pointer;
+	}
+	.opacity::-webkit-slider-thumb {
+		appearance: none;
+		-webkit-appearance: none;
+		inline-size: 16px;
+		block-size: 16px;
+		border-radius: 50%;
+		background: var(--accent);
+		border: none;
+		cursor: pointer;
+	}
+	.opacity::-moz-range-thumb {
+		inline-size: 16px;
+		block-size: 16px;
+		border-radius: 50%;
+		background: var(--accent);
+		border: none;
+		cursor: pointer;
+	}
+	.opacity-value {
+		flex-shrink: 0;
+		inline-size: 1.75rem;
+		text-align: end;
+		font-size: 0.75rem;
+		font-weight: 400;
+		color: var(--ink-faint);
+		font-variant-numeric: tabular-nums;
 	}
 </style>
