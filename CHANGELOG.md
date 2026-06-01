@@ -30,6 +30,13 @@ Newest first. "Done" = committed on this branch with tests green; "Pending" = no
   element render in `try/catch` (parity with excalidraw `staticSvgScene.ts:734-761`), so one
   malformed element no longer aborts the entire export. Tests added to
   `src/lib/export/icon-export.test.ts`.
+- **Load-time element validation** (`src/lib/persistence/document-file.ts`) — `isLayoutDocument`
+  only checked the document envelope, so a `.lfdoc` with an element missing/NaN `x/y/width/height`
+  passed and fed NaN to the renderer/hit-test (blank/broken canvas). Now validates each element's
+  base geometry (`type` + finite `x/y/width/height/rotation/z` + `parentId` string|null) and
+  rejects a corrupt file **loudly** (caller throws "schema mismatch") rather than silently healing
+  it — matching the repo's fail-loud philosophy (chose strict rejection over excalidraw's lenient
+  field-defaulting). Tests added to `src/lib/persistence/persistence.test.ts`.
 
 ### Investigation evidence (icon bug)
 - Proved at the controller level (5/5 headless tests) that placing, dragging, resizing-bigger, and
@@ -47,10 +54,12 @@ Newest first. "Done" = committed on this branch with tests green; "Pending" = no
 ### Parity divergences worth addressing (each as its own focused commit)
 - **Corner radius** — ours clamps radius to half-min-dimension; excalidraw uses a proportional/
   adaptive radius (`utils.ts:483-504`). (rendering)
-- **Bbox intersection** — ours is inclusive (edge-touching = overlap) and lacks null-guards;
-  excalidraw uses strict overlap + null guards (`bounds.ts:1276`). (geometry)
+- ~~**Bbox intersection** — inclusive + no null-guards.~~ **N/A** — `bboxesIntersect` is unused in
+  our codebase (verified by grep); no behavior to fix. Left as-is.
 - **Element bounds** — ours implements only the rectangle branch; excalidraw special-cases
-  ellipse/diamond/linear and memoizes via a version-keyed cache (`bounds.ts:151`). (geometry/bounds)
+  ellipse/diamond/linear and memoizes via a version-keyed cache (`bounds.ts:151`). **Likely N/A** —
+  our element set is semantic (card/container/text/…), not geometric shapes (no ellipse/diamond),
+  so the rectangle AABB is correct for our model. Revisit only if a non-rectangular element is added.
 - **Zoom quantization** — ours does not round zoom on write; excalidraw clamps+rounds every write
   (`normalize.ts:7-9`); also MIN/MAX differ (0.05–8 vs 0.1–30). (camera)
 - **Unbounded z-order growth** — latent, not user-visible today. (scene/z-order)
