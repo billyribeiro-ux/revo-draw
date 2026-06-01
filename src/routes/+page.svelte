@@ -28,6 +28,7 @@
 	import IconPicker from '$lib/ui/IconPicker.svelte';
 	import LibraryView from '$lib/ui/LibraryView.svelte';
 	import PhIcon from '$lib/ui/PhIcon.svelte';
+	import WelcomeScreen from '$lib/ui/WelcomeScreen.svelte';
 	import { isWeb, shellClass } from '$lib/platform.js';
 
 	const { scene, commands, history } = editor;
@@ -41,6 +42,10 @@
 	const showInspector = $derived(
 		editor.inspectorPinned || scene.selectedElements.length > 0 || editor.tool !== 'select'
 	);
+
+	// First-load welcome screen (Excalidraw `showWelcomeScreen` = empty canvas). Shown until the doc
+	// has at least one element; suppressed while a tool is mid-use so it doesn't flash during create.
+	const showWelcome = $derived(scene.ordered.length === 0 && editor.tool === 'select');
 
 	let currentPath = $state<string | null>(null);
 	// In-memory style clipboard for copy/paste styles (⌘⌥C / ⌘⌥V), Excalidraw copyStyles/pasteStyles.
@@ -499,6 +504,9 @@
 		</main>
 
 		<div class="ui-overlay">
+			{#if showWelcome}
+				<WelcomeScreen onOpen={openFile} onLibrary={() => (libraryOpen = true)} />
+			{/if}
 			<div class="x-top">
 				<div class="x-top-left">
 					<div class="x-island menu-island">

@@ -19,6 +19,16 @@ Newest first. "Done" = committed on this branch with tests green; "Pending" = no
   collab/firebase/mobile/React/linear-arrow/freedraw), plus real divergences listed below.
 
 ### Web-shell behavior/visual parity
+- **First-load welcome screen — ADDED** (`src/lib/ui/WelcomeScreen.svelte` new, wired in
+  `+page.svelte`, shown when `scene.ordered.length === 0`). We showed a blank canvas on load;
+  Excalidraw shows a WelcomeScreen. Replicated its structure from source (WelcomeScreen.Center +
+  WelcomeScreen.Hints + WelcomeScreen.scss): a centered logo + heading + menu (Open / Browse
+  library), plus the three **hand-drawn dashed arrow hints** (Excalidraw's exact `WelcomeScreen*Arrow`
+  SVG paths) pointing to the menu (top-left, "Export, preferences, and more…"), the toolbar
+  (top-center, "Pick a tool & start sketching!"), and the bottom island cluster ("Shortcuts &
+  help"). Layout/sizing matched to the SCSS; hints hide on short/narrow viewports like Excalidraw.
+  Branding is LayoutForge's own mark/wordmark — Excalidraw's logo/wordmark is a trademark and is NOT
+  reproduced. `pnpm check` 0/0; svelte-autofixer clean (no issues, no suggestions).
 - **Right-click context menu — ADDED** (`src/lib/ui/ContextMenu.svelte` new, wired in
   `src/lib/ui/Canvas.svelte`). We had no canvas context menu at all (browser default). Built one
   matching Excalidraw's `ContextMenu.tsx`/`ContextMenu.scss` structure (a `ul.context-menu` of
