@@ -28,7 +28,31 @@ export const SEMANTIC_TYPES = [
 	'modal',
 	'icon', // a placed Iconify icon (carries icon name + path data)
 	'divider',
-	'svg' // a placed arbitrary SVG body (sanitized inner markup, rendered via Path2D)
+	'svg', // a placed arbitrary SVG body (sanitized inner markup, rendered via Path2D)
+	// Form controls
+	'checkbox',
+	'radio',
+	'toggle',
+	'slider',
+	'dropdown',
+	// Data display
+	'stat-card',
+	'badge',
+	'progress',
+	'avatar',
+	// Feedback + Nav
+	'alert',
+	'tooltip',
+	'breadcrumb',
+	'pagination',
+	'stepper',
+	'accordion',
+	// Layout + Marketing
+	'section-header',
+	'hero',
+	'feature-grid',
+	'testimonial',
+	'cta-section'
 ] as const;
 export type SemanticType = (typeof SEMANTIC_TYPES)[number];
 
@@ -41,7 +65,12 @@ export const CONTAINER_TYPES = [
 	'sidebar',
 	'list',
 	'tabs',
-	'modal'
+	'modal',
+	'accordion',
+	'hero',
+	'feature-grid',
+	'testimonial',
+	'cta-section'
 ] as const satisfies readonly SemanticType[];
 export type ContainerType = (typeof CONTAINER_TYPES)[number];
 
@@ -276,6 +305,152 @@ export interface SvgElement extends BaseElement {
 	viewBox: string;
 }
 
+// ---- Form controls ----------------------------------------------------------------------------
+
+export interface CheckboxElement extends BaseElement {
+	type: 'checkbox';
+	checked?: boolean;
+	labelText?: string;
+}
+
+export interface RadioElement extends BaseElement {
+	type: 'radio';
+	selected?: boolean;
+	labelText?: string;
+	groupName?: string;
+}
+
+export interface ToggleElement extends BaseElement {
+	type: 'toggle';
+	on?: boolean;
+	labelText?: string;
+}
+
+export interface SliderElement extends BaseElement {
+	type: 'slider';
+	value?: number;
+	min?: number;
+	max?: number;
+}
+
+/**
+ * Form `<select>` / dropdown picker. Named `dropdown` (not `select`) to avoid colliding with the
+ * cursor tool slug `'select'` in `editor.svelte.ts:Tool`. The Markdown export still surfaces it
+ * as a `<select>` in the generated SvelteKit code.
+ */
+export interface DropdownElement extends BaseElement {
+	type: 'dropdown';
+	options?: string[];
+	value?: string;
+	placeholder?: string;
+}
+
+// ---- Data display -----------------------------------------------------------------------------
+
+export interface StatCardElement extends BaseElement {
+	type: 'stat-card';
+	value?: string;
+	delta?: string;
+	trend?: 'up' | 'down' | 'flat';
+}
+
+export interface BadgeElement extends BaseElement {
+	type: 'badge';
+	content?: string;
+	variant?: 'neutral' | 'success' | 'warning' | 'danger' | 'info';
+}
+
+export interface ProgressElement extends BaseElement {
+	type: 'progress';
+	value?: number;
+	kind?: 'linear' | 'circular';
+	caption?: string;
+}
+
+export interface AvatarElement extends BaseElement {
+	type: 'avatar';
+	initials?: string;
+	imageSrc?: string;
+	shape?: 'circle' | 'square';
+}
+
+// ---- Feedback + Nav ---------------------------------------------------------------------------
+
+export interface AlertElement extends BaseElement {
+	type: 'alert';
+	content?: string;
+	variant?: 'info' | 'success' | 'warning' | 'danger';
+}
+
+export interface TooltipElement extends BaseElement {
+	type: 'tooltip';
+	content?: string;
+}
+
+export interface BreadcrumbElement extends BaseElement {
+	type: 'breadcrumb';
+	items?: string[];
+	separator?: string;
+}
+
+export interface PaginationElement extends BaseElement {
+	type: 'pagination';
+	total?: number;
+	current?: number;
+}
+
+export interface StepperElement extends BaseElement {
+	type: 'stepper';
+	steps?: string[];
+	current?: number;
+	orientation?: 'horizontal' | 'vertical';
+}
+
+export interface AccordionElement extends BaseElement {
+	type: 'accordion';
+	items?: string[];
+	openIndices?: number[];
+	layout?: LayoutIntent;
+}
+
+// ---- Layout + Marketing -----------------------------------------------------------------------
+
+export interface SectionHeaderElement extends BaseElement {
+	type: 'section-header';
+	eyebrow?: string;
+	heading?: string;
+	subheading?: string;
+}
+
+export interface HeroElement extends BaseElement {
+	type: 'hero';
+	heading?: string;
+	subheading?: string;
+	ctaLabel?: string;
+	layout?: LayoutIntent;
+}
+
+export interface FeatureGridElement extends BaseElement {
+	type: 'feature-grid';
+	columns?: number;
+	layout?: LayoutIntent;
+}
+
+export interface TestimonialElement extends BaseElement {
+	type: 'testimonial';
+	quote?: string;
+	attribution?: string;
+	layout?: LayoutIntent;
+}
+
+export interface CtaSectionElement extends BaseElement {
+	type: 'cta-section';
+	heading?: string;
+	subheading?: string;
+	ctaLabel?: string;
+	layout?: LayoutIntent;
+}
+
 /** Discriminated union of every semantic element. */
 export type Element =
 	| FrameElement
@@ -294,7 +469,27 @@ export type Element =
 	| ModalElement
 	| IconElement
 	| DividerElement
-	| SvgElement;
+	| SvgElement
+	| CheckboxElement
+	| RadioElement
+	| ToggleElement
+	| SliderElement
+	| DropdownElement
+	| StatCardElement
+	| BadgeElement
+	| ProgressElement
+	| AvatarElement
+	| AlertElement
+	| TooltipElement
+	| BreadcrumbElement
+	| PaginationElement
+	| StepperElement
+	| AccordionElement
+	| SectionHeaderElement
+	| HeroElement
+	| FeatureGridElement
+	| TestimonialElement
+	| CtaSectionElement;
 
 /** Map from SemanticType to its concrete element interface, for precise typing. */
 export interface ElementByType {
@@ -315,6 +510,26 @@ export interface ElementByType {
 	icon: IconElement;
 	divider: DividerElement;
 	svg: SvgElement;
+	checkbox: CheckboxElement;
+	radio: RadioElement;
+	toggle: ToggleElement;
+	slider: SliderElement;
+	dropdown: DropdownElement;
+	'stat-card': StatCardElement;
+	badge: BadgeElement;
+	progress: ProgressElement;
+	avatar: AvatarElement;
+	alert: AlertElement;
+	tooltip: TooltipElement;
+	breadcrumb: BreadcrumbElement;
+	pagination: PaginationElement;
+	stepper: StepperElement;
+	accordion: AccordionElement;
+	'section-header': SectionHeaderElement;
+	hero: HeroElement;
+	'feature-grid': FeatureGridElement;
+	testimonial: TestimonialElement;
+	'cta-section': CtaSectionElement;
 }
 
 export const SCHEMA_VERSION = 1 as const;

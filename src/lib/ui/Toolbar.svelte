@@ -7,6 +7,8 @@
 	interface ToolDef {
 		tool: Tool;
 		label: string;
+		/** Phosphor icon slug to render. Defaults to `tool` if omitted. */
+		icon?: string;
 		key?: string;
 	}
 	// Tools grouped by role, separated visually. Keyboard hints shown where bound.
@@ -41,6 +43,65 @@
 		[{ tool: 'divider', label: 'Divider' }]
 	];
 
+	// Phase E: the 20 new semantic types live in a "More elements" popover, grouped by category
+	// so the toolbar doesn't degrade into a 40-button wall. The popover opens on click and stays
+	// open until the user picks a tool or clicks outside.
+	interface MoreGroup {
+		heading: string;
+		tools: ToolDef[];
+	}
+	const moreGroups: MoreGroup[] = [
+		{
+			heading: 'Form',
+			tools: [
+				{ tool: 'checkbox' as Tool, label: 'Checkbox', icon: 'checkbox' },
+				{ tool: 'radio' as Tool, label: 'Radio', icon: 'radio' },
+				{ tool: 'toggle' as Tool, label: 'Toggle', icon: 'toggle' },
+				{ tool: 'slider' as Tool, label: 'Slider', icon: 'slider' },
+				{ tool: 'dropdown' as Tool, label: 'Dropdown', icon: 'select-input' }
+			]
+		},
+		{
+			heading: 'Data',
+			tools: [
+				{ tool: 'stat-card' as Tool, label: 'Stat card', icon: 'stat-card' },
+				{ tool: 'badge' as Tool, label: 'Badge', icon: 'badge' },
+				{ tool: 'progress' as Tool, label: 'Progress', icon: 'progress' },
+				{ tool: 'avatar' as Tool, label: 'Avatar', icon: 'avatar' }
+			]
+		},
+		{
+			heading: 'Feedback & Nav',
+			tools: [
+				{ tool: 'alert' as Tool, label: 'Alert', icon: 'alert' },
+				{ tool: 'tooltip' as Tool, label: 'Tooltip', icon: 'tooltip' },
+				{ tool: 'breadcrumb' as Tool, label: 'Breadcrumb', icon: 'breadcrumb' },
+				{ tool: 'pagination' as Tool, label: 'Pagination', icon: 'pagination' },
+				{ tool: 'stepper' as Tool, label: 'Stepper', icon: 'stepper' },
+				{ tool: 'accordion' as Tool, label: 'Accordion', icon: 'accordion' }
+			]
+		},
+		{
+			heading: 'Layout & Marketing',
+			tools: [
+				{ tool: 'section-header' as Tool, label: 'Section header', icon: 'section-header' },
+				{ tool: 'hero' as Tool, label: 'Hero', icon: 'hero' },
+				{ tool: 'feature-grid' as Tool, label: 'Feature grid', icon: 'feature-grid' },
+				{ tool: 'testimonial' as Tool, label: 'Testimonial', icon: 'testimonial' },
+				{ tool: 'cta-section' as Tool, label: 'CTA section', icon: 'cta-section' }
+			]
+		}
+	];
+
+	// Flat lookup so the "More" trigger can render the active tool's own icon when the user has
+	// selected one of the popover tools (better than always showing the generic plus).
+	const morePool: Set<string> = new Set(
+		moreGroups.flatMap((g) => g.tools.map((t) => t.tool))
+	);
+
+	let moreOpen = $state(false);
+	let moreRef: HTMLDivElement | null = $state(null);
+
 	function pick(tool: Tool): void {
 		if (tool === 'icon') {
 			onIconTool();
@@ -48,7 +109,32 @@
 		}
 		editor.setTool(tool);
 	}
+
+	function pickMore(tool: Tool): void {
+		moreOpen = false;
+		editor.setTool(tool);
+	}
+
+	function toggleMore(): void {
+		moreOpen = !moreOpen;
+	}
+
+	function handleDocClick(event: MouseEvent): void {
+		if (!moreOpen) return;
+		const target = event.target as Node | null;
+		if (moreRef && target && !moreRef.contains(target)) moreOpen = false;
+	}
+
+	function handleKey(event: KeyboardEvent): void {
+		if (moreOpen && event.key === 'Escape') {
+			moreOpen = false;
+		}
+	}
+
+	const moreActive = $derived(morePool.has(editor.tool));
 </script>
+
+<svelte:window onclick={handleDocClick} onkeydown={handleKey} />
 
 <div class="toolrail">
 	<div class="palette" role="toolbar" aria-label="Tools">
@@ -63,7 +149,7 @@
 						aria-label={t.label}
 						onclick={() => pick(t.tool)}
 					>
-						<PhIcon name={t.tool} size={18} />
+						<PhIcon name={t.icon ?? t.tool} size={18} />
 						<span class="tip">
 							{t.label}{#if t.key}<kbd>{t.key}</kbd>{/if}
 						</span>
@@ -71,6 +157,47 @@
 				{/each}
 			</div>
 		{/each}
+
+		<span class="divider" aria-hidden="true"></span>
+		<div class="grp more-wrap" bind:this={moreRef}>
+			<button
+				class="tool"
+				class:active={moreOpen || moreActive}
+				aria-pressed={moreOpen}
+				aria-haspopup="menu"
+				aria-expanded={moreOpen}
+				aria-label="More elements"
+				onclick={(e) => {
+					e.stopPropagation();
+					toggleMore();
+				}}
+			>
+				<PhIcon name="plus" size={18} />
+				<span class="tip">More elements</span>
+			</button>
+			{#if moreOpen}
+				<div class="more-popover" role="menu" aria-label="More elements">
+					{#each moreGroups as g (g.heading)}
+						<div class="more-group">
+							<div class="more-heading">{g.heading}</div>
+							<div class="more-grid">
+								{#each g.tools as t (t.tool)}
+									<button
+										class="more-item"
+										class:active={editor.tool === t.tool}
+										aria-pressed={editor.tool === t.tool}
+										onclick={() => pickMore(t.tool)}
+									>
+										<PhIcon name={t.icon ?? t.tool} size={16} />
+										<span class="more-label">{t.label}</span>
+									</button>
+								{/each}
+							</div>
+						</div>
+					{/each}
+				</div>
+			{/if}
+		</div>
 
 		<span class="divider" aria-hidden="true"></span>
 		<div class="grp">
@@ -223,5 +350,82 @@
 		border-radius: 3px;
 		background: oklch(1 0 0 / 0.16);
 		color: oklch(1 0 0 / 0.85);
+	}
+
+	/* "More elements" popover — opens below the trigger button, contains the 20 Phase-E types
+	   grouped by category. Closed by default; pickMore() / outside-click / Escape close it. */
+	.more-wrap {
+		position: relative;
+	}
+
+	.more-popover {
+		position: absolute;
+		inset-block-start: calc(100% + 8px);
+		inset-inline-end: 0;
+		z-index: 60;
+		display: flex;
+		flex-direction: column;
+		gap: 10px;
+		min-inline-size: 280px;
+		padding: 10px;
+		background: var(--surface);
+		border: 1px solid var(--line);
+		border-radius: var(--radius-lg);
+		box-shadow: var(--shadow-md);
+	}
+
+	.more-group {
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+	}
+
+	.more-heading {
+		font-size: var(--text-2xs);
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+		color: var(--ink-soft);
+		padding-inline: 2px;
+	}
+
+	.more-grid {
+		display: grid;
+		grid-template-columns: repeat(3, minmax(0, 1fr));
+		gap: 4px;
+	}
+
+	.more-item {
+		display: inline-flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		gap: 4px;
+		padding: 8px 4px;
+		border-radius: var(--radius-md);
+		color: var(--ink-soft);
+		background: var(--surface-2);
+		border: 1px solid transparent;
+		transition:
+			background var(--dur-1) var(--ease),
+			color var(--dur-1) var(--ease),
+			border-color var(--dur-1) var(--ease);
+
+		&:hover {
+			background: var(--surface);
+			color: var(--ink);
+			border-color: var(--line);
+		}
+		&.active {
+			background: var(--accent);
+			color: var(--accent-ink);
+		}
+	}
+
+	.more-label {
+		font-size: 10px;
+		line-height: 1;
+		font-weight: 500;
+		text-align: center;
 	}
 </style>

@@ -169,6 +169,7 @@ function emitNode(
 		lines.push(`### ${labelOf(el)} — ${regionDescriptor(el, doc)}${sizing ? ` (${sizing})` : ''}`);
 		const intent = resolveIntent(node);
 		lines.push(layoutSentence(intent, node, false));
+		for (const sub of containerSublines(el)) lines.push(sub);
 		const iconLine = iconRefLine(el);
 		if (iconLine) lines.push(iconLine);
 		for (const child of node.children) emitNode(lines, child, depth + 1, doc, node);
@@ -194,6 +195,7 @@ function emitNode(
 		const intent = resolveIntent(node);
 		const responsive = responsiveClause(intent);
 		lines.push(`${pad}${INDENT}_Layout: ${layoutClause(intent)}.${responsive ? ` ${responsive}` : ''}_`);
+		for (const sub of containerSublines(el)) lines.push(`${pad}${INDENT}${sub}`);
 		const iconLine = iconRefLine(el);
 		if (iconLine) lines.push(`${pad}${INDENT}${iconLine}`);
 		for (const child of node.children) emitNode(lines, child, depth + 1, doc, node);
@@ -214,6 +216,48 @@ function iconRefLine(el: Element): string | null {
 	if (el.icon && el.icon.name) return `Icon: ${el.icon.name}`;
 	if (el.type === 'button' && el.iconName) return `Icon: ${el.iconName}`;
 	return null;
+}
+
+/**
+ * Type-specific descriptor lines for container elements with semantic copy/attrs (hero heading,
+ * testimonial quote, cta-section CTA, accordion items, feature-grid columns). These surface the
+ * load-bearing content that wouldn't otherwise appear in the H3 / layout lines, so Claude Code
+ * can re-create the section without ambiguity. Order is fixed for byte-stability.
+ */
+function containerSublines(el: Element): string[] {
+	const out: string[] = [];
+	switch (el.type) {
+		case 'hero': {
+			if (el.heading) out.push(`Heading: ${quote(el.heading)}`);
+			if (el.subheading) out.push(`Subheading: ${quote(el.subheading)}`);
+			if (el.ctaLabel) out.push(`CTA: ${quote(el.ctaLabel)}`);
+			return out;
+		}
+		case 'testimonial': {
+			if (el.quote) out.push(`Quote: ${quote(el.quote)}`);
+			if (el.attribution) out.push(`Attribution: ${quote(el.attribution)}`);
+			return out;
+		}
+		case 'cta-section': {
+			if (el.heading) out.push(`Heading: ${quote(el.heading)}`);
+			if (el.subheading) out.push(`Subheading: ${quote(el.subheading)}`);
+			if (el.ctaLabel) out.push(`CTA: ${quote(el.ctaLabel)}`);
+			return out;
+		}
+		case 'feature-grid': {
+			if (el.columns) out.push(`Columns: ${round(el.columns)}`);
+			return out;
+		}
+		case 'accordion': {
+			const items = el.items ?? [];
+			if (items.length) out.push(`Items: [${items.map(quote).join(', ')}]`);
+			const open = el.openIndices ?? [];
+			if (open.length) out.push(`Open: [${[...open].sort((a, b) => a - b).join(', ')}]`);
+			return out;
+		}
+		default:
+			return out;
+	}
 }
 
 // ---- descriptors ----------------------------------------------------------------------------
@@ -394,6 +438,128 @@ function leafDescriptor(el: Element): string {
 			return `Container${el.label ? `: ${quote(el.label)}` : ''}`;
 		case 'frame':
 			return `Frame: ${quote(labelOf(el))}`;
+		// ---- Form controls ------------------------------------------------------------------
+		case 'checkbox': {
+			const checked = 'checked' in el && el.checked ? '[x]' : '[ ]';
+			const lbl = 'labelText' in el && el.labelText ? ` ${quote(el.labelText)}` : '';
+			return `Checkbox: ${checked}${lbl}`;
+		}
+		case 'radio': {
+			const selected = 'selected' in el && el.selected ? '(•)' : '( )';
+			const lbl = 'labelText' in el && el.labelText ? ` ${quote(el.labelText)}` : '';
+			const grp = 'groupName' in el && el.groupName ? ` [group: ${quote(el.groupName)}]` : '';
+			return `Radio: ${selected}${lbl}${grp}`;
+		}
+		case 'toggle': {
+			const on = 'on' in el && el.on ? 'ON' : 'OFF';
+			const lbl = 'labelText' in el && el.labelText ? ` ${quote(el.labelText)}` : '';
+			return `Toggle: ${on}${lbl}`;
+		}
+		case 'slider': {
+			const v = 'value' in el && el.value !== undefined ? round(el.value) : 0;
+			const min = 'min' in el && el.min !== undefined ? round(el.min) : 0;
+			const max = 'max' in el && el.max !== undefined ? round(el.max) : 100;
+			return `Slider: ${v} of ${min}..${max}`;
+		}
+		case 'dropdown': {
+			const ph = 'placeholder' in el && el.placeholder ? quote(el.placeholder) : '';
+			const opts = 'options' in el && el.options ? el.options : [];
+			const v = 'value' in el && el.value ? `, selected ${quote(el.value)}` : '';
+			const optStr = opts.length ? ` → [${opts.map(quote).join(', ')}]` : '';
+			const head = ph ? `Select ${ph}` : 'Select';
+			return `${head}${optStr}${v}`;
+		}
+		// ---- Data display -------------------------------------------------------------------
+		case 'stat-card': {
+			const label = quote(labelOf(el));
+			const v = 'value' in el && el.value ? ` = ${quote(el.value)}` : '';
+			const d = 'delta' in el && el.delta ? ` ${el.delta}` : '';
+			const trend =
+				'trend' in el && el.trend
+					? el.trend === 'up'
+						? ' ↑'
+						: el.trend === 'down'
+							? ' ↓'
+							: ' →'
+					: '';
+			return `StatCard: ${label}${v}${d}${trend}`;
+		}
+		case 'badge': {
+			const variant = 'variant' in el && el.variant ? el.variant : 'neutral';
+			const content = 'content' in el && el.content ? el.content : labelOf(el);
+			return `Badge (${variant}): ${quote(content)}`;
+		}
+		case 'progress': {
+			const kind = 'kind' in el && el.kind ? el.kind : 'linear';
+			const v = 'value' in el && el.value !== undefined ? round(el.value) : 0;
+			const cap = 'caption' in el && el.caption ? `: ${quote(el.caption)}` : '';
+			return `Progress (${kind}): ${v}%${cap}`;
+		}
+		case 'avatar': {
+			const shape = 'shape' in el && el.shape ? el.shape : 'circle';
+			const initials = 'initials' in el && el.initials ? el.initials : '';
+			const img = 'imageSrc' in el && el.imageSrc ? ' [image]' : '';
+			return `Avatar (${shape}): ${quote(initials)}${img}`;
+		}
+		// ---- Feedback + Nav -----------------------------------------------------------------
+		case 'alert': {
+			const variant = 'variant' in el && el.variant ? el.variant : 'info';
+			const content = 'content' in el && el.content ? el.content : labelOf(el);
+			return `Alert (${variant}): ${quote(content)}`;
+		}
+		case 'tooltip': {
+			const content = 'content' in el && el.content ? el.content : labelOf(el);
+			return `Tooltip: ${quote(content)}`;
+		}
+		case 'breadcrumb': {
+			const items = 'items' in el && el.items ? el.items : [];
+			const sep = 'separator' in el && el.separator ? el.separator : '/';
+			return `Breadcrumb: ${items.length ? items.map((s) => quote(s)).join(` ${sep} `) : quote(labelOf(el))}`;
+		}
+		case 'pagination': {
+			const cur = 'current' in el && el.current !== undefined ? round(el.current) : 1;
+			const total = 'total' in el && el.total !== undefined ? round(el.total) : 1;
+			return `Pagination: page ${cur} of ${total}`;
+		}
+		case 'stepper': {
+			const orientation = 'orientation' in el && el.orientation ? el.orientation : 'horizontal';
+			const cur = 'current' in el && el.current !== undefined ? round(el.current) : 1;
+			const steps = 'steps' in el && el.steps ? el.steps : [];
+			const stepStr = steps.length ? `: [${steps.map(quote).join(', ')}]` : '';
+			return `Stepper (${orientation}, step ${cur})${stepStr}`;
+		}
+		// ---- Layout + Marketing (non-container leaf: section-header) ------------------------
+		case 'section-header': {
+			const eyebrow = 'eyebrow' in el && el.eyebrow ? `eyebrow ${quote(el.eyebrow)}` : '';
+			const heading = 'heading' in el && el.heading ? `heading ${quote(el.heading)}` : '';
+			const sub = 'subheading' in el && el.subheading ? `subheading ${quote(el.subheading)}` : '';
+			const bits = [eyebrow, heading, sub].filter(Boolean);
+			return `SectionHeader${bits.length ? `: ${bits.join(', ')}` : ''}`;
+		}
+		// ---- Container leaf headers (also surface attrs when rendered as bullets) -----------
+		case 'accordion': {
+			const items = 'items' in el && el.items ? el.items : [];
+			const open = 'openIndices' in el && el.openIndices ? el.openIndices : [];
+			const itemStr = items.length ? `: [${items.map(quote).join(', ')}]` : '';
+			const openStr = open.length ? `, open ${[...open].sort((a, b) => a - b).join(',')}` : '';
+			return `Accordion${itemStr}${openStr}`;
+		}
+		case 'hero': {
+			const heading = 'heading' in el && el.heading ? `: ${quote(el.heading)}` : '';
+			return `Hero${heading}`;
+		}
+		case 'feature-grid': {
+			const cols = 'columns' in el && el.columns ? el.columns : 3;
+			return `FeatureGrid: ${cols} columns`;
+		}
+		case 'testimonial': {
+			const q = 'quote' in el && el.quote ? `: ${quote(el.quote)}` : '';
+			return `Testimonial${q}`;
+		}
+		case 'cta-section': {
+			const heading = 'heading' in el && el.heading ? `: ${quote(el.heading)}` : '';
+			return `CTASection${heading}`;
+		}
 		default:
 			return labelOf(el);
 	}

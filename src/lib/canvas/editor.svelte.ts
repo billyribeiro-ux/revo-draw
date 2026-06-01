@@ -52,7 +52,32 @@ export type Tool =
 	| 'tabs'
 	| 'modal'
 	| 'icon'
-	| 'divider';
+	| 'divider'
+	| 'svg'
+	// Form controls (Phase E)
+	| 'checkbox'
+	| 'radio'
+	| 'toggle'
+	| 'slider'
+	| 'dropdown'
+	// Data display (Phase E)
+	| 'stat-card'
+	| 'badge'
+	| 'progress'
+	| 'avatar'
+	// Feedback + navigation (Phase E)
+	| 'alert'
+	| 'tooltip'
+	| 'breadcrumb'
+	| 'pagination'
+	| 'stepper'
+	| 'accordion'
+	// Layout + marketing (Phase E)
+	| 'section-header'
+	| 'hero'
+	| 'feature-grid'
+	| 'testimonial'
+	| 'cta-section';
 
 type DragMode =
 	| { kind: 'none' }

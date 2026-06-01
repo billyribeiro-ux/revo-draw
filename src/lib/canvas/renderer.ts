@@ -202,6 +202,66 @@ function drawElement(ctx: CanvasRenderingContext2D, el: Element, zoom: number): 
 		case 'svg':
 			drawSvg(ctx, el, zoom);
 			break;
+		case 'checkbox':
+			drawCheckbox(ctx, el, zoom);
+			break;
+		case 'radio':
+			drawRadio(ctx, el, zoom);
+			break;
+		case 'toggle':
+			drawToggle(ctx, el, zoom);
+			break;
+		case 'slider':
+			drawSlider(ctx, el, zoom);
+			break;
+		case 'dropdown':
+			drawDropdown(ctx, el, zoom);
+			break;
+		case 'stat-card':
+			drawStatCard(ctx, el, zoom);
+			break;
+		case 'badge':
+			drawBadge(ctx, el, zoom);
+			break;
+		case 'progress':
+			drawProgress(ctx, el, zoom);
+			break;
+		case 'avatar':
+			drawAvatar(ctx, el, zoom);
+			break;
+		case 'alert':
+			drawAlert(ctx, el, zoom);
+			break;
+		case 'tooltip':
+			drawTooltip(ctx, el, zoom);
+			break;
+		case 'breadcrumb':
+			drawBreadcrumb(ctx, el, zoom);
+			break;
+		case 'pagination':
+			drawPagination(ctx, el, zoom);
+			break;
+		case 'stepper':
+			drawStepper(ctx, el, zoom);
+			break;
+		case 'accordion':
+			drawAccordion(ctx, el, zoom);
+			break;
+		case 'section-header':
+			drawSectionHeader(ctx, el, zoom);
+			break;
+		case 'hero':
+			drawHero(ctx, el, zoom);
+			break;
+		case 'feature-grid':
+			drawFeatureGrid(ctx, el, zoom);
+			break;
+		case 'testimonial':
+			drawTestimonial(ctx, el, zoom);
+			break;
+		case 'cta-section':
+			drawCtaSection(ctx, el, zoom);
+			break;
 	}
 	ctx.restore();
 }
@@ -420,7 +480,7 @@ function drawButton(ctx: CanvasRenderingContext2D, el: Element, zoom: number): v
 		ctx.lineWidth = strokeWidthFor(zoom, 1);
 		ctx.stroke();
 	}
-	const label = 'content' in el ? el.content : (el.label ?? 'Button');
+	const label = el.type === 'button' ? el.content : (el.label ?? 'Button');
 	const textColor = variant === 'secondary' || variant === 'ghost' ? INK : 'oklch(0.99 0.01 256)';
 	// Resolve embedded icon: prefer the unified BaseElement.icon; fall back to legacy
 	// ButtonElement.iconName/iconSvgPath fields (synthesized into an IconRef on the fly).
@@ -476,7 +536,7 @@ function drawInput(ctx: CanvasRenderingContext2D, el: Element, zoom: number): vo
 }
 
 function drawText(ctx: CanvasRenderingContext2D, el: Element, zoom: number): void {
-	const content = 'content' in el ? el.content : (el.label ?? 'Text');
+	const content = el.type === 'text' ? el.content : (el.label ?? 'Text');
 	const role = 'textRole' in el ? el.textRole : 'body';
 	const sizes: Record<string, number> = { h1: 28, h2: 22, h3: 18, body: 15, caption: 12, label: 12 };
 	const weights: Record<string, number> = { h1: 680, h2: 640, h3: 600, body: 400, caption: 400, label: 600 };
@@ -541,7 +601,7 @@ function drawImage(ctx: CanvasRenderingContext2D, el: Element, zoom: number): vo
 
 function drawTable(ctx: CanvasRenderingContext2D, el: Element, zoom: number): void {
 	fillStroke(ctx, el, zoom, { fill: 'oklch(1 0 0)', stroke: 'oklch(0.9 0.005 264)', radius: 6 });
-	const cols = 'columns' in el && el.columns ? el.columns.length : 3;
+	const cols = el.type === 'table' && el.columns ? el.columns.length : 3;
 	const headerH = 28 / zoom;
 	// Header band
 	roundRect(ctx, el.x, el.y, el.width, headerH, el.style?.radius ?? 6);
@@ -563,7 +623,7 @@ function drawTable(ctx: CanvasRenderingContext2D, el: Element, zoom: number): vo
 			ctx.lineTo(cx, el.y + el.height);
 			ctx.stroke();
 		}
-		const colName = 'columns' in el && el.columns?.[c] ? el.columns[c]! : `Col ${c + 1}`;
+		const colName = el.type === 'table' && el.columns?.[c] ? el.columns[c]! : `Col ${c + 1}`;
 		ctx.fillText(colName, cx + 8 / zoom, el.y + headerH / 2);
 	}
 	// Row separators
@@ -930,6 +990,740 @@ function drawDivider(ctx: CanvasRenderingContext2D, el: Element, zoom: number): 
 	ctx.setLineDash([]);
 	if (el.icon) {
 		drawEmbeddedIcon(ctx, el.icon, el.x + 8 / zoom, el.y + 8 / zoom, 14 / zoom, zoom, INK_FAINT);
+	}
+}
+
+// ---- new semantic primitives ------------------------------------------------------------------
+
+const VARIANT_COLORS: Record<string, { fill: string; stroke: string; ink: string }> = {
+	neutral: { fill: 'oklch(0.92 0.006 264)', stroke: 'oklch(0.78 0.01 264)', ink: 'oklch(0.3 0.014 264)' },
+	info: { fill: 'oklch(0.93 0.05 230)', stroke: 'oklch(0.6 0.14 230)', ink: 'oklch(0.35 0.12 230)' },
+	success: { fill: 'oklch(0.93 0.08 145)', stroke: 'oklch(0.55 0.16 145)', ink: 'oklch(0.32 0.14 145)' },
+	warning: { fill: 'oklch(0.94 0.09 80)', stroke: 'oklch(0.65 0.15 80)', ink: 'oklch(0.4 0.13 80)' },
+	danger: { fill: 'oklch(0.93 0.07 25)', stroke: 'oklch(0.6 0.2 25)', ink: 'oklch(0.4 0.18 25)' }
+};
+
+function drawCheckbox(ctx: CanvasRenderingContext2D, el: Element, zoom: number): void {
+	const boxSize = Math.min(el.width, el.height, 18 / zoom * zoom); // clamp visual square to ~el size
+	const box = Math.min(el.width, el.height);
+	const checked = 'checked' in el ? el.checked : false;
+	const labelText = 'labelText' in el ? el.labelText : undefined;
+	const radius = el.style?.radius ?? 3;
+	roundRect(ctx, el.x, el.y, box, box, radius / zoom);
+	if (checked) {
+		ctx.fillStyle = el.style?.fill && el.style.fill !== 'oklch(1 0 0)' ? el.style.fill : ACCENT;
+		ctx.fill();
+	} else if (hasFill(el.style?.fill)) {
+		ctx.fillStyle = el.style.fill;
+		ctx.fill();
+	} else {
+		ctx.fillStyle = 'oklch(1 0 0)';
+		ctx.fill();
+	}
+	ctx.strokeStyle = hasFill(el.style?.stroke) ? el.style.stroke : 'oklch(0.7 0.01 264)';
+	ctx.lineWidth = userStrokeWidth(el, zoom, 1);
+	ctx.stroke();
+	if (checked) {
+		ctx.strokeStyle = 'oklch(0.99 0.01 256)';
+		ctx.lineWidth = strokeWidthFor(zoom, 2);
+		ctx.lineCap = 'round';
+		ctx.lineJoin = 'round';
+		ctx.beginPath();
+		ctx.moveTo(el.x + box * 0.22, el.y + box * 0.52);
+		ctx.lineTo(el.x + box * 0.44, el.y + box * 0.72);
+		ctx.lineTo(el.x + box * 0.78, el.y + box * 0.3);
+		ctx.stroke();
+	}
+	if (labelText) {
+		ctx.fillStyle = INK;
+		ctx.font = `${400} ${13 / zoom}px var(--font-sans, sans-serif)`;
+		ctx.textBaseline = 'middle';
+		ctx.textAlign = 'left';
+		ctx.fillText(labelText, el.x + box + 8 / zoom, el.y + box / 2);
+	}
+	void boxSize;
+}
+
+function drawRadio(ctx: CanvasRenderingContext2D, el: Element, zoom: number): void {
+	const box = Math.min(el.width, el.height);
+	const selected = 'selected' in el ? el.selected : false;
+	const labelText = 'labelText' in el ? el.labelText : undefined;
+	const cx = el.x + box / 2;
+	const cy = el.y + box / 2;
+	const r = box / 2;
+	ctx.beginPath();
+	ctx.arc(cx, cy, r, 0, Math.PI * 2);
+	ctx.fillStyle = hasFill(el.style?.fill) ? el.style.fill : 'oklch(1 0 0)';
+	ctx.fill();
+	ctx.strokeStyle = hasFill(el.style?.stroke) ? el.style.stroke : 'oklch(0.7 0.01 264)';
+	ctx.lineWidth = userStrokeWidth(el, zoom, 1);
+	ctx.stroke();
+	if (selected) {
+		ctx.beginPath();
+		ctx.arc(cx, cy, r * 0.5, 0, Math.PI * 2);
+		ctx.fillStyle = ACCENT;
+		ctx.fill();
+	}
+	if (labelText) {
+		ctx.fillStyle = INK;
+		ctx.font = `${400} ${13 / zoom}px var(--font-sans, sans-serif)`;
+		ctx.textBaseline = 'middle';
+		ctx.textAlign = 'left';
+		ctx.fillText(labelText, el.x + box + 8 / zoom, cy);
+	}
+}
+
+function drawToggle(ctx: CanvasRenderingContext2D, el: Element, zoom: number): void {
+	const on = 'on' in el ? el.on : false;
+	const labelText = 'labelText' in el ? el.labelText : undefined;
+	const w = el.width;
+	const h = el.height;
+	const r = h / 2;
+	roundRect(ctx, el.x, el.y, w, h, r);
+	ctx.fillStyle = on ? ACCENT : (hasFill(el.style?.fill) ? el.style.fill : 'oklch(0.85 0.008 264)');
+	ctx.fill();
+	const knobR = r - 2 / zoom;
+	const knobX = on ? el.x + w - r : el.x + r;
+	ctx.beginPath();
+	ctx.arc(knobX, el.y + r, knobR, 0, Math.PI * 2);
+	ctx.fillStyle = 'oklch(1 0 0)';
+	ctx.fill();
+	ctx.strokeStyle = 'oklch(0.7 0.01 264 / 0.3)';
+	ctx.lineWidth = strokeWidthFor(zoom, 1);
+	ctx.stroke();
+	if (labelText) {
+		ctx.fillStyle = INK;
+		ctx.font = `${400} ${13 / zoom}px var(--font-sans, sans-serif)`;
+		ctx.textBaseline = 'middle';
+		ctx.textAlign = 'left';
+		ctx.fillText(labelText, el.x + w + 8 / zoom, el.y + h / 2);
+	}
+}
+
+function drawSlider(ctx: CanvasRenderingContext2D, el: Element, zoom: number): void {
+	const value = 'value' in el && typeof el.value === 'number' ? el.value : 50;
+	const min = 'min' in el && typeof el.min === 'number' ? el.min : 0;
+	const max = 'max' in el && typeof el.max === 'number' ? el.max : 100;
+	const range = Math.max(1, max - min);
+	const t = Math.max(0, Math.min(1, (value - min) / range));
+	const cy = el.y + el.height / 2;
+	const trackH = 4 / zoom;
+	// Track
+	roundRect(ctx, el.x, cy - trackH / 2, el.width, trackH, trackH / 2);
+	ctx.fillStyle = hasFill(el.style?.fill) ? el.style.fill : 'oklch(0.88 0.006 264)';
+	ctx.fill();
+	// Filled portion
+	roundRect(ctx, el.x, cy - trackH / 2, el.width * t, trackH, trackH / 2);
+	ctx.fillStyle = ACCENT;
+	ctx.fill();
+	// Thumb
+	const thumbX = el.x + el.width * t;
+	ctx.beginPath();
+	ctx.arc(thumbX, cy, 8 / zoom, 0, Math.PI * 2);
+	ctx.fillStyle = 'oklch(1 0 0)';
+	ctx.fill();
+	ctx.strokeStyle = ACCENT;
+	ctx.lineWidth = strokeWidthFor(zoom, 1.5);
+	ctx.stroke();
+}
+
+function drawDropdown(ctx: CanvasRenderingContext2D, el: Element, zoom: number): void {
+	fillStroke(ctx, el, zoom, { fill: 'oklch(1 0 0)', stroke: 'oklch(0.82 0.008 264)', radius: 6 });
+	const value = el.type === 'dropdown' ? el.value : undefined;
+	const placeholder = el.type === 'dropdown' ? el.placeholder : undefined;
+	const text = value ?? placeholder ?? 'Select…';
+	if (el.icon) {
+		drawEmbeddedIcon(ctx, el.icon, el.x + 12 / zoom, el.y + el.height / 2 - 8 / zoom, 16 / zoom, zoom, INK_FAINT);
+	}
+	ctx.fillStyle = value ? INK : INK_FAINT;
+	ctx.font = `${400} ${13 / zoom}px var(--font-sans, sans-serif)`;
+	ctx.textBaseline = 'middle';
+	ctx.textAlign = 'left';
+	const textX = el.icon ? el.x + 12 / zoom + 22 / zoom : el.x + 12 / zoom;
+	ctx.fillText(text, textX, el.y + el.height / 2);
+	// Caret
+	const cx = el.x + el.width - 14 / zoom;
+	const cy = el.y + el.height / 2;
+	ctx.strokeStyle = INK_SOFT;
+	ctx.lineWidth = strokeWidthFor(zoom, 1.5);
+	ctx.lineCap = 'round';
+	ctx.lineJoin = 'round';
+	ctx.beginPath();
+	ctx.moveTo(cx - 4 / zoom, cy - 2 / zoom);
+	ctx.lineTo(cx, cy + 3 / zoom);
+	ctx.lineTo(cx + 4 / zoom, cy - 2 / zoom);
+	ctx.stroke();
+}
+
+function drawStatCard(ctx: CanvasRenderingContext2D, el: Element, zoom: number): void {
+	ctx.save();
+	ctx.shadowColor = 'oklch(0.2 0.02 264 / 0.06)';
+	ctx.shadowBlur = 8 / zoom;
+	ctx.shadowOffsetY = 2 / zoom;
+	fillStroke(ctx, el, zoom, { fill: 'oklch(1 0 0)', stroke: 'oklch(0.9 0.005 264)', radius: 8 });
+	ctx.restore();
+	const pad = 16 / zoom;
+	let yCursor = el.y + pad;
+	if (el.icon) {
+		drawEmbeddedIcon(ctx, el.icon, el.x + pad, yCursor, 18 / zoom, zoom, ACCENT);
+	}
+	// Label
+	if (el.label) {
+		ctx.fillStyle = INK_FAINT;
+		ctx.font = `${500} ${12 / zoom}px var(--font-sans, sans-serif)`;
+		ctx.textBaseline = 'top';
+		ctx.textAlign = 'left';
+		const labelY = el.icon ? yCursor + 24 / zoom : yCursor;
+		ctx.fillText(el.label, el.x + pad, labelY);
+		yCursor = labelY + 18 / zoom;
+	} else {
+		yCursor += el.icon ? 24 / zoom : 0;
+	}
+	// Value (big)
+	const value = el.type === 'stat-card' ? el.value : undefined;
+	if (value) {
+		ctx.fillStyle = INK;
+		ctx.font = `${680} ${24 / zoom}px var(--font-sans, sans-serif)`;
+		ctx.textBaseline = 'top';
+		ctx.textAlign = 'left';
+		ctx.fillText(value, el.x + pad, yCursor);
+	}
+	// Trend + delta bottom-right
+	const trend = el.type === 'stat-card' ? el.trend : undefined;
+	const delta = el.type === 'stat-card' ? el.delta : undefined;
+	if (delta) {
+		const trendColor = trend === 'up' ? 'oklch(0.55 0.16 145)' : trend === 'down' ? 'oklch(0.6 0.2 25)' : INK_FAINT;
+		ctx.fillStyle = trendColor;
+		ctx.font = `${600} ${12 / zoom}px var(--font-sans, sans-serif)`;
+		ctx.textBaseline = 'bottom';
+		ctx.textAlign = 'right';
+		const arrow = trend === 'up' ? '↑' : trend === 'down' ? '↓' : '→';
+		ctx.fillText(`${arrow} ${delta}`, el.x + el.width - pad, el.y + el.height - pad);
+	}
+}
+
+function drawBadge(ctx: CanvasRenderingContext2D, el: Element, zoom: number): void {
+	const variant = 'variant' in el && el.variant ? el.variant : 'neutral';
+	const v = VARIANT_COLORS[variant] ?? VARIANT_COLORS.neutral!;
+	const radius = el.style?.radius ?? el.height / 2;
+	roundRect(ctx, el.x, el.y, el.width, el.height, radius);
+	ctx.fillStyle = hasFill(el.style?.fill) ? el.style.fill : v.fill;
+	ctx.fill();
+	const content = 'content' in el ? el.content : (el.label ?? 'Badge');
+	let textX = el.x + el.width / 2;
+	let textAlign: CanvasTextAlign = 'center';
+	if (el.icon) {
+		const iconSize = el.height * 0.6;
+		drawEmbeddedIcon(ctx, el.icon, el.x + 6 / zoom, el.y + (el.height - iconSize) / 2, iconSize, zoom, v.ink);
+		textX = el.x + 6 / zoom + iconSize + 4 / zoom;
+		textAlign = 'left';
+	}
+	ctx.fillStyle = v.ink;
+	ctx.font = `${el.style?.fontWeight ?? 600} ${(el.style?.fontSize ?? 11) / zoom}px var(--font-sans, sans-serif)`;
+	ctx.textBaseline = 'middle';
+	ctx.textAlign = textAlign;
+	ctx.fillText(content ?? 'Badge', textX, el.y + el.height / 2);
+}
+
+function drawProgress(ctx: CanvasRenderingContext2D, el: Element, zoom: number): void {
+	const value = 'value' in el && typeof el.value === 'number' ? Math.max(0, Math.min(100, el.value)) : 60;
+	const kind = 'kind' in el && el.kind ? el.kind : 'linear';
+	const caption = 'caption' in el ? el.caption : undefined;
+	if (kind === 'circular') {
+		const cx = el.x + el.width / 2;
+		const cy = el.y + el.height / 2;
+		const r = Math.min(el.width, el.height) / 2 - 4 / zoom;
+		ctx.strokeStyle = hasFill(el.style?.fill) ? el.style.fill : 'oklch(0.88 0.006 264)';
+		ctx.lineWidth = strokeWidthFor(zoom, 4);
+		ctx.lineCap = 'round';
+		ctx.beginPath();
+		ctx.arc(cx, cy, r, 0, Math.PI * 2);
+		ctx.stroke();
+		ctx.strokeStyle = ACCENT;
+		ctx.beginPath();
+		ctx.arc(cx, cy, r, -Math.PI / 2, -Math.PI / 2 + (value / 100) * Math.PI * 2);
+		ctx.stroke();
+		ctx.fillStyle = INK;
+		ctx.font = `${640} ${14 / zoom}px var(--font-sans, sans-serif)`;
+		ctx.textBaseline = 'middle';
+		ctx.textAlign = 'center';
+		ctx.fillText(`${Math.round(value)}%`, cx, cy);
+	} else {
+		const trackH = Math.min(el.height, 16 / zoom * zoom);
+		const h = caption ? Math.min(el.height * 0.5, 12 / zoom) : el.height;
+		const radius = el.style?.radius ?? h / 2;
+		roundRect(ctx, el.x, el.y, el.width, h, radius);
+		ctx.fillStyle = hasFill(el.style?.fill) ? el.style.fill : 'oklch(0.88 0.006 264)';
+		ctx.fill();
+		roundRect(ctx, el.x, el.y, el.width * (value / 100), h, radius);
+		ctx.fillStyle = ACCENT;
+		ctx.fill();
+		if (caption) {
+			ctx.fillStyle = INK_SOFT;
+			ctx.font = `${400} ${11 / zoom}px var(--font-sans, sans-serif)`;
+			ctx.textBaseline = 'top';
+			ctx.textAlign = 'left';
+			ctx.fillText(caption, el.x, el.y + h + 4 / zoom);
+		}
+		void trackH;
+	}
+}
+
+function drawAvatar(ctx: CanvasRenderingContext2D, el: Element, zoom: number): void {
+	const shape = 'shape' in el && el.shape ? el.shape : 'circle';
+	const initials = 'initials' in el ? el.initials : undefined;
+	const fill = hasFill(el.style?.fill) ? el.style.fill : 'oklch(0.78 0.08 264)';
+	if (shape === 'circle') {
+		const cx = el.x + el.width / 2;
+		const cy = el.y + el.height / 2;
+		const r = Math.min(el.width, el.height) / 2;
+		ctx.beginPath();
+		ctx.arc(cx, cy, r, 0, Math.PI * 2);
+		ctx.fillStyle = fill;
+		ctx.fill();
+	} else {
+		const radius = el.style?.radius ?? 6;
+		roundRect(ctx, el.x, el.y, el.width, el.height, radius);
+		ctx.fillStyle = fill;
+		ctx.fill();
+	}
+	if (el.icon) {
+		const iconSize = Math.min(el.width, el.height) * 0.55;
+		drawEmbeddedIcon(
+			ctx,
+			el.icon,
+			el.x + (el.width - iconSize) / 2,
+			el.y + (el.height - iconSize) / 2,
+			iconSize,
+			zoom,
+			'oklch(0.99 0.01 256)'
+		);
+	} else if (initials) {
+		ctx.fillStyle = 'oklch(0.99 0.01 256)';
+		const fontSize = Math.min(el.width, el.height) * 0.4;
+		ctx.font = `${el.style?.fontWeight ?? 600} ${fontSize}px var(--font-sans, sans-serif)`;
+		ctx.textBaseline = 'middle';
+		ctx.textAlign = 'center';
+		ctx.fillText(initials, el.x + el.width / 2, el.y + el.height / 2);
+	}
+}
+
+function drawAlert(ctx: CanvasRenderingContext2D, el: Element, zoom: number): void {
+	const variant = 'variant' in el && el.variant ? el.variant : 'info';
+	const v = VARIANT_COLORS[variant] ?? VARIANT_COLORS.info!;
+	const radius = el.style?.radius ?? 8;
+	roundRect(ctx, el.x, el.y, el.width, el.height, radius);
+	ctx.fillStyle = hasFill(el.style?.fill) ? el.style.fill : v.fill;
+	ctx.fill();
+	ctx.strokeStyle = hasFill(el.style?.stroke) ? el.style.stroke : v.stroke;
+	ctx.lineWidth = userStrokeWidth(el, zoom, 1);
+	ctx.stroke();
+	// Left accent strip
+	ctx.fillStyle = v.stroke;
+	ctx.fillRect(el.x, el.y, 4 / zoom, el.height);
+	const pad = 16 / zoom;
+	let textX = el.x + pad;
+	if (el.icon) {
+		drawEmbeddedIcon(ctx, el.icon, el.x + pad, el.y + el.height / 2 - 9 / zoom, 18 / zoom, zoom, v.stroke);
+		textX = el.x + pad + 24 / zoom;
+	}
+	const content = 'content' in el ? el.content : (el.label ?? 'Alert message');
+	ctx.fillStyle = v.ink;
+	ctx.font = `${500} ${13 / zoom}px var(--font-sans, sans-serif)`;
+	ctx.textBaseline = 'middle';
+	ctx.textAlign = 'left';
+	ctx.fillText(content ?? 'Alert', textX, el.y + el.height / 2);
+}
+
+function drawTooltip(ctx: CanvasRenderingContext2D, el: Element, zoom: number): void {
+	const radius = el.style?.radius ?? 6;
+	roundRect(ctx, el.x, el.y, el.width, el.height, radius);
+	ctx.fillStyle = hasFill(el.style?.fill) ? el.style.fill : INK;
+	ctx.fill();
+	// Arrow below
+	ctx.beginPath();
+	ctx.moveTo(el.x + el.width / 2 - 5 / zoom, el.y + el.height);
+	ctx.lineTo(el.x + el.width / 2 + 5 / zoom, el.y + el.height);
+	ctx.lineTo(el.x + el.width / 2, el.y + el.height + 5 / zoom);
+	ctx.closePath();
+	ctx.fillStyle = hasFill(el.style?.fill) ? el.style.fill : INK;
+	ctx.fill();
+	const content = 'content' in el ? el.content : (el.label ?? 'Tooltip');
+	ctx.fillStyle = 'oklch(0.99 0.01 256)';
+	ctx.font = `${500} ${12 / zoom}px var(--font-sans, sans-serif)`;
+	ctx.textBaseline = 'middle';
+	ctx.textAlign = 'center';
+	ctx.fillText(content ?? 'Tooltip', el.x + el.width / 2, el.y + el.height / 2);
+}
+
+function drawBreadcrumb(ctx: CanvasRenderingContext2D, el: Element, zoom: number): void {
+	const items = 'items' in el && el.items ? el.items : ['Home', 'Section', 'Page'];
+	const separator = 'separator' in el && el.separator ? el.separator : '/';
+	const cy = el.y + el.height / 2;
+	ctx.font = `${500} ${(el.style?.fontSize ?? 12) / zoom}px var(--font-sans, sans-serif)`;
+	ctx.textBaseline = 'middle';
+	ctx.textAlign = 'left';
+	let x = el.x;
+	items.forEach((item, i) => {
+		const isLast = i === items.length - 1;
+		ctx.fillStyle = isLast ? INK : INK_FAINT;
+		ctx.fillText(item, x, cy);
+		x += ctx.measureText(item).width + 8 / zoom;
+		if (!isLast) {
+			ctx.fillStyle = INK_FAINT;
+			ctx.fillText(separator, x, cy);
+			x += ctx.measureText(separator).width + 8 / zoom;
+		}
+	});
+}
+
+function drawPagination(ctx: CanvasRenderingContext2D, el: Element, zoom: number): void {
+	const total = 'total' in el && typeof el.total === 'number' ? el.total : 5;
+	const current = 'current' in el && typeof el.current === 'number' ? el.current : 1;
+	const cy = el.y + el.height / 2;
+	const btnSize = el.height;
+	const gap = 4 / zoom;
+	const maxButtons = Math.min(total, Math.floor((el.width - btnSize * 2 - gap * 2) / (btnSize + gap)));
+	const totalW = btnSize * (maxButtons + 2) + gap * (maxButtons + 1);
+	let x = el.x + (el.width - totalW) / 2;
+	ctx.font = `${500} ${(el.style?.fontSize ?? 12) / zoom}px var(--font-sans, sans-serif)`;
+	ctx.textBaseline = 'middle';
+	ctx.textAlign = 'center';
+	const drawBtn = (label: string, accent: boolean): void => {
+		roundRect(ctx, x, el.y, btnSize, btnSize, 4 / zoom);
+		if (accent) {
+			ctx.fillStyle = ACCENT;
+			ctx.fill();
+			ctx.fillStyle = 'oklch(0.99 0.01 256)';
+		} else {
+			ctx.strokeStyle = 'oklch(0.86 0.006 264)';
+			ctx.lineWidth = strokeWidthFor(zoom, 1);
+			ctx.stroke();
+			ctx.fillStyle = INK_SOFT;
+		}
+		ctx.fillText(label, x + btnSize / 2, cy);
+		x += btnSize + gap;
+	};
+	drawBtn('‹', false);
+	for (let i = 1; i <= maxButtons; i++) {
+		drawBtn(String(i), i === current);
+	}
+	drawBtn('›', false);
+}
+
+function drawStepper(ctx: CanvasRenderingContext2D, el: Element, zoom: number): void {
+	const steps = 'steps' in el && el.steps ? el.steps : ['One', 'Two', 'Three'];
+	const current = 'current' in el && typeof el.current === 'number' ? el.current : 0;
+	const orientation = 'orientation' in el && el.orientation ? el.orientation : 'horizontal';
+	const circleR = 12 / zoom;
+	ctx.font = `${600} ${(el.style?.fontSize ?? 12) / zoom}px var(--font-sans, sans-serif)`;
+	ctx.textBaseline = 'middle';
+	ctx.textAlign = 'center';
+	if (orientation === 'horizontal') {
+		const cy = el.y + circleR + 2 / zoom;
+		const stepW = el.width / steps.length;
+		steps.forEach((step, i) => {
+			const cx = el.x + stepW * (i + 0.5);
+			// Connector to next
+			if (i < steps.length - 1) {
+				ctx.strokeStyle = i < current ? ACCENT : 'oklch(0.86 0.006 264)';
+				ctx.lineWidth = strokeWidthFor(zoom, 2);
+				ctx.beginPath();
+				ctx.moveTo(cx + circleR, cy);
+				ctx.lineTo(cx + stepW - circleR, cy);
+				ctx.stroke();
+			}
+			// Circle
+			ctx.beginPath();
+			ctx.arc(cx, cy, circleR, 0, Math.PI * 2);
+			if (i <= current) {
+				ctx.fillStyle = ACCENT;
+				ctx.fill();
+				ctx.fillStyle = 'oklch(0.99 0.01 256)';
+			} else {
+				ctx.fillStyle = 'oklch(1 0 0)';
+				ctx.fill();
+				ctx.strokeStyle = 'oklch(0.78 0.01 264)';
+				ctx.lineWidth = strokeWidthFor(zoom, 1.5);
+				ctx.stroke();
+				ctx.fillStyle = INK_SOFT;
+			}
+			ctx.fillText(String(i + 1), cx, cy);
+			// Label
+			ctx.fillStyle = i === current ? INK : INK_FAINT;
+			ctx.font = `${i === current ? 600 : 400} ${11 / zoom}px var(--font-sans, sans-serif)`;
+			ctx.textBaseline = 'top';
+			ctx.fillText(step, cx, cy + circleR + 4 / zoom);
+			ctx.font = `${600} ${(el.style?.fontSize ?? 12) / zoom}px var(--font-sans, sans-serif)`;
+			ctx.textBaseline = 'middle';
+		});
+	} else {
+		const cx = el.x + circleR + 4 / zoom;
+		const stepH = el.height / steps.length;
+		steps.forEach((step, i) => {
+			const cy = el.y + stepH * (i + 0.5);
+			if (i < steps.length - 1) {
+				ctx.strokeStyle = i < current ? ACCENT : 'oklch(0.86 0.006 264)';
+				ctx.lineWidth = strokeWidthFor(zoom, 2);
+				ctx.beginPath();
+				ctx.moveTo(cx, cy + circleR);
+				ctx.lineTo(cx, cy + stepH - circleR);
+				ctx.stroke();
+			}
+			ctx.beginPath();
+			ctx.arc(cx, cy, circleR, 0, Math.PI * 2);
+			if (i <= current) {
+				ctx.fillStyle = ACCENT;
+				ctx.fill();
+				ctx.fillStyle = 'oklch(0.99 0.01 256)';
+			} else {
+				ctx.fillStyle = 'oklch(1 0 0)';
+				ctx.fill();
+				ctx.strokeStyle = 'oklch(0.78 0.01 264)';
+				ctx.lineWidth = strokeWidthFor(zoom, 1.5);
+				ctx.stroke();
+				ctx.fillStyle = INK_SOFT;
+			}
+			ctx.fillText(String(i + 1), cx, cy);
+			ctx.fillStyle = i === current ? INK : INK_FAINT;
+			ctx.font = `${i === current ? 600 : 400} ${12 / zoom}px var(--font-sans, sans-serif)`;
+			ctx.textBaseline = 'middle';
+			ctx.textAlign = 'left';
+			ctx.fillText(step, cx + circleR + 8 / zoom, cy);
+			ctx.font = `${600} ${(el.style?.fontSize ?? 12) / zoom}px var(--font-sans, sans-serif)`;
+			ctx.textAlign = 'center';
+		});
+	}
+}
+
+function drawAccordion(ctx: CanvasRenderingContext2D, el: Element, zoom: number): void {
+	const items = 'items' in el && el.items ? el.items : [];
+	const openIndices = 'openIndices' in el && el.openIndices ? el.openIndices : [];
+	fillStroke(ctx, el, zoom, { stroke: 'oklch(0.9 0.005 264)', radius: 6 });
+	const titleBarH = 36 / zoom;
+	const count = Math.max(1, items.length);
+	const itemH = el.height / count;
+	ctx.font = `${550} ${12 / zoom}px var(--font-sans, sans-serif)`;
+	ctx.textBaseline = 'middle';
+	ctx.textAlign = 'left';
+	items.forEach((title, i) => {
+		const ty = el.y + i * itemH;
+		// Title bar
+		ctx.fillStyle = openIndices.includes(i) ? 'oklch(0.96 0.005 264)' : 'oklch(0.985 0.003 264)';
+		ctx.fillRect(el.x, ty, el.width, Math.min(titleBarH, itemH));
+		ctx.strokeStyle = 'oklch(0.9 0.005 264)';
+		ctx.lineWidth = strokeWidthFor(zoom, 1);
+		if (i > 0) {
+			ctx.beginPath();
+			ctx.moveTo(el.x, ty);
+			ctx.lineTo(el.x + el.width, ty);
+			ctx.stroke();
+		}
+		// Chevron
+		const chx = el.x + el.width - 16 / zoom;
+		const chy = ty + Math.min(titleBarH, itemH) / 2;
+		ctx.strokeStyle = INK_SOFT;
+		ctx.lineWidth = strokeWidthFor(zoom, 1.5);
+		ctx.lineCap = 'round';
+		ctx.lineJoin = 'round';
+		ctx.beginPath();
+		if (openIndices.includes(i)) {
+			ctx.moveTo(chx - 4 / zoom, chy + 2 / zoom);
+			ctx.lineTo(chx, chy - 2 / zoom);
+			ctx.lineTo(chx + 4 / zoom, chy + 2 / zoom);
+		} else {
+			ctx.moveTo(chx - 4 / zoom, chy - 2 / zoom);
+			ctx.lineTo(chx, chy + 2 / zoom);
+			ctx.lineTo(chx + 4 / zoom, chy - 2 / zoom);
+		}
+		ctx.stroke();
+		ctx.fillStyle = INK;
+		ctx.fillText(title, el.x + 14 / zoom, ty + Math.min(titleBarH, itemH) / 2);
+	});
+	if (el.icon) {
+		drawEmbeddedIcon(ctx, el.icon, el.x + 8 / zoom, el.y + 8 / zoom, 14 / zoom, zoom, INK_FAINT);
+	}
+}
+
+function drawSectionHeader(ctx: CanvasRenderingContext2D, el: Element, zoom: number): void {
+	const eyebrow = 'eyebrow' in el ? el.eyebrow : undefined;
+	const heading = 'heading' in el ? el.heading : (el.label ?? 'Heading');
+	const subheading = 'subheading' in el ? el.subheading : undefined;
+	let cy = el.y;
+	if (eyebrow) {
+		ctx.fillStyle = INK_FAINT;
+		ctx.font = `${600} ${11 / zoom}px var(--font-sans, sans-serif)`;
+		ctx.textBaseline = 'top';
+		ctx.textAlign = 'left';
+		ctx.fillText(eyebrow.toUpperCase(), el.x, cy);
+		cy += 20 / zoom;
+	}
+	if (heading) {
+		ctx.fillStyle = INK;
+		ctx.font = `${680} ${22 / zoom}px var(--font-sans, sans-serif)`;
+		ctx.textBaseline = 'top';
+		ctx.textAlign = 'left';
+		ctx.fillText(heading, el.x, cy);
+		cy += 30 / zoom;
+	}
+	if (subheading) {
+		ctx.fillStyle = INK_SOFT;
+		ctx.font = `${400} ${14 / zoom}px var(--font-sans, sans-serif)`;
+		ctx.textBaseline = 'top';
+		ctx.textAlign = 'left';
+		wrapText(ctx, subheading, el.x, cy, el.width, 14 / zoom * 1.4);
+	}
+	if (el.icon) {
+		drawEmbeddedIcon(ctx, el.icon, el.x - 22 / zoom, el.y, 16 / zoom, zoom, ACCENT);
+	}
+}
+
+function drawHero(ctx: CanvasRenderingContext2D, el: Element, zoom: number): void {
+	fillStroke(ctx, el, zoom, { fill: 'oklch(0.97 0.005 264)', stroke: 'oklch(0.9 0.005 264)', radius: 12 });
+	const heading = 'heading' in el ? el.heading : undefined;
+	const subheading = 'subheading' in el ? el.subheading : undefined;
+	const ctaLabel = 'ctaLabel' in el ? el.ctaLabel : undefined;
+	const cx = el.x + el.width / 2;
+	let cy = el.y + el.height / 2 - 40 / zoom;
+	if (heading) {
+		ctx.fillStyle = INK;
+		ctx.font = `${700} ${36 / zoom}px var(--font-sans, sans-serif)`;
+		ctx.textBaseline = 'middle';
+		ctx.textAlign = 'center';
+		ctx.fillText(heading, cx, cy);
+		cy += 48 / zoom;
+	}
+	if (subheading) {
+		ctx.fillStyle = INK_SOFT;
+		ctx.font = `${400} ${16 / zoom}px var(--font-sans, sans-serif)`;
+		ctx.textBaseline = 'middle';
+		ctx.textAlign = 'center';
+		ctx.fillText(subheading, cx, cy);
+		cy += 36 / zoom;
+	}
+	if (ctaLabel) {
+		const btnW = 140 / zoom;
+		const btnH = 40 / zoom;
+		roundRect(ctx, cx - btnW / 2, cy, btnW, btnH, 6 / zoom);
+		ctx.fillStyle = ACCENT;
+		ctx.fill();
+		ctx.fillStyle = 'oklch(0.99 0.01 256)';
+		ctx.font = `${600} ${13 / zoom}px var(--font-sans, sans-serif)`;
+		ctx.textBaseline = 'middle';
+		ctx.textAlign = 'center';
+		ctx.fillText(ctaLabel, cx, cy + btnH / 2);
+	}
+	if (el.icon) {
+		drawEmbeddedIcon(ctx, el.icon, el.x + 16 / zoom, el.y + 16 / zoom, 18 / zoom, zoom, INK_FAINT);
+	}
+}
+
+function drawFeatureGrid(ctx: CanvasRenderingContext2D, el: Element, zoom: number): void {
+	const columns = 'columns' in el && typeof el.columns === 'number' && el.columns > 0 ? el.columns : 3;
+	const radius = el.style?.radius ?? 8;
+	roundRect(ctx, el.x, el.y, el.width, el.height, radius);
+	if (hasFill(el.style?.fill)) {
+		ctx.fillStyle = el.style.fill;
+		ctx.fill();
+	}
+	ctx.save();
+	ctx.strokeStyle = hasFill(el.style?.stroke) ? el.style.stroke : 'oklch(0.9 0.005 264)';
+	ctx.lineWidth = userStrokeWidth(el, zoom, 1);
+	ctx.setLineDash([6 / zoom, 4 / zoom]);
+	ctx.stroke();
+	ctx.restore();
+	// Grid lines (faint)
+	const pad = 16 / zoom;
+	const gap = 16 / zoom;
+	const colW = (el.width - pad * 2 - gap * (columns - 1)) / columns;
+	const rows = 2;
+	const rowH = (el.height - pad * 2 - gap * (rows - 1)) / rows;
+	ctx.strokeStyle = 'oklch(0.93 0.005 264)';
+	ctx.lineWidth = strokeWidthFor(zoom, 1);
+	for (let r = 0; r < rows; r++) {
+		for (let c = 0; c < columns; c++) {
+			const cx = el.x + pad + c * (colW + gap);
+			const cy = el.y + pad + r * (rowH + gap);
+			roundRect(ctx, cx, cy, colW, rowH, 6 / zoom);
+			ctx.stroke();
+		}
+	}
+	if (el.label) labelText(ctx, el, el.label, zoom);
+	if (el.icon) {
+		drawEmbeddedIcon(ctx, el.icon, el.x + 8 / zoom, el.y + 8 / zoom, 14 / zoom, zoom, INK_FAINT);
+	}
+}
+
+function drawTestimonial(ctx: CanvasRenderingContext2D, el: Element, zoom: number): void {
+	fillStroke(ctx, el, zoom, { fill: 'oklch(0.98 0.004 264)', stroke: 'oklch(0.9 0.005 264)', radius: 8 });
+	const pad = 24 / zoom;
+	// Quote glyph
+	ctx.fillStyle = INK_FAINT;
+	ctx.font = `${700} ${48 / zoom}px Georgia, serif`;
+	ctx.textBaseline = 'top';
+	ctx.textAlign = 'left';
+	ctx.fillText('"', el.x + pad, el.y + pad - 16 / zoom);
+	const quote = 'quote' in el ? el.quote : undefined;
+	const attribution = 'attribution' in el ? el.attribution : undefined;
+	if (quote) {
+		ctx.fillStyle = INK;
+		ctx.font = `${400} ${15 / zoom}px var(--font-sans, sans-serif)`;
+		ctx.textBaseline = 'top';
+		ctx.textAlign = 'left';
+		wrapText(ctx, quote, el.x + pad, el.y + pad + 24 / zoom, el.width - pad * 2, 15 / zoom * 1.4);
+	}
+	if (attribution) {
+		ctx.fillStyle = INK_FAINT;
+		ctx.font = `${500} ${12 / zoom}px var(--font-sans, sans-serif)`;
+		ctx.textBaseline = 'bottom';
+		ctx.textAlign = 'left';
+		ctx.fillText(`— ${attribution}`, el.x + pad, el.y + el.height - pad);
+	}
+	if (el.icon) {
+		drawEmbeddedIcon(ctx, el.icon, el.x + el.width - pad - 18 / zoom, el.y + pad, 18 / zoom, zoom, ACCENT);
+	}
+}
+
+function drawCtaSection(ctx: CanvasRenderingContext2D, el: Element, zoom: number): void {
+	const radius = el.style?.radius ?? 12;
+	roundRect(ctx, el.x, el.y, el.width, el.height, radius);
+	ctx.fillStyle = hasFill(el.style?.fill) ? el.style.fill : ACCENT;
+	ctx.fill();
+	const heading = 'heading' in el ? el.heading : undefined;
+	const subheading = 'subheading' in el ? el.subheading : undefined;
+	const ctaLabel = 'ctaLabel' in el ? el.ctaLabel : undefined;
+	const cx = el.x + el.width / 2;
+	let cy = el.y + el.height / 2 - 30 / zoom;
+	if (heading) {
+		ctx.fillStyle = 'oklch(0.99 0.01 256)';
+		ctx.font = `${680} ${24 / zoom}px var(--font-sans, sans-serif)`;
+		ctx.textBaseline = 'middle';
+		ctx.textAlign = 'center';
+		ctx.fillText(heading, cx, cy);
+		cy += 32 / zoom;
+	}
+	if (subheading) {
+		ctx.fillStyle = 'oklch(0.95 0.02 256)';
+		ctx.font = `${400} ${14 / zoom}px var(--font-sans, sans-serif)`;
+		ctx.textBaseline = 'middle';
+		ctx.textAlign = 'center';
+		ctx.fillText(subheading, cx, cy);
+		cy += 28 / zoom;
+	}
+	if (ctaLabel) {
+		const btnW = 130 / zoom;
+		const btnH = 36 / zoom;
+		roundRect(ctx, cx - btnW / 2, cy, btnW, btnH, 6 / zoom);
+		ctx.fillStyle = 'oklch(0.99 0.01 256)';
+		ctx.fill();
+		ctx.fillStyle = ACCENT;
+		ctx.font = `${600} ${13 / zoom}px var(--font-sans, sans-serif)`;
+		ctx.textBaseline = 'middle';
+		ctx.textAlign = 'center';
+		ctx.fillText(ctaLabel, cx, cy + btnH / 2);
+	}
+	if (el.icon) {
+		drawEmbeddedIcon(ctx, el.icon, el.x + 16 / zoom, el.y + 16 / zoom, 18 / zoom, zoom, 'oklch(0.99 0.01 256)');
 	}
 }
 

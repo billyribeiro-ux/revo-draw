@@ -33,7 +33,27 @@ const DEFAULT_SIZE: Record<SemanticType, { width: number; height: number }> = {
 	modal: { width: 480, height: 320 },
 	icon: { width: 32, height: 32 },
 	divider: { width: 240, height: 1 },
-	svg: { width: 120, height: 120 }
+	svg: { width: 120, height: 120 },
+	checkbox: { width: 18, height: 18 },
+	radio: { width: 18, height: 18 },
+	toggle: { width: 36, height: 20 },
+	slider: { width: 160, height: 20 },
+	dropdown: { width: 200, height: 36 },
+	'stat-card': { width: 200, height: 120 },
+	badge: { width: 64, height: 22 },
+	progress: { width: 200, height: 16 },
+	avatar: { width: 40, height: 40 },
+	alert: { width: 360, height: 64 },
+	tooltip: { width: 120, height: 32 },
+	breadcrumb: { width: 320, height: 24 },
+	pagination: { width: 240, height: 32 },
+	stepper: { width: 360, height: 48 },
+	accordion: { width: 320, height: 200 },
+	'section-header': { width: 480, height: 96 },
+	hero: { width: 960, height: 400 },
+	'feature-grid': { width: 720, height: 360 },
+	testimonial: { width: 480, height: 200 },
+	'cta-section': { width: 720, height: 220 }
 };
 
 /** Default layout intent for container-like types. */
@@ -68,6 +88,30 @@ function defaultLayout(type: SemanticType): LayoutIntent | undefined {
 			return { mode: 'flex-col', gap: 8, padding: 0, responsive: 'reflow' };
 		case 'modal':
 			return { mode: 'flex-col', gap: 16, padding: 24, responsive: 'none' };
+		case 'accordion':
+			return { mode: 'flex-col', gap: 0, padding: 0, responsive: 'reflow' };
+		case 'hero':
+			return {
+				mode: 'flex-col',
+				justify: 'center',
+				align: 'center',
+				gap: 16,
+				padding: 64,
+				responsive: 'stack'
+			};
+		case 'feature-grid':
+			return { mode: 'grid', gridCols: 3, gap: 16, padding: 16, responsive: 'reflow' };
+		case 'testimonial':
+			return { mode: 'flex-col', gap: 12, padding: 24, responsive: 'none' };
+		case 'cta-section':
+			return {
+				mode: 'flex-col',
+				justify: 'center',
+				align: 'center',
+				gap: 12,
+				padding: 32,
+				responsive: 'stack'
+			};
 		default:
 			return undefined;
 	}
@@ -122,6 +166,46 @@ function perTypeStyle(type: SemanticType): ElementStyle | undefined {
 			return { stroke: 'oklch(0.86 0.006 264)' };
 		case 'svg':
 			return { fill: 'oklch(0.22 0.012 264)' };
+		case 'checkbox':
+			return { fill: 'oklch(1 0 0)', stroke: 'oklch(0.7 0.01 264)', radius: 3 };
+		case 'radio':
+			return { fill: 'oklch(1 0 0)', stroke: 'oklch(0.7 0.01 264)' };
+		case 'toggle':
+			return { fill: 'oklch(0.88 0.006 264)', radius: 10 };
+		case 'slider':
+			return { fill: 'oklch(0.88 0.006 264)' };
+		case 'dropdown':
+			return { fill: 'oklch(1 0 0)', stroke: 'oklch(0.82 0.008 264)', radius: 6 };
+		case 'stat-card':
+			return { fill: 'oklch(1 0 0)', stroke: 'oklch(0.9 0.005 264)', radius: 8 };
+		case 'badge':
+			return { fill: 'oklch(0.92 0.02 256)', radius: 11, fontSize: 11, fontWeight: 600 };
+		case 'progress':
+			return { fill: 'oklch(0.88 0.006 264)', radius: 8 };
+		case 'avatar':
+			return { fill: 'oklch(0.78 0.08 264)', fontSize: 14, fontWeight: 600 };
+		case 'alert':
+			return { fill: 'oklch(0.96 0.03 230)', stroke: 'oklch(0.7 0.12 230)', radius: 8 };
+		case 'tooltip':
+			return { fill: 'oklch(0.24 0.014 264)', radius: 6 };
+		case 'breadcrumb':
+			return { fontSize: 12 };
+		case 'pagination':
+			return { fontSize: 12 };
+		case 'stepper':
+			return { fontSize: 12 };
+		case 'accordion':
+			return { stroke: 'oklch(0.9 0.005 264)', radius: 6 };
+		case 'section-header':
+			return {};
+		case 'hero':
+			return { fill: 'oklch(0.97 0.005 264)', stroke: 'oklch(0.9 0.005 264)', radius: 12 };
+		case 'feature-grid':
+			return { stroke: 'oklch(0.9 0.005 264)', radius: 8 };
+		case 'testimonial':
+			return { fill: 'oklch(0.98 0.004 264)', stroke: 'oklch(0.9 0.005 264)', radius: 8 };
+		case 'cta-section':
+			return { fill: 'oklch(0.55 0.17 264)', radius: 12 };
 		default:
 			return undefined;
 	}
@@ -146,7 +230,27 @@ export function defaultLabel(type: SemanticType): string {
 		modal: 'Modal',
 		icon: 'Icon',
 		divider: 'Divider',
-		svg: 'SVG'
+		svg: 'SVG',
+		checkbox: 'Checkbox',
+		radio: 'Radio',
+		toggle: 'Toggle',
+		slider: 'Slider',
+		dropdown: 'Dropdown',
+		'stat-card': 'Stat',
+		badge: 'Badge',
+		progress: 'Progress',
+		avatar: 'Avatar',
+		alert: 'Alert',
+		tooltip: 'Tooltip',
+		breadcrumb: 'Breadcrumb',
+		pagination: 'Pagination',
+		stepper: 'Stepper',
+		accordion: 'Accordion',
+		'section-header': 'Section header',
+		hero: 'Hero',
+		'feature-grid': 'Feature grid',
+		testimonial: 'Testimonial',
+		'cta-section': 'CTA section'
 	};
 	return map[type];
 }
@@ -186,6 +290,58 @@ function typeSpecificDefaults(type: SemanticType): Record<string, unknown> {
 			// SVG bodies are supplied via the paste flow (RightPanel). The factory yields an
 			// empty body + the universal default viewBox so the placeholder paints sanely.
 			return { body: '', viewBox: '0 0 100 100' };
+		case 'checkbox':
+			return { checked: false };
+		case 'radio':
+			return { selected: false };
+		case 'toggle':
+			return { on: false };
+		case 'slider':
+			return { value: 50, min: 0, max: 100 };
+		case 'dropdown':
+			return { options: ['Option 1', 'Option 2', 'Option 3'], placeholder: 'Select…' };
+		case 'stat-card':
+			return { value: '1,234', delta: '+12%', trend: 'up' };
+		case 'badge':
+			return { content: 'Badge', variant: 'neutral' };
+		case 'progress':
+			return { value: 60, kind: 'linear' };
+		case 'avatar':
+			return { initials: 'AB', shape: 'circle' };
+		case 'alert':
+			return { content: 'Alert message', variant: 'info' };
+		case 'tooltip':
+			return { content: 'Tooltip' };
+		case 'breadcrumb':
+			return { items: ['Home', 'Section', 'Page'], separator: '/' };
+		case 'pagination':
+			return { total: 5, current: 1 };
+		case 'stepper':
+			return { steps: ['One', 'Two', 'Three'], current: 0, orientation: 'horizontal' };
+		case 'accordion':
+			return { items: ['Section 1', 'Section 2', 'Section 3'], openIndices: [0] };
+		case 'section-header':
+			return {
+				eyebrow: 'EYEBROW',
+				heading: 'Section heading',
+				subheading: 'A short description that supports the heading.'
+			};
+		case 'hero':
+			return {
+				heading: 'Hero heading',
+				subheading: 'A subheading that explains what this product does.',
+				ctaLabel: 'Get started'
+			};
+		case 'feature-grid':
+			return { columns: 3 };
+		case 'testimonial':
+			return { quote: 'This product changed the way we work.', attribution: 'Jane Doe, CEO' };
+		case 'cta-section':
+			return {
+				heading: 'Ready to start?',
+				subheading: 'Join thousands of teams already shipping faster.',
+				ctaLabel: 'Sign up'
+			};
 		default:
 			return {};
 	}
