@@ -248,6 +248,45 @@
 	:global(.x-web) .style-panel.shifted {
 		inset-inline-start: calc(var(--panel-w) + var(--space-4) * 2);
 	}
+
+	/* Color palette — match Excalidraw's ColorPicker swatch geometry EXACTLY (verified against
+	   excalidraw-master/packages/excalidraw/components/ColorPicker/ColorPicker.scss):
+	     · quick-pick swatch  1.375rem, radius 4px        (.color-picker__button, :47-48)
+	     · active/trigger      1.625rem, radius 5px        (.active-color, :162-165)
+	     · grid swatch         1.875rem, radius 4px, 1px outline (.color-picker-swatch, :302-310)
+	     · grid gap/padding    0.25rem / 0.5rem            (.color-picker-content--default, :266-269)
+	     · hover lift          scale(1.075)                (.color-picker__button:hover, :68)
+	   The earlier swatches (20/22/18px, hover 1.12) were undersized and bounced too far. */
+	:global(.x-web) .swatches {
+		gap: 4px;
+	}
+	:global(.x-web) .swatch {
+		inline-size: 1.375rem;
+		block-size: 1.375rem;
+		border-radius: 4px;
+	}
+	:global(.x-web) .swatch:hover {
+		transform: scale(1.075);
+	}
+	:global(.x-web) .swatch.current {
+		inline-size: 1.625rem;
+		block-size: 1.625rem;
+		border-radius: 5px;
+	}
+	:global(.x-web) .grid-pop {
+		gap: 0.25rem;
+		padding: 0.5rem;
+		max-inline-size: none;
+	}
+	:global(.x-web) .grid-row {
+		gap: 0.25rem;
+	}
+	:global(.x-web) .swatch.sm {
+		inline-size: 1.875rem;
+		block-size: 1.875rem;
+		border-radius: 4px;
+		box-shadow: inset 0 0 0 1px oklch(0 0 0 / 0.08);
+	}
 	@keyframes pop {
 		from {
 			opacity: 0;
