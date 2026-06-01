@@ -56,6 +56,14 @@
 		border-radius: var(--radius-xs);
 	}
 
+	/* Excalidraw web build: focus is a 2px light-blue box-shadow, not an outline
+	   (styles.scss:457, --focus-highlight-color #a5d8ff). */
+	.x-web :focus-visible {
+		outline: none;
+		outline-offset: 0;
+		box-shadow: 0 0 0 2px var(--focus-highlight, #a5d8ff);
+	}
+
 	/* Refined, unobtrusive scrollbars for the panels. */
 	* {
 		scrollbar-width: thin;

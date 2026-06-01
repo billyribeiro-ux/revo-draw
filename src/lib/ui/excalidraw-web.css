@@ -74,14 +74,26 @@
 		   distinction is applied per-component (Toolbar) since the token name is shared. */
 		--accent: #6965db; /* --color-primary / --color-selection */
 		--accent-hover: #5753d0; /* --color-primary-hover */
+		--accent-active: #4440bf; /* --color-brand-active (active/pressed border, theme.scss:160) */
+		--accent-darker: #5b57d1; /* --color-primary-darker (theme.scss:88) */
+		--accent-light: #e3e2fe; /* --color-primary-light (theme.scss:90) */
 		--accent-soft: #e0dfff; /* --color-surface-primary-container (selected) */
 		--accent-softer: #f1f0ff; /* --color-surface-high */
 		--accent-ink: #ffffff; /* white text on a solid primary button */
 		--accent-on-container: #030064; /* --color-on-primary-container (icon on selected) */
 		--accent-ring: rgba(105, 101, 219, 0.35);
 
+		/* Focus — Excalidraw focuses with a 2px light-blue box-shadow (theme.scss:17 /
+		   variables.module.scss:19, $color-blue-2). NOT an indigo outline. */
+		--focus-highlight: #a5d8ff; /* --focus-highlight-color */
+
+		/* Keybinding hint color — --keybinding-color (theme.scss:27, --color-gray-40). Dedicated
+		   token so the selected-tool state can override it to --accent-on-container (#030064). */
+		--keybinding: #b8b8b8;
+
 		/* Semantic — --color-danger / --color-warning / --color-success. */
-		--danger: #db6965; /* --color-danger */
+		--danger: #db6965; /* --color-danger (icon/border) */
+		--danger-text: #700000; /* --color-danger-color (destructive TEXT, theme.scss:122) */
 		--danger-soft: #fff0f0; /* --color-danger-background */
 		--warn: #f5c354; /* --color-warning-dark */
 		--ok: #65bb6a; /* --color-success-contrast */
@@ -126,7 +138,8 @@
 			0px 6.6501px 5.32008px rgba(0, 0, 0, 0.0282725),
 			0px 2.76726px 2.21381px rgba(0, 0, 0, 0.0196802);
 		--ring: 0 0 0 1px var(--line-strong);
-		--ring-accent: 0 0 0 1px var(--accent);
+		/* Input focus ring — Excalidraw is a 2px #a5d8ff ring (theme.scss:457), not 1px indigo. */
+		--ring-accent: 0 0 0 2px var(--focus-highlight, #a5d8ff);
 
 		/* Excalidraw control sizing (consumed by the island chrome). */
 		--x-button-size: 2.25rem; /* --lg-button-size (toolbar tool button) */
