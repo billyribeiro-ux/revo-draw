@@ -16,6 +16,16 @@
 		if (open) void refresh();
 	});
 
+	// Document-level Escape closes the dialog (Excalidraw LibraryMenu capture ESC handler).
+	$effect(() => {
+		if (!open) return;
+		const onKey = (e: KeyboardEvent): void => {
+			if (e.key === 'Escape') onClose();
+		};
+		window.addEventListener('keydown', onKey, true);
+		return () => window.removeEventListener('keydown', onKey, true);
+	});
+
 	async function refresh(): Promise<void> {
 		loading = true;
 		error = null;
@@ -42,7 +52,9 @@
 </script>
 
 {#if open}
-	<div class="backdrop" role="button" tabindex="-1" aria-label="Close" onclick={onClose} onkeydown={(e) => e.key === 'Escape' && onClose()}></div>
+	<!-- Presentational overlay: click to dismiss. Keyboard dismissal is handled globally (Escape)
+	     above, so the backdrop itself is not a focus target. -->
+	<div class="backdrop" aria-hidden="true" onclick={onClose}></div>
 	<div class="library" role="dialog" aria-modal="true" aria-label="Library">
 		<header>
 			<h2><PhIcon name="library" size={18} /> Library</h2>
@@ -50,11 +62,14 @@
 		</header>
 		<div class="body">
 			{#if loading}
-				<p class="msg">Loading…</p>
+				<p class="msg loading"><span class="spinner" aria-hidden="true"></span> Loading library…</p>
 			{:else if error}
 				<p class="msg error">{error}</p>
 			{:else if entries.length === 0}
-				<p class="msg">No saved documents yet. Save a layout to see it here.</p>
+				<div class="empty">
+					<p class="empty__label">No saved documents yet</p>
+					<p class="empty__hint">Save a layout to see it here.</p>
+				</div>
 			{:else}
 				<ul class="list">
 					{#each entries as entry (entry.id)}
@@ -155,6 +170,44 @@
 	}
 	.msg.error {
 		color: var(--danger);
+	}
+	.msg.loading {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		gap: var(--space-2);
+	}
+	.spinner {
+		display: inline-block;
+		inline-size: 1em;
+		block-size: 1em;
+		border: 2px solid var(--line-strong);
+		border-block-start-color: var(--accent);
+		border-radius: 50%;
+		animation: lib-spin 0.7s linear infinite;
+	}
+	@media (prefers-reduced-motion: reduce) {
+		.spinner {
+			animation: none;
+		}
+	}
+	@keyframes lib-spin {
+		to {
+			transform: rotate(360deg);
+		}
+	}
+	.empty {
+		padding: var(--space-6);
+		text-align: center;
+	}
+	.empty__label {
+		font-size: var(--text-lg);
+		font-weight: 700;
+		color: var(--ink);
+	}
+	.empty__hint {
+		margin-block-start: var(--space-1);
+		color: var(--ink-faint);
 	}
 	.list {
 		list-style: none;

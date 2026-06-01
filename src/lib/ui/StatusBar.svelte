@@ -10,7 +10,7 @@
 </script>
 
 <footer class="statusbar">
-	<div class="left">
+	<div class="left" aria-label="Document stats">
 		<span class="stat">{elementCount} {elementCount === 1 ? 'element' : 'elements'}</span>
 		{#if selCount > 0}
 			<span class="dot">·</span>
@@ -18,13 +18,15 @@
 		{/if}
 	</div>
 
-	<div class="right">
+	<div class="right" aria-label="View stats">
 		{#if editor.snapBypass}
 			<span class="badge">snap off</span>
 		{/if}
-		<span class="stat mono">x {cx}　y {cy}</span>
+		<span class="stat mono">x {cx}</span>
 		<span class="dot">·</span>
-		<span class="stat mono">{Math.round(camera.zoom * 100)}%</span>
+		<span class="stat mono">y {cy}</span>
+		<span class="dot">·</span>
+		<button class="stat mono zoom-reset" title="Reset zoom" aria-label="Reset zoom" onclick={() => camera.reset()}>{Math.round(camera.zoom * 100)}%</button>
 	</div>
 </footer>
 
@@ -60,6 +62,15 @@
 	}
 	.dot {
 		color: var(--ink-ghost);
+	}
+	.zoom-reset {
+		color: inherit;
+		border-radius: var(--radius-sm);
+		padding-inline: 4px;
+		&:hover {
+			background: var(--surface-sunken);
+			color: var(--ink);
+		}
 	}
 	.badge {
 		padding: 1px 7px;

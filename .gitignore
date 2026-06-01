@@ -19,3 +19,12 @@ src-tauri/gen/
 
 # Reference codebases (audit/comparison only — not part of this repo)
 excalidraw-master/
+
+# Audit scaffolding — intermediate per-cluster/per-axis parts. The assembled deliverables
+# (discovery.md, parity-report.md) are committed; these working folders are not.
+discovery-parts/
+parity-parts/
+audit-parts/
+
+# Local Claude Code runtime artifacts
+.claude/

@@ -30,6 +30,9 @@
 	let menuOpen = $state(false);
 	let exportOpen = $state(false);
 	let root = $state<HTMLDivElement>();
+	let trigger = $state<HTMLButtonElement>();
+	let menuEl = $state<HTMLDivElement>();
+	let submenuEl = $state<HTMLDivElement>();
 
 	function close(): void {
 		menuOpen = false;
@@ -38,6 +41,100 @@
 	function run(fn: () => void): void {
 		close();
 		fn();
+	}
+
+	function menuItems(scope: HTMLElement | undefined): HTMLElement[] {
+		if (!scope) return [];
+		return Array.from(scope.querySelectorAll<HTMLElement>('[role="menuitem"], .sub-trigger'));
+	}
+
+	function moveFocus(scope: HTMLElement | undefined, delta: 1 | -1): void {
+		const items = menuItems(scope);
+		if (items.length === 0) return;
+		const current = items.indexOf(document.activeElement as HTMLElement);
+		const next = (current + delta + items.length) % items.length;
+		items[next]?.focus();
+	}
+
+	function focusEdge(scope: HTMLElement | undefined, edge: 'first' | 'last'): void {
+		const items = menuItems(scope);
+		if (items.length === 0) return;
+		items[edge === 'first' ? 0 : items.length - 1]?.focus();
+	}
+
+	function onMenuKeydown(e: KeyboardEvent): void {
+		switch (e.key) {
+			case 'Escape':
+				e.preventDefault();
+				close();
+				trigger?.focus();
+				break;
+			case 'ArrowDown':
+				e.preventDefault();
+				moveFocus(menuEl, 1);
+				break;
+			case 'ArrowUp':
+				e.preventDefault();
+				moveFocus(menuEl, -1);
+				break;
+			case 'Home':
+				e.preventDefault();
+				focusEdge(menuEl, 'first');
+				break;
+			case 'End':
+				e.preventDefault();
+				focusEdge(menuEl, 'last');
+				break;
+		}
+	}
+
+	function onSubTriggerKeydown(e: KeyboardEvent): void {
+		if (e.key === 'ArrowRight' || e.key === 'Enter') {
+			e.preventDefault();
+			e.stopPropagation();
+			exportOpen = true;
+			requestAnimationFrame(() => focusEdge(submenuEl, 'first'));
+		} else if (e.key === 'ArrowLeft') {
+			e.preventDefault();
+			e.stopPropagation();
+			exportOpen = false;
+		}
+	}
+
+	function onSubmenuKeydown(e: KeyboardEvent): void {
+		switch (e.key) {
+			case 'Escape':
+				e.preventDefault();
+				e.stopPropagation();
+				close();
+				trigger?.focus();
+				break;
+			case 'ArrowLeft':
+				e.preventDefault();
+				e.stopPropagation();
+				exportOpen = false;
+				break;
+			case 'ArrowDown':
+				e.preventDefault();
+				e.stopPropagation();
+				moveFocus(submenuEl, 1);
+				break;
+			case 'ArrowUp':
+				e.preventDefault();
+				e.stopPropagation();
+				moveFocus(submenuEl, -1);
+				break;
+			case 'Home':
+				e.preventDefault();
+				e.stopPropagation();
+				focusEdge(submenuEl, 'first');
+				break;
+			case 'End':
+				e.preventDefault();
+				e.stopPropagation();
+				focusEdge(submenuEl, 'last');
+				break;
+		}
 	}
 
 	const exports: { format: ExportFormat; label: string; hint: string }[] = [
@@ -60,6 +157,7 @@
 		class="brand"
 		class:open={menuOpen}
 		class:compact
+		bind:this={trigger}
 		onclick={() => (menuOpen = !menuOpen)}
 		aria-haspopup="menu"
 		aria-expanded={menuOpen}
@@ -84,29 +182,31 @@
 	</button>
 
 	{#if menuOpen}
-		<div class="menu" role="menu">
+		<div class="menu" role="menu" tabindex={-1} bind:this={menuEl} onkeydown={onMenuKeydown}>
 			<button role="menuitem" onclick={() => run(onNew)}><PhIcon name="file-new" size={15} /> <span>New</span> <kbd>⌘N</kbd></button>
 			<button role="menuitem" onclick={() => run(onOpen)}><PhIcon name="open" size={15} /> <span>Open…</span> <kbd>⌘O</kbd></button>
 			<button role="menuitem" onclick={() => run(onLibrary)}><PhIcon name="library" size={15} /> <span>Library…</span></button>
 			<div class="sep"></div>
-			<button role="menuitem" onclick={() => run(onSave)}><PhIcon name="save" size={15} /> <span>Save</span> <kbd>⌘S</kbd></button>
+			<button role="menuitem" disabled={!dirty} onclick={() => run(onSave)}><PhIcon name="save" size={15} /> <span>Save</span> <kbd>⌘S</kbd></button>
 			<button role="menuitem" onclick={() => run(onSaveAs)}><PhIcon name="save" size={15} /> <span>Save As…</span> <kbd>⇧⌘S</kbd></button>
 			<button role="menuitem" onclick={() => run(onImport)}><PhIcon name="open" size={15} /> <span>Import…</span></button>
 			<div class="sep"></div>
 			<div class="sub">
 				<button
 					class="sub-trigger"
+					class:expanded={exportOpen}
 					onclick={() => (exportOpen = !exportOpen)}
 					onpointerenter={() => (exportOpen = true)}
+					onkeydown={onSubTriggerKeydown}
 					aria-haspopup="menu"
 					aria-expanded={exportOpen}
 				>
 					<PhIcon name="export" size={15} /> <span>Export</span>
 					<span class="grow"></span>
-					<PhIcon name="caret-right" size={11} />
+					<span class="submenu-trigger-icon"><PhIcon name="caret-right" size={11} /></span>
 				</button>
 				{#if exportOpen}
-					<div class="submenu" role="menu">
+					<div class="submenu" role="menu" tabindex={-1} bind:this={submenuEl} onkeydown={onSubmenuKeydown}>
 						{#each exports as ex (ex.format)}
 							<button role="menuitem" onclick={() => run(() => onExport(ex.format))}>
 								<span>{ex.label}</span>
@@ -218,11 +318,15 @@
 		inset-block-start: calc(100% + 7px);
 		inset-inline-start: 0;
 		min-inline-size: 232px;
+		max-inline-size: 20rem;
 		background: var(--surface);
 		border: 1px solid var(--line-strong);
 		border-radius: var(--radius-lg);
 		box-shadow: var(--shadow-lg);
-		padding: 5px;
+		padding: 8px;
+		display: flex;
+		flex-direction: column;
+		gap: 1px;
 		z-index: 60;
 		animation: pop var(--dur-2) var(--ease-out);
 	}
@@ -237,9 +341,11 @@
 	.sub-trigger {
 		display: flex;
 		align-items: center;
-		gap: 10px;
+		gap: 0.625rem;
 		inline-size: 100%;
-		padding: 7px 9px;
+		block-size: 2rem;
+		padding-inline: 0.5rem;
+		padding-block: 0;
 		font-size: var(--text-sm);
 		color: var(--ink);
 		border-radius: var(--radius-sm);
@@ -249,13 +355,16 @@
 			flex: 1;
 		}
 		&:hover {
-			background: var(--accent);
-			color: var(--accent-ink);
+			background: var(--surface-sunken);
 		}
-		&:hover :global(svg),
-		&:hover kbd,
-		&:hover .hint {
-			color: var(--accent-ink);
+		&:active {
+			background: var(--surface-sunken);
+			box-shadow: 0 0 0 1px var(--accent);
+		}
+		&[disabled] {
+			cursor: not-allowed;
+			opacity: 0.5;
+			pointer-events: none;
 		}
 	}
 
@@ -278,6 +387,13 @@
 	.sub {
 		position: relative;
 	}
+	.sub-trigger.expanded {
+		background: var(--surface-sunken);
+	}
+	.submenu-trigger-icon {
+		display: inline-flex;
+		opacity: 0.5;
+	}
 	.grow {
 		flex: 1;
 	}
@@ -286,11 +402,15 @@
 		inset-block-start: -5px;
 		inset-inline-start: calc(100% + 4px);
 		min-inline-size: 220px;
+		max-inline-size: 20rem;
 		background: var(--surface);
 		border: 1px solid var(--line-strong);
 		border-radius: var(--radius-lg);
 		box-shadow: var(--shadow-lg);
-		padding: 5px;
+		padding: 8px;
+		display: flex;
+		flex-direction: column;
+		gap: 1px;
 		animation: pop var(--dur-2) var(--ease-out);
 	}
 </style>

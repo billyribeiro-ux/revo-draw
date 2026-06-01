@@ -149,7 +149,8 @@
 						aria-label={t.label}
 						onclick={() => pick(t.tool)}
 					>
-						<PhIcon name={t.icon ?? t.tool} size={18} />
+						<PhIcon name={t.icon ?? t.tool} size={16} />
+						{#if t.key}<kbd class="kb" aria-hidden="true">{t.key}</kbd>{/if}
 						<span class="tip">
 							{t.label}{#if t.key}<kbd>{t.key}</kbd>{/if}
 						</span>
@@ -172,7 +173,7 @@
 					toggleMore();
 				}}
 			>
-				<PhIcon name="plus" size={18} />
+				<PhIcon name="plus" size={16} />
 				<span class="tip">More elements</span>
 			</button>
 			{#if moreOpen}
@@ -278,7 +279,7 @@
 
 	.divider {
 		inline-size: 1px;
-		block-size: 20px;
+		block-size: 1.5rem;
 		background: var(--line-strong);
 		margin-inline: 4px;
 		flex-shrink: 0;
@@ -304,7 +305,11 @@
 			box-shadow: var(--shadow-xs);
 		}
 		&:active {
-			transform: scale(0.94);
+			background: var(--surface-2);
+		}
+		&:focus-visible {
+			outline: none;
+			box-shadow: 0 0 0 2px var(--accent);
 		}
 	}
 
@@ -312,6 +317,23 @@
 		background: var(--accent);
 		color: var(--accent-ink);
 		box-shadow: var(--shadow-sm);
+	}
+
+	/* Always-visible keybinding badge in the tool's corner. Excalidraw's toolbar override
+	   (.App-toolbar-container) bumps the base .ToolIcon__keybinding to bottom:4px right:4px,
+	   0.625rem. Only rendered for tools that have a shortcut. */
+	.kb {
+		position: absolute;
+		inset-block-end: 4px;
+		inset-inline-end: 4px;
+		font-family: var(--font-sans);
+		font-size: 0.625rem;
+		line-height: 1;
+		color: var(--ink-faint);
+		pointer-events: none;
+	}
+	.tool.active .kb {
+		color: currentColor;
 	}
 
 	/* Custom tooltip — appears below the tool on hover. */
@@ -457,6 +479,9 @@
 		background: var(--surface-2);
 		color: var(--ink);
 		box-shadow: none;
+	}
+	:global(.x-web) .tool:active {
+		background: var(--surface-2);
 	}
 	:global(.x-web) .tool.active {
 		background: var(--accent-soft);

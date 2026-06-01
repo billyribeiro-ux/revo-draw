@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { compileToMarkdown } from './to-markdown.ts';
+import { compileToSvg } from './to-svg.ts';
 import type { Element, ElementId, IconRef, LayoutDocument } from '../elements/types.ts';
 
 /**
@@ -157,5 +158,42 @@ describe('Phase F: icon export emission', () => {
 		const md = compileToMarkdown(svgDoc());
 		expect(md).toMatch(/SvgElement/);
 		expect(md).toContain('0 0 50 50');
+	});
+});
+
+describe('SVG export resilience (per-element isolation, parity with staticSvgScene try/catch)', () => {
+	// A doc with one healthy element and one malformed element whose renderEl throws
+	// (a text node with no content → esc(undefined) throws). The export must skip the bad
+	// node and still emit the good one, rather than aborting the whole SVG.
+	function mixedDoc(): LayoutDocument {
+		const elements: Record<ElementId, Element> = {};
+		elements['good'] = el({ id: 'good', type: 'card', label: 'OK', x: 0, y: 0, width: 200, height: 120 });
+		elements['bad'] = el({ id: 'bad', type: 'text', x: 0, y: 200, width: 100, height: 40 } as Partial<Element> &
+			Pick<Element, 'id' | 'type'>);
+		// Force the malformed state: a text element with undefined content.
+		(elements['bad'] as { content?: string }).content = undefined;
+		return {
+			schemaVersion: 1,
+			id: 'doc-mixed',
+			name: 'Mixed',
+			createdAt: '2026-01-01T00:00:00.000Z',
+			updatedAt: '2026-01-01T00:00:00.000Z',
+			canvas: { width: 800, height: 600, background: '#fff' },
+			elements,
+			rootOrder: ['good', 'bad']
+		};
+	}
+
+	it('does not throw when one element is malformed', () => {
+		expect(() => compileToSvg(mixedDoc())).not.toThrow();
+	});
+
+	it('still emits the healthy element and a well-formed <svg> wrapper', () => {
+		const svg = compileToSvg(mixedDoc());
+		expect(svg.startsWith('<svg')).toBe(true);
+		expect(svg.trimEnd().endsWith('</svg>')).toBe(true);
+		// The good card's rect (width 200) is present — proving the healthy element rendered even
+		// though a later element threw. (The malformed text node is silently dropped.)
+		expect(svg).toContain('width="200"');
 	});
 });

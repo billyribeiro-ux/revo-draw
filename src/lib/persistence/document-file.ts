@@ -42,16 +42,42 @@ export type ExportFormat = 'lfdoc' | 'json' | 'md' | 'svg' | 'png';
 export function isLayoutDocument(value: unknown): value is LayoutDocument {
 	if (typeof value !== 'object' || value === null) return false;
 	const v = value as Record<string, unknown>;
-	return (
-		v.schemaVersion === SCHEMA_VERSION &&
-		typeof v.id === 'string' &&
-		typeof v.name === 'string' &&
-		typeof v.elements === 'object' &&
-		v.elements !== null &&
-		Array.isArray(v.rootOrder) &&
-		typeof v.canvas === 'object' &&
-		v.canvas !== null
-	);
+	if (
+		!(
+			v.schemaVersion === SCHEMA_VERSION &&
+			typeof v.id === 'string' &&
+			typeof v.name === 'string' &&
+			typeof v.elements === 'object' &&
+			v.elements !== null &&
+			Array.isArray(v.rootOrder) &&
+			typeof v.canvas === 'object' &&
+			v.canvas !== null
+		)
+	) {
+		return false;
+	}
+	// Per-element base-field validation. The envelope check above is not enough: an element missing
+	// or with a non-finite x/y/width/height would feed NaN straight into the renderer and hit-test
+	// (blank/broken canvas, not a clean failure). App-written docs always carry these (set by
+	// createElement), so rejecting here only catches genuinely-corrupt or hand-edited files — and we
+	// reject loudly (the caller throws "schema mismatch") rather than silently healing them.
+	for (const el of Object.values(v.elements as Record<string, unknown>)) {
+		if (!isValidElementShape(el)) return false;
+	}
+	return true;
+}
+
+/** A parsed element must carry a type and finite numeric base geometry to be safe to render. */
+function isValidElementShape(el: unknown): boolean {
+	if (typeof el !== 'object' || el === null) return false;
+	const e = el as Record<string, unknown>;
+	if (typeof e.type !== 'string' || e.type.length === 0) return false;
+	for (const k of ['x', 'y', 'width', 'height', 'rotation', 'z'] as const) {
+		if (typeof e[k] !== 'number' || !Number.isFinite(e[k])) return false;
+	}
+	// parentId is the only nullable base field; it must be a string id or null.
+	if (!(e.parentId === null || typeof e.parentId === 'string')) return false;
+	return true;
 }
 
 /** Serialize a document to the on-disk JSON form. Exported so the round-trip test can use it. */

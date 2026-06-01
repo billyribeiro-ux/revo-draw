@@ -28,12 +28,18 @@
 	import IconPicker from '$lib/ui/IconPicker.svelte';
 	import LibraryView from '$lib/ui/LibraryView.svelte';
 	import PhIcon from '$lib/ui/PhIcon.svelte';
+	import WelcomeScreen from '$lib/ui/WelcomeScreen.svelte';
 	import { isWeb, shellClass } from '$lib/platform.js';
 
 	const { scene, commands, history } = editor;
 
 	// Bottom-left footer state (web shell) — mirrors Excalidraw's zoom + undo/redo island cluster.
 	const zoomPct = $derived(editor.zoomPercent);
+	// Zoom controls grey out at the limits, like Excalidraw (`actionCanvas.tsx:164,205`:
+	// `disabled={zoom >= MAX_ZOOM}` / `<= MIN_ZOOM`). Our range is 0.05–8 (`camera.svelte.ts:23-24`),
+	// i.e. 5%–800%.
+	const atMinZoom = $derived(zoomPct <= 5);
+	const atMaxZoom = $derived(zoomPct >= 800);
 
 	// Inspector visibility — Excalidraw's `showSelectedShapeActions` rule: mount the properties panel
 	// only when something is selected (or a drawing tool is active), plus the user's explicit pin.
@@ -41,6 +47,10 @@
 	const showInspector = $derived(
 		editor.inspectorPinned || scene.selectedElements.length > 0 || editor.tool !== 'select'
 	);
+
+	// First-load welcome screen (Excalidraw `showWelcomeScreen` = empty canvas). Shown until the doc
+	// has at least one element; suppressed while a tool is mid-use so it doesn't flash during create.
+	const showWelcome = $derived(scene.ordered.length === 0 && editor.tool === 'select');
 
 	let currentPath = $state<string | null>(null);
 	// In-memory style clipboard for copy/paste styles (⌘⌥C / ⌘⌥V), Excalidraw copyStyles/pasteStyles.
@@ -400,17 +410,20 @@
 			else commands.sendBackward();
 			return;
 		}
-		if (mod && (e.key === '=' || e.key === '+')) {
+		// Zoom (Excalidraw `actionCanvas.tsx`): accepts Cmd/Ctrl OR Shift, and matches on `event.code`
+		// (`CODES.EQUAL`/`NUM_ADD`, `CODES.MINUS`/`NUM_SUBTRACT`, `CODES.ZERO`/`NUM_0`) so numpad +/−/0
+		// and non-Latin keyboard layouts work regardless of the shifted character.
+		if ((mod || e.shiftKey) && (e.code === 'Equal' || e.code === 'NumpadAdd')) {
 			e.preventDefault();
 			editor.zoomIn();
 			return;
 		}
-		if (mod && e.key === '-') {
+		if ((mod || e.shiftKey) && (e.code === 'Minus' || e.code === 'NumpadSubtract')) {
 			e.preventDefault();
 			editor.zoomOut();
 			return;
 		}
-		if (mod && e.key === '0') {
+		if ((mod || e.shiftKey) && (e.code === 'Digit0' || e.code === 'Numpad0')) {
 			e.preventDefault();
 			editor.zoomReset();
 			return;
@@ -425,10 +438,23 @@
 			scene.clearSelection();
 			return;
 		}
-		// Arrow nudge (Shift = larger step).
-		if (e.key.startsWith('Arrow')) {
+		// Align (⌘⇧Arrow), Excalidraw `actionAlign.tsx:96,130,164,198` —
+		// `CTRL_OR_CMD && shiftKey && ArrowUp/Down/Left/Right`. Our `align(axis, position)` maps:
+		// top → ('y','start'), bottom → ('y','end'), left → ('x','start'), right → ('x','end').
+		// Checked BEFORE the nudge branch so modified arrows reach align instead of nudging.
+		if (mod && e.shiftKey && e.key.startsWith('Arrow')) {
 			e.preventDefault();
-			const step = e.shiftKey ? 10 : 1;
+			if (e.key === 'ArrowUp') commands.align('y', 'start');
+			else if (e.key === 'ArrowDown') commands.align('y', 'end');
+			else if (e.key === 'ArrowLeft') commands.align('x', 'start');
+			else if (e.key === 'ArrowRight') commands.align('x', 'end');
+			return;
+		}
+		// Arrow nudge (Shift = larger step). Guarded with `!mod` so ⌘⇧Arrow reaches align above.
+		if (!mod && e.key.startsWith('Arrow')) {
+			e.preventDefault();
+			// Excalidraw `ELEMENT_SHIFT_TRANSLATE_AMOUNT = 5` (`common/src/constants.ts:22`).
+			const step = e.shiftKey ? 5 : 1;
 			const dx = e.key === 'ArrowLeft' ? -step : e.key === 'ArrowRight' ? step : 0;
 			const dy = e.key === 'ArrowUp' ? -step : e.key === 'ArrowDown' ? step : 0;
 			commands.nudge(dx, dy);
@@ -499,6 +525,9 @@
 		</main>
 
 		<div class="ui-overlay">
+			{#if showWelcome}
+				<WelcomeScreen onOpen={openFile} onLibrary={() => (libraryOpen = true)} />
+			{/if}
 			<div class="x-top">
 				<div class="x-top-left">
 					<div class="x-island menu-island">
@@ -557,8 +586,9 @@
 				<div class="x-island zoom-island">
 					<button
 						class="x-icon-btn"
-						title="Zoom out  ⌘−"
+						title="Zoom out — ⌘−"
 						aria-label="Zoom out"
+						disabled={atMinZoom}
 						onclick={() => editor.zoomOut()}
 					>
 						<PhIcon name="zoom-out" size={16} />
@@ -566,15 +596,16 @@
 					<button
 						class="x-zoom-val"
 						title="Reset zoom  ⌘0"
-						aria-label="Reset zoom to 100%"
+						aria-label="Reset zoom"
 						onclick={() => editor.zoomReset()}
 					>
 						{zoomPct}%
 					</button>
 					<button
 						class="x-icon-btn"
-						title="Zoom in  ⌘+"
+						title="Zoom in — ⌘+"
 						aria-label="Zoom in"
+						disabled={atMaxZoom}
 						onclick={() => editor.zoomIn()}
 					>
 						<PhIcon name="zoom-in" size={16} />
@@ -692,8 +723,14 @@
 		z-index: 4;
 		pointer-events: none;
 	}
-	.ui-overlay :where(.x-island, .menu-island, .x-ghost-btn, .x-export-btn, .panel-dock),
-	.x-top-center > :global(*) {
+	.ui-overlay :where(.panel-dock) {
+		pointer-events: auto;
+	}
+	/* Excalidraw `styles.scss:352-362`: the top row is pointer-transparent and EVERY direct child
+	   re-enables events, so transparent gutters fall through to the canvas and future islands work
+	   without editing a name-list. Each column wrapper uses `justify-self` so it hugs its content. */
+	.x-top > :global(*),
+	.x-bottom > :global(*) {
 		pointer-events: auto;
 	}
 
@@ -734,7 +771,11 @@
 	}
 	.menu-island {
 		padding: 0;
-		overflow: hidden;
+		/* NOTE: do NOT set overflow:hidden here. The FileMenu dropdown (.menu) is an absolutely
+		   positioned child that drops below this island; clipping it to the 2.25rem button box made
+		   the menu button appear dead (it toggled open but the menu was clipped away). The hamburger's
+		   hover background is already rounded by the button's own border-radius, so no clip is needed. */
+		overflow: visible;
 	}
 
 	/* Square icon button inside an island (zoom/undo/redo). 2rem hit target, 8px radius. */
@@ -814,7 +855,10 @@
 		inset-inline: 0;
 		display: flex;
 		align-items: flex-end;
-		gap: var(--space-2);
+		/* Excalidraw separates the zoom group from undo/redo by 0.6em (`styles.scss:549-556`
+		   `.undo-redo-buttons { margin-inline-start: 0.6em }`). --space-2 (0.5rem) is smaller, so
+		   pin the inter-island gap to 0.6rem to match. */
+		gap: 0.6rem;
 		padding: var(--space-4);
 		pointer-events: none;
 	}
@@ -848,7 +892,7 @@
 			padding: var(--space-2);
 		}
 	}
-	@media (max-width: 640px) {
+	@media (max-width: 599px) {
 		.editor.web .panel-dock {
 			inset-block: auto 0;
 			inset-inline: 0;
@@ -858,6 +902,14 @@
 		/* The bottom footer rises above the sheet so zoom/undo stay reachable. */
 		.editor.web .x-bottom {
 			inset-block-end: 50vh;
+		}
+	}
+	/* Ultrawide: Excalidraw widens the top grid to even thirds with a 3rem gap so the toolbar stops
+	   growing toward the centre (`styles.scss:363-366`). */
+	@media (min-width: 1536px) {
+		.editor.web .x-top {
+			grid-template-columns: 1fr 1fr 1fr;
+			gap: 3rem;
 		}
 	}
 

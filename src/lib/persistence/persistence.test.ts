@@ -106,6 +106,27 @@ describe('§14.4 validated load', () => {
 		// isLayoutDocument rejects an orphaned/partial shape
 		expect(isLayoutDocument({ schemaVersion: 1, id: 'x' })).toBe(false);
 	});
+
+	it('(d) a document with a malformed element is rejected (no NaN reaches the renderer)', () => {
+		const good = createBlankDocument('Has element');
+		const el = createElement('card', { x: 10, y: 10, width: 100, height: 60 }) as Element;
+		good.elements[el.id] = el;
+		good.rootOrder = [el.id];
+		expect(isLayoutDocument(good)).toBe(true);
+
+		// Same doc, but the element's geometry is corrupted — must be rejected, not silently loaded.
+		const naNWidth = structuredClone(good);
+		(naNWidth.elements[el.id] as unknown as { width: unknown }).width = 'wide';
+		expect(isLayoutDocument(naNWidth)).toBe(false);
+
+		const missingXY = structuredClone(good);
+		delete (missingXY.elements[el.id] as unknown as Record<string, unknown>).x;
+		expect(isLayoutDocument(missingXY)).toBe(false);
+
+		const noType = structuredClone(good);
+		(noType.elements[el.id] as unknown as { type: unknown }).type = '';
+		expect(isLayoutDocument(noType)).toBe(false);
+	});
 });
 
 describe('§14.4 lossless round-trip', () => {

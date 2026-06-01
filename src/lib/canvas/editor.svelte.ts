@@ -1015,7 +1015,8 @@ export class Editor {
 
 	/** The cursor to show for a given world point in select mode. */
 	cursorFor(screen: Vec2): string {
-		if (this.tool === 'hand' || this.spaceHeld || this.isPanning) return 'grab';
+		if (this.isPanning) return 'grabbing';
+		if (this.tool === 'hand' || this.spaceHeld) return 'grab';
 		if (this.tool !== 'select') return 'crosshair';
 		const world = this.camera.toWorld(screen);
 		if (this.scene.selection.size > 0) {
@@ -1045,7 +1046,7 @@ export class Editor {
  * directional resize cursors.
  */
 function cursorForHandle(kind: HandleKind, rotation: number): string {
-	if (kind === 'rotate') return 'crosshair';
+	if (kind === 'rotate') return 'grab';
 	const baseAngle: Record<Exclude<HandleKind, 'rotate'>, number> = {
 		e: 0,
 		se: 45,

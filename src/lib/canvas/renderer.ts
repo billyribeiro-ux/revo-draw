@@ -13,7 +13,7 @@
 import { bboxCenter, orientedCorners, type BBox, type Matrix, type Vec2 } from './geometry.ts';
 import type { Handle } from './hit-test.ts';
 import type { SnapGuide } from './snapping.ts';
-import type { Element, ElementId, IconRef } from '../elements/types.ts';
+import type { Element, ElementId, ElementStyle, IconRef } from '../elements/types.ts';
 
 export interface RenderInput {
 	ctx: CanvasRenderingContext2D;
@@ -58,6 +58,17 @@ const GUIDE = 'oklch(0.62 0.23 16)';
 const INK = 'oklch(0.24 0.014 264)';
 const INK_SOFT = 'oklch(0.5 0.013 264)';
 const INK_FAINT = 'oklch(0.7 0.01 264)';
+
+/**
+ * Resolve an icon glyph's ink color. An icon is a monochrome glyph: its visible color is its INK,
+ * not a background fill. The Style panel's prominent "Stroke" swatch is what users reach for to
+ * recolor line-art, and Excalidraw colors glyph-like elements (freedraw) by `strokeColor`. So the
+ * order is stroke → fill → default INK: the Stroke control recolors an icon, while existing docs
+ * (whose icon color lives in `fill`) and the per-type default fill keep rendering unchanged.
+ */
+export function iconInk(style: ElementStyle | undefined): string {
+	return style?.stroke ?? style?.fill ?? INK;
+}
 
 export function render(input: RenderInput): void {
 	const { ctx, dpr, cssWidth, cssHeight } = input;
@@ -862,7 +873,7 @@ function drawIcon(ctx: CanvasRenderingContext2D, el: Element, zoom: number): voi
 	ctx.translate(el.x, el.y);
 	ctx.scale(el.width / vb.w, el.height / vb.h);
 	ctx.translate(-vb.x, -vb.y);
-	ctx.fillStyle = el.style?.fill ?? INK;
+	ctx.fillStyle = iconInk(el.style);
 	try {
 		const path = new Path2D(el.svgPath);
 		ctx.fill(path);
@@ -1762,7 +1773,7 @@ function drawSelection(input: RenderInput): void {
 	// by a few screen px so it sits OUTSIDE the element's own border — otherwise it would paint over
 	// the element's stroke and hide stroke-color changes while selected.
 	ctx.strokeStyle = SEL;
-	ctx.lineWidth = strokeWidthFor(zoom, 1.5);
+	ctx.lineWidth = strokeWidthFor(zoom, 1);
 	const pad = 3 / zoom; // outset in world units, constant on screen
 	for (const el of ordered) {
 		if (!selection.has(el.id)) continue;
@@ -1791,7 +1802,9 @@ function drawSelection(input: RenderInput): void {
 		if (b) {
 			ctx.strokeStyle = SEL;
 			ctx.lineWidth = strokeWidthFor(zoom, 1);
+			ctx.setLineDash([2 / zoom]);
 			ctx.strokeRect(b.x - pad, b.y - pad, b.width + pad * 2, b.height + pad * 2);
+			ctx.setLineDash([]);
 		}
 	}
 
@@ -1815,14 +1828,14 @@ function drawSelection(input: RenderInput): void {
 			ctx.fillStyle = 'oklch(1 0 0)';
 			ctx.fill();
 			ctx.strokeStyle = SEL;
-			ctx.lineWidth = strokeWidthFor(zoom, 1.25);
+			ctx.lineWidth = strokeWidthFor(zoom, 1);
 			ctx.stroke();
 		} else {
 			ctx.fillStyle = 'oklch(1 0 0)';
 			ctx.strokeStyle = SEL;
-			ctx.lineWidth = strokeWidthFor(zoom, 1.25);
+			ctx.lineWidth = strokeWidthFor(zoom, 1);
 			ctx.beginPath();
-			ctx.rect(h.world.x - hs / 2, h.world.y - hs / 2, hs, hs);
+			ctx.roundRect(h.world.x - hs / 2, h.world.y - hs / 2, hs, hs, 2 / zoom);
 			ctx.fill();
 			ctx.stroke();
 		}
@@ -1872,10 +1885,11 @@ function drawGuides(input: RenderInput): void {
 function drawMarquee(input: RenderInput): void {
 	const { ctx, zoom, marquee } = input;
 	if (!marquee) return;
-	// Translucent fill in the shell's selection color (constant ~0.09 alpha via globalAlpha so the
-	// same color works for both the oklch desktop accent and the hex web accent).
+	// Translucent fill in the shell's selection color (constant ~0.04 alpha via globalAlpha so the
+	// same color works for both the oklch desktop accent and the hex web accent), matching
+	// Excalidraw's faint blue marquee wash.
 	ctx.save();
-	ctx.globalAlpha = 0.09;
+	ctx.globalAlpha = 0.04;
 	ctx.fillStyle = input.selectionColor;
 	ctx.fillRect(marquee.x, marquee.y, marquee.width, marquee.height);
 	ctx.restore();
