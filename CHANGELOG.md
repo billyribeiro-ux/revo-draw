@@ -19,6 +19,12 @@ Newest first. "Done" = committed on this branch with tests green; "Pending" = no
   collab/firebase/mobile/React/linear-arrow/freedraw), plus real divergences listed below.
 
 ### Web-shell behavior/visual parity
+- **Toolbar keybinding badges — ADDED** (`src/lib/ui/Toolbar.svelte`). Excalidraw shows an
+  always-visible shortcut badge in each tool's corner (`.ToolIcon__keybinding`: bottom:2px,
+  right:3px, 0.625rem, gray-40); ours only showed the key in a hover tooltip. Added a matching
+  corner `kbd` badge for tools that have a shortcut (V/H/F/C/T/B). NOTE: the toolbar's *tool set*
+  is semantic (frame/card/nav/…) vs Excalidraw's geometric (rect/ellipse/arrow/…) — a product
+  difference that can't and shouldn't match; only the chrome does.
 - **First-load welcome screen — ADDED** (`src/lib/ui/WelcomeScreen.svelte` new, wired in
   `+page.svelte`, shown when `scene.ordered.length === 0`). We showed a blank canvas on load;
   Excalidraw shows a WelcomeScreen. Replicated its structure from source (WelcomeScreen.Center +

@@ -150,6 +150,7 @@
 						onclick={() => pick(t.tool)}
 					>
 						<PhIcon name={t.icon ?? t.tool} size={18} />
+						{#if t.key}<kbd class="kb" aria-hidden="true">{t.key}</kbd>{/if}
 						<span class="tip">
 							{t.label}{#if t.key}<kbd>{t.key}</kbd>{/if}
 						</span>
@@ -312,6 +313,23 @@
 		background: var(--accent);
 		color: var(--accent-ink);
 		box-shadow: var(--shadow-sm);
+	}
+
+	/* Always-visible keybinding badge in the tool's corner (Excalidraw .ToolIcon__keybinding:
+	   bottom:2px right:3px, 0.625rem, gray-40). Only rendered for tools that have a shortcut. */
+	.kb {
+		position: absolute;
+		inset-block-end: 2px;
+		inset-inline-end: 3px;
+		font-family: var(--font-sans);
+		font-size: 0.625rem;
+		line-height: 1;
+		color: var(--ink-faint);
+		pointer-events: none;
+	}
+	.tool.active .kb {
+		color: currentColor;
+		opacity: 0.7;
 	}
 
 	/* Custom tooltip — appears below the tool on hover. */
