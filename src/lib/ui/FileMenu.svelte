@@ -11,7 +11,8 @@
 		onSaveAs,
 		onImport,
 		onExport,
-		onLibrary
+		onLibrary,
+		compact = false
 	}: {
 		docName: string;
 		dirty: boolean;
@@ -22,6 +23,8 @@
 		onImport: () => void;
 		onExport: (format: ExportFormat) => void;
 		onLibrary: () => void;
+		/** Web/Excalidraw shell: render the trigger as a hamburger icon button, not a doc-name chip. */
+		compact?: boolean;
 	} = $props();
 
 	let menuOpen = $state(false);
@@ -56,21 +59,28 @@
 	<button
 		class="brand"
 		class:open={menuOpen}
+		class:compact
 		onclick={() => (menuOpen = !menuOpen)}
 		aria-haspopup="menu"
 		aria-expanded={menuOpen}
-		title="File menu"
+		aria-label="Menu"
+		title="Menu"
 	>
-		<span class="logo" aria-hidden="true">
-			<span class="bar a"></span>
-			<span class="bar b"></span>
-			<span class="bar c"></span>
-		</span>
-		<span class="names">
-			<span class="doc">{docName}</span>
-		</span>
-		{#if dirty}<span class="dot" title="Unsaved changes" aria-label="Unsaved changes"></span>{/if}
-		<span class="caret"><PhIcon name="caret-down" size={11} /></span>
+		{#if compact}
+			<PhIcon name="nav" size={18} />
+			{#if dirty}<span class="dot corner" title="Unsaved changes" aria-label="Unsaved changes"></span>{/if}
+		{:else}
+			<span class="logo" aria-hidden="true">
+				<span class="bar a"></span>
+				<span class="bar b"></span>
+				<span class="bar c"></span>
+			</span>
+			<span class="names">
+				<span class="doc">{docName}</span>
+			</span>
+			{#if dirty}<span class="dot" title="Unsaved changes" aria-label="Unsaved changes"></span>{/if}
+			<span class="caret"><PhIcon name="caret-down" size={11} /></span>
+		{/if}
 	</button>
 
 	{#if menuOpen}
@@ -129,6 +139,27 @@
 		&.open {
 			background: var(--surface-sunken);
 		}
+	}
+
+	/* Web/Excalidraw shell: a square hamburger icon button filling the menu Island. */
+	.brand.compact {
+		position: relative;
+		justify-content: center;
+		gap: 0;
+		padding: 0;
+		inline-size: 2.25rem;
+		block-size: 2.25rem;
+		border-radius: var(--radius-lg);
+		color: var(--ink);
+	}
+	.brand.compact:hover,
+	.brand.compact.open {
+		background: var(--surface-2);
+	}
+	.dot.corner {
+		position: absolute;
+		inset-block-start: 7px;
+		inset-inline-end: 7px;
 	}
 
 	.logo {

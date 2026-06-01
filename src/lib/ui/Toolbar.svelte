@@ -467,4 +467,13 @@
 		background: var(--accent-soft);
 		color: var(--accent-on-container);
 	}
+
+	/* On a narrow viewport the Island would overflow the screen — let the palette scroll
+	   horizontally (Excalidraw's mobile toolbar behavior) instead of clipping off-screen. */
+	@media (max-width: 820px) {
+		:global(.x-web) .palette {
+			overflow-x: auto;
+			max-inline-size: 100%;
+		}
+	}
 </style>

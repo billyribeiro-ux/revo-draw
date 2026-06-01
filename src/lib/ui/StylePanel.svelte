@@ -236,6 +236,18 @@
 	.style-panel.shifted {
 		inset-inline-start: calc(var(--panel-w) + var(--space-3));
 	}
+
+	/* Web/Excalidraw shell: drop the panel below the top menu+toolbar row so it never collides with
+	   the hamburger Island, and present it as a borderless Island (shadow only), like Excalidraw. */
+	:global(.x-web) .style-panel {
+		inset-block-start: calc(var(--space-4) + 3.5rem);
+		inset-inline-start: var(--space-4);
+		border: none;
+		box-shadow: var(--shadow-island);
+	}
+	:global(.x-web) .style-panel.shifted {
+		inset-inline-start: calc(var(--panel-w) + var(--space-4) * 2);
+	}
 	@keyframes pop {
 		from {
 			opacity: 0;

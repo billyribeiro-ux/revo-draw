@@ -44,6 +44,8 @@ export interface RenderInput {
 	/** The infinite-canvas backdrop fill. Token-derived per shell (white for the Excalidraw web
 	 * build, warm paper for the Tauri desktop build). */
 	bgColor: string;
+	/** Selection box + handle + marquee color. Token-derived per shell (#6965db on web). */
+	selectionColor: string;
 	/** Whether the editor is in dark or light surface — drives grid contrast. */
 	gridColor: string;
 	gridStrongColor: string;
@@ -1754,11 +1756,12 @@ function drawDropTarget(ctx: CanvasRenderingContext2D, el: Element, zoom: number
 function drawSelection(input: RenderInput): void {
 	const { ctx, zoom, selection, ordered, soleSelected } = input;
 	if (selection.size === 0) return;
+	const SEL = input.selectionColor;
 
 	// Per-element oriented outlines (thin accent) for every selected element. The outline is OUTSET
 	// by a few screen px so it sits OUTSIDE the element's own border — otherwise it would paint over
 	// the element's stroke and hide stroke-color changes while selected.
-	ctx.strokeStyle = ACCENT;
+	ctx.strokeStyle = SEL;
 	ctx.lineWidth = strokeWidthFor(zoom, 1.5);
 	const pad = 3 / zoom; // outset in world units, constant on screen
 	for (const el of ordered) {
@@ -1786,7 +1789,7 @@ function drawSelection(input: RenderInput): void {
 	if (!soleSelected) {
 		const b = input.selectionBounds;
 		if (b) {
-			ctx.strokeStyle = ACCENT;
+			ctx.strokeStyle = SEL;
 			ctx.lineWidth = strokeWidthFor(zoom, 1);
 			ctx.strokeRect(b.x - pad, b.y - pad, b.width + pad * 2, b.height + pad * 2);
 		}
@@ -1796,7 +1799,7 @@ function drawSelection(input: RenderInput): void {
 	const rotateHandle = handles.find((h) => h.kind === 'rotate');
 	const topMid = handles.find((h) => h.kind === 'n');
 	if (rotateHandle && topMid) {
-		ctx.strokeStyle = ACCENT;
+		ctx.strokeStyle = SEL;
 		ctx.lineWidth = strokeWidthFor(zoom, 1);
 		ctx.beginPath();
 		ctx.moveTo(topMid.world.x, topMid.world.y);
@@ -1811,12 +1814,12 @@ function drawSelection(input: RenderInput): void {
 			ctx.arc(h.world.x, h.world.y, hs * 0.62, 0, Math.PI * 2);
 			ctx.fillStyle = 'oklch(1 0 0)';
 			ctx.fill();
-			ctx.strokeStyle = ACCENT;
+			ctx.strokeStyle = SEL;
 			ctx.lineWidth = strokeWidthFor(zoom, 1.25);
 			ctx.stroke();
 		} else {
 			ctx.fillStyle = 'oklch(1 0 0)';
-			ctx.strokeStyle = ACCENT;
+			ctx.strokeStyle = SEL;
 			ctx.lineWidth = strokeWidthFor(zoom, 1.25);
 			ctx.beginPath();
 			ctx.rect(h.world.x - hs / 2, h.world.y - hs / 2, hs, hs);
@@ -1869,9 +1872,14 @@ function drawGuides(input: RenderInput): void {
 function drawMarquee(input: RenderInput): void {
 	const { ctx, zoom, marquee } = input;
 	if (!marquee) return;
-	ctx.fillStyle = 'oklch(0.55 0.17 264 / 0.09)';
-	ctx.strokeStyle = ACCENT;
-	ctx.lineWidth = strokeWidthFor(zoom, 1);
+	// Translucent fill in the shell's selection color (constant ~0.09 alpha via globalAlpha so the
+	// same color works for both the oklch desktop accent and the hex web accent).
+	ctx.save();
+	ctx.globalAlpha = 0.09;
+	ctx.fillStyle = input.selectionColor;
 	ctx.fillRect(marquee.x, marquee.y, marquee.width, marquee.height);
+	ctx.restore();
+	ctx.strokeStyle = input.selectionColor;
+	ctx.lineWidth = strokeWidthFor(zoom, 1);
 	ctx.strokeRect(marquee.x, marquee.y, marquee.width, marquee.height);
 }

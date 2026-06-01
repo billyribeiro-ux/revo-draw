@@ -503,6 +503,7 @@
 				<div class="x-top-left">
 					<div class="x-island menu-island">
 						<FileMenu
+							compact
 							docName={scene.doc.name}
 							dirty={scene.dirty}
 							onNew={newDocument}
@@ -832,6 +833,32 @@
 	}
 	.editor.web .panel-dock.right {
 		inset-inline-end: var(--space-4);
+	}
+
+	/* Responsive form-factors (Excalidraw's phone/tablet adaptation). On a narrow viewport the top
+	   row tightens to fit the menu/toolbar/actions, padding shrinks, and the side panels become
+	   full-width bottom sheets instead of tall side Islands that would smother the canvas. */
+	@media (max-width: 820px) {
+		.editor.web .x-top {
+			grid-template-columns: auto 1fr auto;
+			gap: var(--space-2);
+			padding: var(--space-2);
+		}
+		.editor.web .x-bottom {
+			padding: var(--space-2);
+		}
+	}
+	@media (max-width: 640px) {
+		.editor.web .panel-dock {
+			inset-block: auto 0;
+			inset-inline: 0;
+			max-block-size: 50vh;
+			border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+		}
+		/* The bottom footer rises above the sheet so zoom/undo stay reachable. */
+		.editor.web .x-bottom {
+			inset-block-end: 50vh;
+		}
 	}
 
 	.workspace {

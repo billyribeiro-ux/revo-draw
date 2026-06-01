@@ -16,12 +16,18 @@
 	// Canvas backdrop + dot-grid colors. The web (Excalidraw) build derives them from the `.x-web`
 	// design tokens resolved on the live element, so the surface is plain white; the Tauri desktop
 	// build keeps its original warm-paper literals verbatim (zero pixel change to the desktop look).
-	function canvasColors(el: HTMLElement): { bg: string; grid: string; gridStrong: string } {
+	function canvasColors(el: HTMLElement): {
+		bg: string;
+		grid: string;
+		gridStrong: string;
+		selection: string;
+	} {
 		if (!isWeb) {
 			return {
 				bg: 'oklch(0.955 0.004 110)',
 				grid: 'oklch(0.88 0.006 264)',
-				gridStrong: 'oklch(0.8 0.01 264)'
+				gridStrong: 'oklch(0.8 0.01 264)',
+				selection: 'oklch(0.55 0.17 264)'
 			};
 		}
 		const cs = getComputedStyle(el);
@@ -29,7 +35,8 @@
 		return {
 			bg: v('--canvas-bg', '#ffffff'),
 			grid: v('--canvas-grid', '#ebebeb'),
-			gridStrong: v('--canvas-grid-strong', '#d6d6d6')
+			gridStrong: v('--canvas-grid-strong', '#d6d6d6'),
+			selection: v('--selection', '#6965db')
 		};
 	}
 
@@ -72,6 +79,7 @@
 			rotateHandleOffsetWorld: editor.rotateOffsetWorld,
 			handleSizeWorld: editor.handleSizeWorld,
 			bgColor: colors.bg,
+			selectionColor: colors.selection,
 			gridColor: colors.grid,
 			gridStrongColor: colors.gridStrong,
 			gridVisible: editor.gridVisible

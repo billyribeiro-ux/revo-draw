@@ -66,6 +66,8 @@ function rasterize(doc: LayoutDocument, opts: RasterOptions): HTMLCanvasElement 
 		// PNG export paints the document's own canvas background (the export is a faithful raster of
 		// the document, independent of which shell rendered it).
 		bgColor: doc.canvas.background,
+		// No selection chrome in an export (selection is empty), but the field is required.
+		selectionColor: '#6965db',
 		gridColor: 'oklch(0.92 0.004 264 / 0)',
 		gridStrongColor: 'oklch(0.92 0.004 264 / 0)',
 		// PNG export never includes the editor dot-grid regardless of the user's runtime gridMode.
