@@ -20,7 +20,14 @@ export function compileToSvg(doc: LayoutDocument): string {
 	parts.push(`<rect x="-40" y="-40" width="${w}" height="${h}" fill="${esc(doc.canvas.background)}"/>`);
 	for (const el of ordered) {
 		if (el.hidden) continue;
-		parts.push(renderEl(el));
+		// Per-element error isolation (Excalidraw `staticSvgScene.ts:734-761`): a single malformed
+		// element (e.g. a bad icon `viewBox`/`svgPath`) must not abort the entire export. Skip the
+		// offending node and emit the rest, so the export degrades gracefully instead of failing.
+		try {
+			parts.push(renderEl(el));
+		} catch {
+			// Drop this element from the visual export; the others still render.
+		}
 	}
 	parts.push('</svg>');
 	return parts.join('\n') + '\n';
