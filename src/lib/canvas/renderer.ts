@@ -1773,7 +1773,7 @@ function drawSelection(input: RenderInput): void {
 	// by a few screen px so it sits OUTSIDE the element's own border — otherwise it would paint over
 	// the element's stroke and hide stroke-color changes while selected.
 	ctx.strokeStyle = SEL;
-	ctx.lineWidth = strokeWidthFor(zoom, 1.5);
+	ctx.lineWidth = strokeWidthFor(zoom, 1);
 	const pad = 3 / zoom; // outset in world units, constant on screen
 	for (const el of ordered) {
 		if (!selection.has(el.id)) continue;
@@ -1802,7 +1802,9 @@ function drawSelection(input: RenderInput): void {
 		if (b) {
 			ctx.strokeStyle = SEL;
 			ctx.lineWidth = strokeWidthFor(zoom, 1);
+			ctx.setLineDash([2 / zoom]);
 			ctx.strokeRect(b.x - pad, b.y - pad, b.width + pad * 2, b.height + pad * 2);
+			ctx.setLineDash([]);
 		}
 	}
 
@@ -1826,14 +1828,14 @@ function drawSelection(input: RenderInput): void {
 			ctx.fillStyle = 'oklch(1 0 0)';
 			ctx.fill();
 			ctx.strokeStyle = SEL;
-			ctx.lineWidth = strokeWidthFor(zoom, 1.25);
+			ctx.lineWidth = strokeWidthFor(zoom, 1);
 			ctx.stroke();
 		} else {
 			ctx.fillStyle = 'oklch(1 0 0)';
 			ctx.strokeStyle = SEL;
-			ctx.lineWidth = strokeWidthFor(zoom, 1.25);
+			ctx.lineWidth = strokeWidthFor(zoom, 1);
 			ctx.beginPath();
-			ctx.rect(h.world.x - hs / 2, h.world.y - hs / 2, hs, hs);
+			ctx.roundRect(h.world.x - hs / 2, h.world.y - hs / 2, hs, hs, 2 / zoom);
 			ctx.fill();
 			ctx.stroke();
 		}
@@ -1883,10 +1885,11 @@ function drawGuides(input: RenderInput): void {
 function drawMarquee(input: RenderInput): void {
 	const { ctx, zoom, marquee } = input;
 	if (!marquee) return;
-	// Translucent fill in the shell's selection color (constant ~0.09 alpha via globalAlpha so the
-	// same color works for both the oklch desktop accent and the hex web accent).
+	// Translucent fill in the shell's selection color (constant ~0.04 alpha via globalAlpha so the
+	// same color works for both the oklch desktop accent and the hex web accent), matching
+	// Excalidraw's faint blue marquee wash.
 	ctx.save();
-	ctx.globalAlpha = 0.09;
+	ctx.globalAlpha = 0.04;
 	ctx.fillStyle = input.selectionColor;
 	ctx.fillRect(marquee.x, marquee.y, marquee.width, marquee.height);
 	ctx.restore();

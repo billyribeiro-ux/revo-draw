@@ -417,7 +417,7 @@
 	ondrop={onCanvasDrop}
 >
 	<!-- Input listeners are attached imperatively in an $effect (see script) for reliable delivery. -->
-	<canvas bind:this={canvasEl} tabindex="0" style:cursor></canvas>
+	<canvas bind:this={canvasEl} tabindex="0" aria-label="Drawing canvas" style:cursor></canvas>
 
 	{#if editor.editingTextId && editingRect}
 		{@const r = editingRect}
