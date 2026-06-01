@@ -3,8 +3,10 @@
 	import { render } from '$lib/canvas/renderer.js';
 	import type { Vec2 } from '$lib/canvas/geometry.js';
 	import { hitTestPoint } from '$lib/canvas/hit-test.js';
-	import type { Element } from '$lib/elements/types.js';
+	import type { Element, ElementStyle } from '$lib/elements/types.js';
 	import { isWeb } from '$lib/platform.js';
+	import { readClipboard, writeClipboard } from '$lib/persistence/clipboard.js';
+	import ContextMenu, { type CtxItem } from './ContextMenu.svelte';
 
 	const { scene, camera, commands } = editor;
 
@@ -12,6 +14,11 @@
 	let canvasEl = $state<HTMLCanvasElement>();
 	let dpr = $state(1);
 	let cursor = $state('default');
+
+	// Right-click context menu (Excalidraw `handleCanvasContextMenu` + `getContextMenuItems`).
+	let ctxMenu = $state<{ x: number; y: number; type: 'canvas' | 'element' } | null>(null);
+	// In-component style clipboard for Copy/Paste styles (mirrors +page's ⌘⌥C/⌘⌥V).
+	let styleClip = $state<ElementStyle | null>(null);
 
 	// Canvas backdrop + dot-grid colors. The web (Excalidraw) build derives them from the `.x-web`
 	// design tokens resolved on the live element, so the surface is plain white; the Tauri desktop
@@ -128,6 +135,7 @@
 		cv.addEventListener('pointerup', onPointerUp);
 		cv.addEventListener('pointercancel', onPointerUp);
 		cv.addEventListener('dblclick', onDoubleClick);
+		cv.addEventListener('contextmenu', onContextMenu);
 		cv.addEventListener('wheel', onWheel, { passive: false });
 		return () => {
 			cv.removeEventListener('pointerdown', onPointerDown);
@@ -135,6 +143,7 @@
 			cv.removeEventListener('pointerup', onPointerUp);
 			cv.removeEventListener('pointercancel', onPointerUp);
 			cv.removeEventListener('dblclick', onDoubleClick);
+			cv.removeEventListener('contextmenu', onContextMenu);
 			cv.removeEventListener('wheel', onWheel);
 			// Cancel any in-flight throttled move RAF so it can't fire after unmount (mid-gesture nav).
 			if (rafId !== null) {
@@ -321,6 +330,82 @@
 		}
 		e.stopPropagation();
 	}
+
+	// ---- right-click context menu ------------------------------------------------------------
+
+	function copySel(): void {
+		const p = commands.copySelection();
+		editor.clipboard = p;
+		if (p) void writeClipboard(p);
+	}
+	function cutSel(): void {
+		copySel();
+		commands.deleteSelection();
+	}
+	function pasteHere(): void {
+		void (async () => {
+			const fromOs = await readClipboard();
+			const p = fromOs ?? editor.clipboard;
+			if (p) commands.paste(p);
+		})();
+	}
+
+	function onContextMenu(e: MouseEvent): void {
+		e.preventDefault();
+		const world = camera.toWorld(localPoint(e));
+		const hit = hitTestPoint(scene.ordered, world);
+		// Right-clicking an unselected element selects it first (Excalidraw behavior); right-clicking
+		// empty space with a selection clears it so the canvas menu is shown.
+		if (hit) {
+			if (!scene.isSelected(hit.id)) scene.selectOne(hit.id);
+		} else {
+			scene.clearSelection();
+		}
+		const type = scene.selection.size > 0 ? 'element' : 'canvas';
+		ctxMenu = { x: e.clientX, y: e.clientY, type };
+	}
+
+	const ctxItems = $derived.by((): CtxItem[] => {
+		if (!ctxMenu) return [];
+		if (ctxMenu.type === 'canvas') {
+			return [
+				{ kind: 'item', label: 'Paste', shortcut: '⌘V', run: pasteHere },
+				{ kind: 'separator' },
+				{ kind: 'item', label: 'Select all', shortcut: '⌘A', run: () => scene.selectAll() },
+				{ kind: 'item', label: 'Unlock all elements', run: () => commands.unlockAll() }
+			];
+		}
+		return [
+			{ kind: 'item', label: 'Cut', shortcut: '⌘X', run: cutSel },
+			{ kind: 'item', label: 'Copy', shortcut: '⌘C', run: copySel },
+			{ kind: 'item', label: 'Paste', shortcut: '⌘V', run: pasteHere },
+			{ kind: 'separator' },
+			{ kind: 'item', label: 'Copy styles', shortcut: '⌘⌥C', run: () => (styleClip = commands.copyStyles()) },
+			{
+				kind: 'item',
+				label: 'Paste styles',
+				shortcut: '⌘⌥V',
+				disabled: !styleClip,
+				run: () => styleClip && commands.pasteStyles(styleClip)
+			},
+			{ kind: 'separator' },
+			{ kind: 'item', label: 'Group selection', shortcut: '⌘G', run: () => commands.group() },
+			{ kind: 'item', label: 'Ungroup selection', shortcut: '⌘⇧G', run: () => commands.ungroup() },
+			{ kind: 'separator' },
+			{ kind: 'item', label: 'Bring forward', shortcut: '⌘]', run: () => commands.bringForward() },
+			{ kind: 'item', label: 'Send backward', shortcut: '⌘[', run: () => commands.sendBackward() },
+			{ kind: 'item', label: 'Bring to front', shortcut: '⌘⇧]', run: () => commands.bringToFront() },
+			{ kind: 'item', label: 'Send to back', shortcut: '⌘⇧[', run: () => commands.sendToBack() },
+			{ kind: 'separator' },
+			{ kind: 'item', label: 'Flip horizontal', shortcut: '⇧H', run: () => commands.flip('x') },
+			{ kind: 'item', label: 'Flip vertical', shortcut: '⇧V', run: () => commands.flip('y') },
+			{ kind: 'separator' },
+			{ kind: 'item', label: 'Lock / Unlock', shortcut: '⌘⇧L', run: () => commands.toggleLockSelection() },
+			{ kind: 'separator' },
+			{ kind: 'item', label: 'Duplicate', shortcut: '⌘D', run: () => commands.duplicateSelection() },
+			{ kind: 'item', label: 'Delete', shortcut: '⌫', danger: true, run: () => commands.deleteSelection() }
+		];
+	});
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions — the drop target is a visual canvas;
@@ -352,6 +437,14 @@
 		></textarea>
 	{/if}
 </div>
+
+<ContextMenu
+	open={ctxMenu !== null}
+	x={ctxMenu?.x ?? 0}
+	y={ctxMenu?.y ?? 0}
+	items={ctxItems}
+	onClose={() => (ctxMenu = null)}
+/>
 
 <svelte:window
 	onkeydown={(e) => {

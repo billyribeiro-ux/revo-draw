@@ -19,6 +19,21 @@ Newest first. "Done" = committed on this branch with tests green; "Pending" = no
   collab/firebase/mobile/React/linear-arrow/freedraw), plus real divergences listed below.
 
 ### Web-shell behavior/visual parity
+- **Right-click context menu — ADDED** (`src/lib/ui/ContextMenu.svelte` new, wired in
+  `src/lib/ui/Canvas.svelte`). We had no canvas context menu at all (browser default). Built one
+  matching Excalidraw's `ContextMenu.tsx`/`ContextMenu.scss` structure (a `ul.context-menu` of
+  rows with label + shortcut `kbd`, `hr` separators with leading/trailing/adjacent collapsed,
+  clamped into the viewport). Right-clicking an element selects it first, then shows the element
+  menu; right-clicking empty space shows the canvas menu (Excalidraw `handleCanvasContextMenu` +
+  `getContextMenuItems`). Items mapped to our real commands:
+  - **Element:** Cut / Copy / Paste · Copy styles / Paste styles · Group / Ungroup · Bring
+    forward / Send backward / Bring to front / Send to back · Flip horizontal / Flip vertical ·
+    Lock-Unlock · Duplicate · Delete (danger).
+  - **Canvas:** Paste · Select all · Unlock all elements.
+  - Excalidraw items with no analogue in our model are intentionally omitted (arrow-binding,
+    bind/unbind text, linear editor, crop, frame ops, zen/view mode, stats, element links) — those
+    features don't exist here. `pnpm check` 0/0; svelte-autofixer clean on the new component; 141 tests.
+
 - **Menu button did nothing — FIXED** (`src/routes/+page.svelte`). Traced from CSS alone: the
   hamburger lives in `.menu-island`, whose `overflow: hidden` clipped `FileMenu`'s absolutely-
   positioned dropdown to the 2.25rem button box — so the button toggled open but the menu was
