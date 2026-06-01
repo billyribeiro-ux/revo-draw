@@ -18,6 +18,20 @@ Newest first. "Done" = committed on this branch with tests green; "Pending" = no
   citations). Honest conclusion: NOT a 100% match — large ABSENT surface is intentional (no
   collab/firebase/mobile/React/linear-arrow/freedraw), plus real divergences listed below.
 
+### Web-shell parity sweep (audit → fix, multi-agent)
+- **Systematic UI-shell side-by-side audit + fix.** Ran a 12-agent read-only audit comparing every
+  web-shell surface against its Excalidraw source counterpart (design tokens, app-shell layout,
+  toolbar, main menu, style panel, color picker, footer/zoom, library, stats, canvas
+  selection-overlay, keyboard shortcuts, dialogs/a11y) → **91 matchable findings** (source-cited,
+  with exact values), written to `audit-parts/` (gitignored). Then a 7-agent fix pass (one agent
+  per disjoint file-group, parallel-safe) applied **65 fixes**; the orchestrator serialized the
+  gates (`pnpm check` 0/0, 141 tests) and committed per group (`beecc93`, `b9087e3`, `e2e26ce`,
+  `35e9f47`, `0fbf324`, `3e34dcf`, `6ea6ce9`). Highlights: focus-ring/danger/brand-active tokens;
+  599px phone breakpoint + ultrawide top-grid + zoom-limit disabling; toolbar glyph 16px + focus
+  ring + press feedback; menu neutral hover + roving keyboard nav + Escape + disabled-Save;
+  selection-overlay/cursor parity; library/stats/dialog-a11y chrome; Shift+Arrow nudge 5px.
+  Product-divergent items (rough.js, element types, branding, collab) were explicitly excluded.
+
 ### Web-shell behavior/visual parity
 - **Toolbar keybinding badges — ADDED** (`src/lib/ui/Toolbar.svelte`). Excalidraw shows an
   always-visible shortcut badge in each tool's corner (`.ToolIcon__keybinding`: bottom:2px,
