@@ -18,7 +18,17 @@ Newest first. "Done" = committed on this branch with tests green; "Pending" = no
   citations). Honest conclusion: NOT a 100% match — large ABSENT surface is intentional (no
   collab/firebase/mobile/React/linear-arrow/freedraw), plus real divergences listed below.
 
-### Web-shell visual parity
+### Web-shell behavior/visual parity
+- **Menu button did nothing — FIXED** (`src/routes/+page.svelte`). Traced from CSS alone: the
+  hamburger lives in `.menu-island`, whose `overflow: hidden` clipped `FileMenu`'s absolutely-
+  positioned dropdown to the 2.25rem button box — so the button toggled open but the menu was
+  invisible. Set the island to `overflow: visible` (the button's own border-radius already rounds
+  its hover bg). `pnpm check` 0/0.
+- **Canvas background — verified already matches Excalidraw** (no change needed). Our web tokens are
+  `--canvas-bg: #ffffff` (= Excalidraw `COLOR_PALETTE.white` / `viewBackgroundColor` default) and the
+  grid is off in web (`gridVisible = !isWeb` → false; Excalidraw `gridModeEnabled: false`). If the
+  background still looks off on screen, it's a visual nuance that needs a screenshot to identify.
+
 - **Color picker box rebuilt to Excalidraw's ColorPicker** (`src/lib/ui/StylePanel.svelte`,
   `src/lib/elements/palette.ts`) — the "more colors" popover was a 10×5 hue-grid; it now matches
   Excalidraw's structure verified against `ColorPicker.scss`/`Picker.tsx`: a **"Colors" heading +
