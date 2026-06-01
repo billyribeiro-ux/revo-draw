@@ -27,8 +27,13 @@
 	import FileMenu from '$lib/ui/FileMenu.svelte';
 	import IconPicker from '$lib/ui/IconPicker.svelte';
 	import LibraryView from '$lib/ui/LibraryView.svelte';
+	import PhIcon from '$lib/ui/PhIcon.svelte';
+	import { isWeb, shellClass } from '$lib/platform.js';
 
 	const { scene, commands, history } = editor;
+
+	// Bottom-left footer state (web shell) — mirrors Excalidraw's zoom + undo/redo island cluster.
+	const zoomPct = $derived(editor.zoomPercent);
 
 	// Inspector visibility — Excalidraw's `showSelectedShapeActions` rule: mount the properties panel
 	// only when something is selected (or a drawing tool is active), plus the user's explicit pin.
@@ -484,28 +489,57 @@
 
 <svelte:window onkeydown={onKeydown} />
 
-<div class="editor">
-	<TitleBar onExport={() => doExport('md')}>
-		{#snippet brand()}
-			<FileMenu
-				docName={scene.doc.name}
-				dirty={scene.dirty}
-				onNew={newDocument}
-				onOpen={openFile}
-				onSave={save}
-				onSaveAs={saveAs}
-				onImport={openFile}
-				onExport={doExport}
-				onLibrary={() => (libraryOpen = true)}
-			/>
-		{/snippet}
-	</TitleBar>
-
-	<Toolbar onIconTool={openIconToolPicker} />
-
-	<div class="workspace">
-		<main class="canvas-area">
+<div class="editor {shellClass}" class:web={isWeb}>
+	{#if isWeb}
+		<!-- WEB SHELL — pixel-faithful Excalidraw: full-bleed canvas with floating Islands overlaid.
+		     Layout mirrors Excalidraw's LayerUI: top 3-column grid (menu · shapes toolbar · actions),
+		     floating property panels, and a bottom-left footer (zoom + undo/redo) island cluster. -->
+		<main class="canvas-full">
 			<Canvas />
+		</main>
+
+		<div class="ui-overlay">
+			<div class="x-top">
+				<div class="x-top-left">
+					<div class="x-island menu-island">
+						<FileMenu
+							docName={scene.doc.name}
+							dirty={scene.dirty}
+							onNew={newDocument}
+							onOpen={openFile}
+							onSave={save}
+							onSaveAs={saveAs}
+							onImport={openFile}
+							onExport={doExport}
+							onLibrary={() => (libraryOpen = true)}
+						/>
+					</div>
+				</div>
+
+				<div class="x-top-center">
+					<Toolbar onIconTool={openIconToolPicker} />
+				</div>
+
+				<div class="x-top-right">
+					<button
+						class="x-ghost-btn"
+						title="Library"
+						aria-label="Library"
+						onclick={() => (libraryOpen = true)}
+					>
+						<PhIcon name="library" size={16} />
+					</button>
+					<button
+						class="x-export-btn"
+						title="Export Markdown spec for Claude Code"
+						onclick={() => doExport('md')}
+					>
+						<PhIcon name="export" size={15} />
+						<span>Export</span>
+					</button>
+				</div>
+			</div>
+
 			<StylePanel />
 			{#if editor.layersOpen}
 				<div class="panel-dock left">
@@ -517,10 +551,97 @@
 					<RightPanel onPickIcon={openIconReplace} onAttachIcon={openIconAttachPicker} />
 				</div>
 			{/if}
-		</main>
-	</div>
 
-	<StatusBar />
+			<div class="x-bottom">
+				<div class="x-island zoom-island">
+					<button
+						class="x-icon-btn"
+						title="Zoom out  ⌘−"
+						aria-label="Zoom out"
+						onclick={() => editor.zoomOut()}
+					>
+						<PhIcon name="zoom-out" size={16} />
+					</button>
+					<button
+						class="x-zoom-val"
+						title="Reset zoom  ⌘0"
+						aria-label="Reset zoom to 100%"
+						onclick={() => editor.zoomReset()}
+					>
+						{zoomPct}%
+					</button>
+					<button
+						class="x-icon-btn"
+						title="Zoom in  ⌘+"
+						aria-label="Zoom in"
+						onclick={() => editor.zoomIn()}
+					>
+						<PhIcon name="zoom-in" size={16} />
+					</button>
+				</div>
+
+				<div class="x-island undo-island">
+					<button
+						class="x-icon-btn"
+						title="Undo  ⌘Z"
+						aria-label="Undo"
+						disabled={!history.canUndo}
+						onclick={() => history.undo()}
+					>
+						<PhIcon name="undo" size={16} />
+					</button>
+					<button
+						class="x-icon-btn"
+						title="Redo  ⇧⌘Z"
+						aria-label="Redo"
+						disabled={!history.canRedo}
+						onclick={() => history.redo()}
+					>
+						<PhIcon name="redo" size={16} />
+					</button>
+				</div>
+			</div>
+		</div>
+	{:else}
+		<!-- TAURI SHELL — the desktop app's native-window chrome (title bar · tool rail · status bar).
+		     Intentionally left as-is; the web-parity work does not touch the desktop look. -->
+		<TitleBar onExport={() => doExport('md')}>
+			{#snippet brand()}
+				<FileMenu
+					docName={scene.doc.name}
+					dirty={scene.dirty}
+					onNew={newDocument}
+					onOpen={openFile}
+					onSave={save}
+					onSaveAs={saveAs}
+					onImport={openFile}
+					onExport={doExport}
+					onLibrary={() => (libraryOpen = true)}
+				/>
+			{/snippet}
+		</TitleBar>
+
+		<Toolbar onIconTool={openIconToolPicker} />
+
+		<div class="workspace">
+			<main class="canvas-area">
+				<Canvas />
+				<StylePanel />
+				{#if editor.layersOpen}
+					<div class="panel-dock left">
+						<LeftPanel />
+					</div>
+				{/if}
+				{#if showInspector}
+					<div class="panel-dock right">
+						<RightPanel onPickIcon={openIconReplace} onAttachIcon={openIconAttachPicker} />
+					</div>
+				{/if}
+			</main>
+		</div>
+
+		<StatusBar />
+	{/if}
 
 	{#if toast}
 		<div class="toast" role="status">{toast}</div>
@@ -547,6 +668,170 @@
 		block-size: 100dvh;
 		inline-size: 100dvw;
 		overflow: hidden;
+	}
+
+	/* ---- WEB SHELL (Excalidraw parity) ------------------------------------------------------- */
+
+	/* Full-bleed canvas with UI floating over it (Excalidraw model): the editor is a positioning
+	   context, the canvas fills it, and the overlay holds the Islands. */
+	.editor.web {
+		display: block;
+		position: relative;
+	}
+	.canvas-full {
+		position: absolute;
+		inset: 0;
+	}
+
+	/* Excalidraw's `.layer-ui__wrapper`: spans the viewport, transparent to pointer events, with
+	   each interactive Island re-enabling them. */
+	.ui-overlay {
+		position: absolute;
+		inset: 0;
+		z-index: 4;
+		pointer-events: none;
+	}
+	.ui-overlay :where(.x-island, .menu-island, .x-ghost-btn, .x-export-btn, .panel-dock),
+	.x-top-center > :global(*) {
+		pointer-events: auto;
+	}
+
+	/* Top zone — Excalidraw `App-menu_top`: 3-column grid (menu · shapes toolbar · actions). */
+	.x-top {
+		position: absolute;
+		inset-block-start: 0;
+		inset-inline: 0;
+		display: grid;
+		grid-template-columns: 1fr 2fr 1fr;
+		gap: var(--space-4);
+		padding: var(--space-4);
+		align-items: flex-start;
+		pointer-events: none;
+	}
+	.x-top-left {
+		justify-self: start;
+	}
+	.x-top-center {
+		justify-self: center;
+	}
+	.x-top-right {
+		justify-self: end;
+		display: flex;
+		align-items: center;
+		gap: var(--space-2);
+	}
+
+	/* A generic Island — white surface, 8px radius, Excalidraw's layered island shadow. */
+	.x-island {
+		display: flex;
+		align-items: center;
+		gap: 2px;
+		padding: 4px;
+		background: var(--surface);
+		border-radius: var(--radius-lg);
+		box-shadow: var(--shadow-island);
+	}
+	.menu-island {
+		padding: 0;
+		overflow: hidden;
+	}
+
+	/* Square icon button inside an island (zoom/undo/redo). 2rem hit target, 8px radius. */
+	.x-icon-btn {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		inline-size: 2rem;
+		block-size: 2rem;
+		border-radius: var(--radius-md);
+		color: var(--ink);
+		transition: background var(--dur-1) var(--ease);
+	}
+	.x-icon-btn:hover:not(:disabled) {
+		background: var(--surface-2);
+	}
+	.x-icon-btn:active:not(:disabled) {
+		background: var(--accent-soft);
+	}
+	.x-icon-btn:disabled {
+		color: var(--ink-ghost);
+		cursor: default;
+	}
+	.x-zoom-val {
+		min-inline-size: 3.25rem;
+		block-size: 2rem;
+		padding-inline: var(--space-2);
+		font-size: var(--text-sm);
+		font-weight: 500;
+		font-variant-numeric: tabular-nums;
+		color: var(--ink);
+		border-radius: var(--radius-md);
+		text-align: center;
+	}
+	.x-zoom-val:hover {
+		background: var(--surface-2);
+	}
+
+	/* Top-right action buttons. */
+	.x-ghost-btn {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		inline-size: var(--x-button-size, 2.25rem);
+		block-size: var(--x-button-size, 2.25rem);
+		background: var(--surface);
+		color: var(--ink);
+		border-radius: var(--radius-lg);
+		box-shadow: var(--shadow-island);
+		transition: background var(--dur-1) var(--ease);
+	}
+	.x-ghost-btn:hover {
+		background: var(--surface-2);
+	}
+	.x-export-btn {
+		display: inline-flex;
+		align-items: center;
+		gap: 7px;
+		block-size: var(--x-button-size, 2.25rem);
+		padding-inline: var(--space-3);
+		font-size: var(--text-sm);
+		font-weight: 600;
+		color: var(--accent-ink);
+		background: var(--accent);
+		border-radius: var(--radius-lg);
+		box-shadow: var(--shadow-island);
+		transition: background var(--dur-1) var(--ease);
+	}
+	.x-export-btn:hover {
+		background: var(--accent-hover);
+	}
+
+	/* Bottom zone — Excalidraw footer: zoom + undo/redo island cluster, pinned bottom-left. */
+	.x-bottom {
+		position: absolute;
+		inset-block-end: 0;
+		inset-inline: 0;
+		display: flex;
+		align-items: flex-end;
+		gap: var(--space-2);
+		padding: var(--space-4);
+		pointer-events: none;
+	}
+
+	/* In web mode the side panels become floating Islands, offset clear of the top toolbar. */
+	.editor.web .panel-dock {
+		inset-block: calc(var(--space-4) + 3.5rem) var(--space-4);
+		background: var(--surface);
+		border: none;
+		border-radius: var(--radius-lg);
+		box-shadow: var(--shadow-island);
+		overflow: hidden;
+	}
+	.editor.web .panel-dock.left {
+		inset-inline-start: var(--space-4);
+	}
+	.editor.web .panel-dock.right {
+		inset-inline-end: var(--space-4);
 	}
 
 	.workspace {

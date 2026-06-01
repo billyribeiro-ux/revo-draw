@@ -41,6 +41,9 @@ export interface RenderInput {
 	rotateHandleOffsetWorld: number;
 	/** Handle hit radius in world units (for sizing handle squares). */
 	handleSizeWorld: number;
+	/** The infinite-canvas backdrop fill. Token-derived per shell (white for the Excalidraw web
+	 * build, warm paper for the Tauri desktop build). */
+	bgColor: string;
 	/** Whether the editor is in dark or light surface — drives grid contrast. */
 	gridColor: string;
 	gridStrongColor: string;
@@ -61,8 +64,8 @@ export function render(input: RenderInput): void {
 	ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 	ctx.clearRect(0, 0, cssWidth, cssHeight);
 
-	// Backdrop (the infinite canvas surface).
-	ctx.fillStyle = 'oklch(0.955 0.004 110)';
+	// Backdrop (the infinite canvas surface). Token-derived per shell (white in the web build).
+	ctx.fillStyle = input.bgColor;
 	ctx.fillRect(0, 0, cssWidth, cssHeight);
 
 	if (input.gridVisible) drawGrid(input);

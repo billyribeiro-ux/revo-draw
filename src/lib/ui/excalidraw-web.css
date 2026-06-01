@@ -1,0 +1,137 @@
+/*
+ * Excalidraw web-parity theme.
+ *
+ * The WEB build (browser, no Tauri shell) must be a pixel-faithful Excalidraw clone. Rather than
+ * rewrite every component's internal CSS, we remap LayoutForge's existing design-token NAMES to
+ * Excalidraw's exact light-theme VALUES, scoped under `.x-web`. Components that read `--surface`,
+ * `--ink`, `--accent`, … therefore render in Excalidraw's palette automatically. The Tauri build
+ * carries `.x-tauri` instead and keeps the original `:root` tokens from tokens.css — untouched.
+ *
+ * Every value below is lifted verbatim from excalidraw-master/packages/excalidraw/css/theme.scss
+ * (light theme) and variables.module.scss. Citations are inline. Do not "tune" these — parity is
+ * the contract; drift is a bug.
+ */
+
+/* Self-hosted Assistant (Excalidraw's UI font). Files copied from
+   excalidraw-master/packages/excalidraw/fonts/Assistant/*.woff2 → static/fonts/assistant/. */
+@font-face {
+	font-family: 'Assistant';
+	font-style: normal;
+	font-weight: 400;
+	font-display: swap;
+	src: url('/fonts/assistant/Assistant-Regular.woff2') format('woff2');
+}
+@font-face {
+	font-family: 'Assistant';
+	font-style: normal;
+	font-weight: 500;
+	font-display: swap;
+	src: url('/fonts/assistant/Assistant-Medium.woff2') format('woff2');
+}
+@font-face {
+	font-family: 'Assistant';
+	font-style: normal;
+	font-weight: 600;
+	font-display: swap;
+	src: url('/fonts/assistant/Assistant-SemiBold.woff2') format('woff2');
+}
+@font-face {
+	font-family: 'Assistant';
+	font-style: normal;
+	font-weight: 700;
+	font-display: swap;
+	src: url('/fonts/assistant/Assistant-Bold.woff2') format('woff2');
+}
+
+@layer tokens {
+	.x-web {
+		/* Type — Excalidraw `--ui-font` (styles.scss:39-40). */
+		--font-sans:
+			'Assistant', system-ui, 'BlinkMacSystemFont', '-apple-system', 'Segoe UI', 'Roboto',
+			'Helvetica', 'Arial', sans-serif;
+
+		/* Surfaces — theme.scss --color-surface-* + --island-bg-color. */
+		--bg: #ffffff; /* --default-bg-color */
+		--surface: #ffffff; /* --island-bg-color */
+		--surface-2: #f1f0ff; /* --color-surface-high (hover bg) */
+		--surface-3: #ececf4; /* --color-surface-low */
+		--surface-sunken: #ececf4; /* --color-surface-low */
+		--surface-inset: #ffffff; /* --input-bg-color */
+
+		/* Ink — --color-on-surface + gray scale. */
+		--ink: #1b1b1f; /* --color-on-surface */
+		--ink-soft: #3d3d3d; /* --color-gray-80 */
+		--ink-faint: #7a7a7a; /* --color-gray-60 */
+		--ink-ghost: #b8b8b8; /* --color-gray-40 (--keybinding-color) */
+
+		/* Lines — surface-high border + input border. */
+		--line: #f1f0ff; /* --default-border-color (--color-surface-high) */
+		--line-soft: #f6f6f9; /* --color-surface-mid */
+		--line-strong: #ced4da; /* --input-border-color ($color-gray-4) */
+
+		/* Accent — --color-primary family. NOTE: the selected-tool background in Excalidraw is the
+		   light lavender container (#e0dfff) with a dark indigo icon, NOT a solid indigo fill — that
+		   distinction is applied per-component (Toolbar) since the token name is shared. */
+		--accent: #6965db; /* --color-primary / --color-selection */
+		--accent-hover: #5753d0; /* --color-primary-hover */
+		--accent-soft: #e0dfff; /* --color-surface-primary-container (selected) */
+		--accent-softer: #f1f0ff; /* --color-surface-high */
+		--accent-ink: #ffffff; /* white text on a solid primary button */
+		--accent-on-container: #030064; /* --color-on-primary-container (icon on selected) */
+		--accent-ring: rgba(105, 101, 219, 0.35);
+
+		/* Semantic — --color-danger / --color-warning / --color-success. */
+		--danger: #db6965; /* --color-danger */
+		--danger-soft: #fff0f0; /* --color-danger-background */
+		--warn: #f5c354; /* --color-warning-dark */
+		--ok: #65bb6a; /* --color-success-contrast */
+
+		/* Canvas — Excalidraw default canvas is plain white, grid off by default. */
+		--canvas-bg: #ffffff; /* --default-bg-color */
+		--canvas-grid: #ebebeb; /* --color-gray-20 (faint, only when grid on) */
+		--canvas-grid-strong: #d6d6d6; /* --color-gray-30 */
+		--selection: #6965db; /* --color-selection */
+		--guide: #ff6b6b;
+
+		/* Radii — theme.scss --border-radius-*. */
+		--radius-xs: 0.25rem; /* --space-factor (input/dropdown) */
+		--radius-sm: 0.25rem;
+		--radius-md: 0.375rem; /* --border-radius-md */
+		--radius-lg: 0.5rem; /* --border-radius-lg (islands, buttons) */
+		--radius-xl: 0.5rem;
+		--radius-pill: 999px;
+
+		/* Spacing — derived from --space-factor: 0.25rem (4px). */
+		--space-1: 0.25rem; /* 4px */
+		--space-2: 0.5rem; /* 8px */
+		--space-3: 0.75rem; /* 12px */
+		--space-4: 1rem; /* 16px (--editor-container-padding) */
+		--space-5: 1.5rem; /* 24px */
+		--space-6: 2rem; /* 32px */
+		--space-7: 3rem; /* 48px */
+
+		/* Elevation — Excalidraw --shadow-island / --modal-shadow. */
+		--shadow-xs: 0px 0px 1px 0px rgba(0, 0, 0, 0.17);
+		--shadow-sm:
+			0px 0px 1px 0px rgba(0, 0, 0, 0.17), 0px 0px 3px 0px rgba(0, 0, 0, 0.08);
+		--shadow-island:
+			0px 0px 1px 0px rgba(0, 0, 0, 0.17), 0px 0px 3px 0px rgba(0, 0, 0, 0.08),
+			0px 7px 14px 0px rgba(0, 0, 0, 0.05);
+		--shadow-md: var(--shadow-island);
+		--shadow-lg: var(--shadow-island);
+		--shadow-modal:
+			0px 100px 80px rgba(0, 0, 0, 0.07), 0px 41.7776px 33.4221px rgba(0, 0, 0, 0.0503198),
+			0px 22.3363px 17.869px rgba(0, 0, 0, 0.0417275),
+			0px 12.5216px 10.0172px rgba(0, 0, 0, 0.035),
+			0px 6.6501px 5.32008px rgba(0, 0, 0, 0.0282725),
+			0px 2.76726px 2.21381px rgba(0, 0, 0, 0.0196802);
+		--ring: 0 0 0 1px var(--line-strong);
+		--ring-accent: 0 0 0 1px var(--accent);
+
+		/* Excalidraw control sizing (consumed by the island chrome). */
+		--x-button-size: 2.25rem; /* --lg-button-size (toolbar tool button) */
+		--x-icon-size: 1rem; /* --lg-icon-size */
+		--x-default-button-size: 2rem; /* --default-button-size */
+		--x-container-padding: 1rem; /* --editor-container-padding */
+	}
+}

@@ -4,6 +4,7 @@
 	import type { Vec2 } from '$lib/canvas/geometry.js';
 	import { hitTestPoint } from '$lib/canvas/hit-test.js';
 	import type { Element } from '$lib/elements/types.js';
+	import { isWeb } from '$lib/platform.js';
 
 	const { scene, camera, commands } = editor;
 
@@ -11,6 +12,26 @@
 	let canvasEl = $state<HTMLCanvasElement>();
 	let dpr = $state(1);
 	let cursor = $state('default');
+
+	// Canvas backdrop + dot-grid colors. The web (Excalidraw) build derives them from the `.x-web`
+	// design tokens resolved on the live element, so the surface is plain white; the Tauri desktop
+	// build keeps its original warm-paper literals verbatim (zero pixel change to the desktop look).
+	function canvasColors(el: HTMLElement): { bg: string; grid: string; gridStrong: string } {
+		if (!isWeb) {
+			return {
+				bg: 'oklch(0.955 0.004 110)',
+				grid: 'oklch(0.88 0.006 264)',
+				gridStrong: 'oklch(0.8 0.01 264)'
+			};
+		}
+		const cs = getComputedStyle(el);
+		const v = (name: string, fallback: string): string => cs.getPropertyValue(name).trim() || fallback;
+		return {
+			bg: v('--canvas-bg', '#ffffff'),
+			grid: v('--canvas-grid', '#ebebeb'),
+			gridStrong: v('--canvas-grid-strong', '#d6d6d6')
+		};
+	}
 
 	// Re-render whenever anything visual changes. Reading these reactive values inside the effect
 	// registers them as dependencies, so the draw is dirty-flag driven (no constant rAF loop).
@@ -31,6 +52,7 @@
 
 		const cssW = camera.viewportWidth;
 		const cssH = camera.viewportHeight;
+		const colors = canvasColors(cv);
 		render({
 			ctx,
 			dpr,
@@ -49,8 +71,9 @@
 			dropTargetId: editor.dropTargetId,
 			rotateHandleOffsetWorld: editor.rotateOffsetWorld,
 			handleSizeWorld: editor.handleSizeWorld,
-			gridColor: 'oklch(0.88 0.006 264)',
-			gridStrongColor: 'oklch(0.8 0.01 264)',
+			bgColor: colors.bg,
+			gridColor: colors.grid,
+			gridStrongColor: colors.gridStrong,
 			gridVisible: editor.gridVisible
 		});
 	});

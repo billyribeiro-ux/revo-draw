@@ -1,5 +1,7 @@
-/* Global base styles. Real design tokens live in tokens.css (imported below). */
+/* Global base styles. Real design tokens live in tokens.css (imported below). The Excalidraw
+   web-parity theme remaps those tokens under `.x-web` (browser build); Tauri keeps the :root set. */
 @import './lib/ui/tokens.css';
+@import './lib/ui/excalidraw-web.css';
 
 @layer reset, tokens, app, components;
 

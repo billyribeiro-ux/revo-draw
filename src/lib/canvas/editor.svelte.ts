@@ -8,6 +8,7 @@
  * so every interaction behaves identically at any pan/zoom. Gestures are wrapped in a single
  * history transaction (begin on pointerdown, commit on pointerup) so a whole drag = one undo.
  */
+import { isWeb } from '../platform.ts';
 import { Camera } from './camera.svelte.ts';
 import { scene, type SceneGraph } from './scene-graph.svelte.ts';
 import { History } from '../commands/history.svelte.ts';
@@ -138,8 +139,9 @@ export class Editor {
 	snapBypass = $state(false);
 	/** Whether space is held (pan mode hint for the cursor). */
 	spaceHeld = $state(false);
-	/** Dot-grid visibility (Excalidraw `actionToggleGridMode.tsx`, ⌘'). On by default. */
-	gridVisible = $state(true);
+	/** Dot-grid visibility (Excalidraw `actionToggleGridMode.tsx`, ⌘'). Off by default in the web
+	 * build to match Excalidraw's plain-white canvas; on in the Tauri desktop build. */
+	gridVisible = $state(!isWeb);
 	/** Live shift state during a gesture (drives rotate-to-15° snap, Excalidraw `shouldRotateWithDiscreteAngle`). */
 	#shiftHeld = false;
 	/** Live alt state during create/resize (drives "expand from center/anchor", Excalidraw `shouldResizeFromCenter`). */

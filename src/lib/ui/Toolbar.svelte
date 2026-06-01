@@ -428,4 +428,43 @@
 		font-weight: 500;
 		text-align: center;
 	}
+
+	/* ---- WEB SHELL (Excalidraw parity) ------------------------------------------------------- */
+	/* The toolbar is a floating, content-width white Island (not a full-width rail). Tool buttons
+	   are 2.25rem (Excalidraw --lg-button-size) and the SELECTED state is the light lavender
+	   container (#e0dfff) with a dark indigo icon — matching Excalidraw, not a solid indigo fill. */
+	:global(.x-web) .toolrail {
+		block-size: auto;
+		padding-inline: 0;
+		background: transparent;
+		border-block-end: none;
+	}
+	:global(.x-web) .palette {
+		background: var(--surface);
+		border: none;
+		box-shadow: var(--shadow-island);
+		padding: 4px;
+		gap: 0;
+		overflow: visible;
+	}
+	:global(.x-web) .tool {
+		inline-size: 2.25rem;
+		block-size: 2.25rem;
+		border-radius: var(--radius-lg);
+		color: var(--ink);
+	}
+	:global(.x-web) .tool:hover {
+		background: var(--surface-2);
+		color: var(--ink);
+		box-shadow: none;
+	}
+	:global(.x-web) .tool.active {
+		background: var(--accent-soft);
+		color: var(--accent-on-container);
+		box-shadow: none;
+	}
+	:global(.x-web) .more-item.active {
+		background: var(--accent-soft);
+		color: var(--accent-on-container);
+	}
 </style>
