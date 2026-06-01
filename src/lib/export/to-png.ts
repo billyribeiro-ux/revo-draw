@@ -64,7 +64,9 @@ function rasterize(doc: LayoutDocument, opts: RasterOptions): HTMLCanvasElement 
 		rotateHandleOffsetWorld: 0,
 		handleSizeWorld: 0,
 		gridColor: 'oklch(0.92 0.004 264 / 0)',
-		gridStrongColor: 'oklch(0.92 0.004 264 / 0)'
+		gridStrongColor: 'oklch(0.92 0.004 264 / 0)',
+		// PNG export never includes the editor dot-grid regardless of the user's runtime gridMode.
+		gridVisible: false
 	});
 
 	return canvas;

@@ -37,8 +37,13 @@ export class Commands {
 		return this.#history;
 	}
 
-	/** Create an element of a type at a world position, select it, return its id. */
-	createAt<T extends SemanticType>(type: T, init: CreateElementInit): ElementId {
+	/** Create an element of a type at a world position, select it, return its id. Accepts
+	 * type-specific overrides via `init` (forwarded to `createElement`) so e.g. an svg drop can
+	 * land in a single transaction with its body+viewBox set. */
+	createAt<T extends SemanticType>(
+		type: T,
+		init: CreateElementInit & Partial<ElementByType[T]>
+	): ElementId {
 		const el = createElement(type, init);
 		this.#history.transact(`Add ${type}`, () => {
 			// Auto-parent into the deepest container under the drop point, if any.
@@ -205,6 +210,9 @@ export class Commands {
 	changeType<T extends SemanticType>(id: ElementId, type: T): void {
 		const el = this.#scene.get(id);
 		if (!el) return;
+		// Cast: we pass ONLY base CreateElementInit fields here (no type-specific overrides).
+		// TS can't prove that an empty Partial<ElementByType[T]> is satisfied for generic T, but
+		// the runtime object is structurally fine — `createElement` defaults supply the rest.
 		const replacement = createElement(type, {
 			x: el.x,
 			y: el.y,
@@ -213,7 +221,7 @@ export class Commands {
 			parentId: el.parentId,
 			z: el.z,
 			label: el.label
-		}) as ElementByType[T];
+		} as CreateElementInit & Partial<ElementByType[T]>) as ElementByType[T];
 		replacement.id = el.id;
 		if (el.style) replacement.style = { ...replacement.style, ...el.style };
 		this.#history.transact('Change type', () => {
@@ -254,8 +262,14 @@ export class Commands {
 
 	/**
 	 * Distribute the selection so the GAPS between consecutive roots are equal along one axis
-	 * (Excalidraw's "distribute from gaps"). Sort roots by their box mid-point, then walk a running
-	 * position. The two extreme roots stay put; interior roots are re-spaced. Needs ≥3 roots.
+	 * (Excalidraw's "distribute from gaps", `distribute.ts:24-110`). Sort roots by their box
+	 * mid-point, then walk a running position. The two extreme roots stay put; interior roots are
+	 * re-spaced. Needs ≥3 roots.
+	 *
+	 * When the selection's elements overlap on the distribution axis (Σwidths > selectionWidth, i.e.
+	 * the gap-step would go negative), the gap formula degenerates. Excalidraw's fallback
+	 * (`distribute.ts:42-72`) is to pin the two extreme boxes and equalize the CENTER-TO-CENTER
+	 * spacing of the interior boxes instead — that's what the `step < 0` branch below mirrors.
 	 */
 	distribute(axis: 'x' | 'y'): void {
 		const roots = this.#topLevelSelection();
@@ -271,12 +285,29 @@ export class Commands {
 		for (const r of sorted) span += extentOf(boxes.get(r.id)!);
 		const step = (selExtent - span) / (sorted.length - 1);
 		this.#history.transact('Distribute', () => {
-			let pos = startOf(sel);
-			for (const root of sorted) {
-				const b = boxes.get(root.id)!;
-				const delta = pos - startOf(b);
-				if (delta !== 0) this.#scene.translateSubtree(root.id, axis === 'x' ? delta : 0, axis === 'y' ? delta : 0);
-				pos += step + extentOf(b);
+			if (step >= 0) {
+				// Non-overlap path: equal gaps between consecutive boxes.
+				let pos = startOf(sel);
+				for (const root of sorted) {
+					const b = boxes.get(root.id)!;
+					const delta = pos - startOf(b);
+					if (delta !== 0) this.#scene.translateSubtree(root.id, axis === 'x' ? delta : 0, axis === 'y' ? delta : 0);
+					pos += step + extentOf(b);
+				}
+			} else {
+				// Overlap fallback: pin first + last, equally space interior box CENTERS between them.
+				const firstRoot = sorted[0]!;
+				const lastRoot = sorted[sorted.length - 1]!;
+				const firstMid = midOf(boxes.get(firstRoot.id)!);
+				const lastMid = midOf(boxes.get(lastRoot.id)!);
+				const stepCenter = (lastMid - firstMid) / (sorted.length - 1);
+				for (let i = 1; i < sorted.length - 1; i++) {
+					const root = sorted[i]!;
+					const b = boxes.get(root.id)!;
+					const target = firstMid + i * stepCenter;
+					const delta = target - midOf(b);
+					if (delta !== 0) this.#scene.translateSubtree(root.id, axis === 'x' ? delta : 0, axis === 'y' ? delta : 0);
+				}
 			}
 		});
 	}
@@ -284,10 +315,15 @@ export class Commands {
 	// ---- flip (Excalidraw flipHorizontal / flipVertical) -------------------------------------
 
 	/**
-	 * Mirror the selection about its bounding-box center on one axis. Each root's whole subtree is
-	 * reflected: x' = 2*cx - (x + width) so the box lands on the mirror-image side. (Element content
-	 * is not internally mirrored — semantic UI elements have no chirality — but position mirrors,
-	 * which is the meaningful operation for a layout.)
+	 * Mirror the selection about its bounding-box center on one axis (Excalidraw `actionFlip.ts`).
+	 * Two operations compose per element:
+	 *   1. POSITION mirror: each root's whole subtree moves so its box lands on the mirror side
+	 *      (`x' = 2*center - (x + width)`).
+	 *   2. ROTATION mirror: any non-zero rotation is inverted on the axis (`rotation → -rotation` for
+	 *      horizontal flip; `rotation → π - rotation` for vertical) so a rotated box ends up visually
+	 *      mirrored, not just translated. Equivalent to Excalidraw's `resizeMultipleElements`
+	 *      negative-scale path with `flipByX`/`flipByY` set, applied here as a direct angle update
+	 *      because LF has no internal element chirality (text/icons) to mirror.
 	 */
 	flip(axis: 'x' | 'y'): void {
 		const roots = this.#topLevelSelection();
@@ -298,12 +334,19 @@ export class Commands {
 		this.#history.transact('Flip', () => {
 			for (const root of roots) {
 				const b = boxes.get(root.id)!;
+				// 1. Position mirror for the whole subtree.
 				if (axis === 'x') {
 					const newX = 2 * center - (b.x + b.width);
 					this.#scene.translateSubtree(root.id, newX - b.x, 0);
 				} else {
 					const newY = 2 * center - (b.y + b.height);
 					this.#scene.translateSubtree(root.id, 0, newY - b.y);
+				}
+				// 2. Rotation mirror: invert every rotated element in the subtree (incl. the root).
+				for (const el of [root, ...this.#scene.descendantsOf(root.id)]) {
+					if (el.rotation === 0) continue;
+					const next = axis === 'x' ? -el.rotation : Math.PI - el.rotation;
+					this.#scene.updateElement(el.id, { rotation: next });
 				}
 			}
 		});
@@ -328,6 +371,79 @@ export class Commands {
 		this.#history.transact('Unlock all', () => {
 			for (const id of lockedIds) this.#scene.updateElement(id, { locked: false });
 		});
+	}
+
+	// ---- group / ungroup (Excalidraw actionGroup / actionUngroup) ----------------------------
+
+	/**
+	 * Group the selection by wrapping it in a new `container` element. Excalidraw uses a loose
+	 * `groupIds[]` field on each element; LayoutForge uses parent/child containment as its single
+	 * source of truth, so a "group" here = a real container element whose bounds enclose the
+	 * selection. Children's world geometry is preserved (LF stores world coords, reparenting is a
+	 * link change). Needs ≥1 selected element. No-op if a single already-grouped element is
+	 * selected and its only sibling-in-parent is itself (re-wrapping would just nest pointlessly).
+	 */
+	group(): ElementId | null {
+		const roots = this.#topLevelSelection();
+		if (roots.length === 0) return null;
+		// All roots must share the same parent, or the group's parentId is ambiguous; pick the most
+		// common parent and only group roots that live under it (Excalidraw's behavior when grouping
+		// across containers is also "stay where you are if you're already grouped under another").
+		const parentId = roots[0]!.parentId;
+		const groupable = roots.filter((r) => r.parentId === parentId);
+		if (groupable.length === 0) return null;
+		// Compute the AABB of the selection (oriented bounds of each root's subtree).
+		const boxes = this.#rootBounds(groupable);
+		const aabb = unionBBox([...boxes.values()]);
+		// Build the new container element. parentId matches the shared parent; z = next under it.
+		const container = createElement('container', {
+			x: aabb.x,
+			y: aabb.y,
+			width: aabb.width,
+			height: aabb.height,
+			parentId,
+			z: this.#nextZUnder(parentId),
+			label: 'Group'
+		}) as Element;
+		const newId = container.id;
+		this.#history.transact('Group', () => {
+			this.#scene.addElement(container);
+			// Reparent every groupable root under the new container. World coords are unchanged.
+			for (const r of groupable) {
+				this.#scene.reparent(r.id, newId);
+			}
+			this.#scene.selectOne(newId);
+		});
+		return newId;
+	}
+
+	/**
+	 * Ungroup the selection. For each selected element that is a container, dissolve it: reparent
+	 * its direct children to the container's parent (preserving world geometry), then remove the
+	 * container. Selection becomes the previously-contained children. No-op if no selected element
+	 * is a container.
+	 */
+	ungroup(): void {
+		const targets = this.#scene.selectedElements.filter((el) => isContainerType(el.type));
+		if (targets.length === 0) return;
+		const newSelection: ElementId[] = [];
+		this.#history.transact('Ungroup', () => {
+			for (const container of targets) {
+				const kids = this.#scene.childrenOf(container.id).map((k) => k.id);
+				for (const kid of kids) {
+					this.#scene.reparent(kid, container.parentId);
+					newSelection.push(kid);
+				}
+				this.#scene.removeElement(container.id);
+			}
+			this.#scene.select(newSelection);
+		});
+	}
+
+	/** Next z value under a parent (or root, parentId=null). Used to land new containers on top. */
+	#nextZUnder(parentId: ElementId | null): number {
+		const siblings = this.#scene.ordered.filter((e) => e.parentId === parentId);
+		return siblings.reduce((m, e) => Math.max(m, e.z), -1) + 1;
 	}
 
 	// ---- copy / paste styles (Excalidraw copyStyles / pasteStyles) ---------------------------

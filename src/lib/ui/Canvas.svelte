@@ -2,8 +2,10 @@
 	import { editor } from '$lib/canvas/editor.svelte.js';
 	import { render } from '$lib/canvas/renderer.js';
 	import type { Vec2 } from '$lib/canvas/geometry.js';
+	import { hitTestPoint } from '$lib/canvas/hit-test.js';
+	import type { Element } from '$lib/elements/types.js';
 
-	const { scene, camera } = editor;
+	const { scene, camera, commands } = editor;
 
 	let host = $state<HTMLDivElement>();
 	let canvasEl = $state<HTMLCanvasElement>();
@@ -48,7 +50,8 @@
 			rotateHandleOffsetWorld: editor.rotateOffsetWorld,
 			handleSizeWorld: editor.handleSizeWorld,
 			gridColor: 'oklch(0.88 0.006 264)',
-			gridStrongColor: 'oklch(0.8 0.01 264)'
+			gridStrongColor: 'oklch(0.8 0.01 264)',
+			gridVisible: editor.gridVisible
 		});
 	});
 
@@ -119,7 +122,7 @@
 
 	function onPointerDown(e: PointerEvent): void {
 		if (e.button !== 0 && e.button !== 1) return;
-		(e.target as Element).setPointerCapture?.(e.pointerId);
+		(e.target as globalThis.Element).setPointerCapture?.(e.pointerId);
 		editor.pointerDown(localPoint(e), {
 			shift: e.shiftKey,
 			alt: e.altKey,
@@ -136,18 +139,18 @@
 	// Excalidraw's throttleRAF). This caps gesture math at the display refresh rate so rapid
 	// pointer streams stay smooth instead of doing redundant work between paints.
 	let rafId: number | null = null;
-	let pendingMove: { x: number; y: number; alt: boolean } | null = null;
+	let pendingMove: { x: number; y: number; alt: boolean; shift: boolean } | null = null;
 	function flushMove(): void {
 		rafId = null;
 		const m = pendingMove;
 		pendingMove = null;
-		if (m) editor.pointerMove({ x: m.x, y: m.y }, { alt: m.alt });
+		if (m) editor.pointerMove({ x: m.x, y: m.y }, { alt: m.alt, shift: m.shift });
 	}
 
 	function onPointerMove(e: PointerEvent): void {
 		const p = localPoint(e);
 		if (editor.isInteracting) {
-			pendingMove = { x: p.x, y: p.y, alt: e.altKey };
+			pendingMove = { x: p.x, y: p.y, alt: e.altKey, shift: e.shiftKey };
 			if (rafId === null) rafId = requestAnimationFrame(flushMove);
 		} else {
 			cursor = editor.cursorFor(p);
@@ -173,8 +176,10 @@
 
 	function onWheel(e: WheelEvent): void {
 		e.preventDefault();
-		// ctrlKey is set for pinch-zoom gestures on macOS trackpads and for ctrl+scroll.
-		editor.wheel(localPoint(e), e.deltaY, e.ctrlKey || e.metaKey);
+		// ctrlKey is set for pinch-zoom gestures on macOS trackpads and for ctrl+scroll. Pass both
+		// deltaX (trackpad horizontal swipe) and shift (Excalidraw treats Shift+wheel as horizontal
+		// pan) so the wheel handler can match Excalidraw `App.tsx:12819-12865`.
+		editor.wheel(localPoint(e), e.deltaX, e.deltaY, e.ctrlKey || e.metaKey, e.shiftKey);
 	}
 
 	// ---- text-edit overlay -------------------------------------------------------------------
@@ -220,6 +225,58 @@
 		editor.commitTextEdit(id, value);
 	}
 
+	// ---- drag-from-picker --------------------------------------------------------------------
+
+	function onCanvasDragOver(e: DragEvent): void {
+		// Permit drops only when our private MIME type is present. preventDefault on `dragover` is
+		// what tells the browser the drop is allowed.
+		const types = e.dataTransfer?.types;
+		if (!types) return;
+		if (!Array.from(types).includes('application/x-layoutforge-icon')) return;
+		e.preventDefault();
+		if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
+	}
+
+	function onCanvasDrop(e: DragEvent): void {
+		const raw = e.dataTransfer?.getData('application/x-layoutforge-icon');
+		if (!raw) return;
+		e.preventDefault();
+		let parsed: { name: string; svgPath: string; viewBox: string; body?: string } | null = null;
+		try {
+			parsed = JSON.parse(raw);
+		} catch {
+			return;
+		}
+		if (!parsed || typeof parsed.name !== 'string') return;
+		const ref = { name: parsed.name, svgPath: parsed.svgPath, viewBox: parsed.viewBox };
+
+		// Pointer position is relative to the canvas element; mirror what pointer events use so
+		// hit-testing lines up exactly.
+		const screen = localPoint(e);
+		const world = camera.toWorld(screen);
+		const hit = hitTestPoint(scene.ordered, world);
+		if (hit) {
+			commands.patch(hit.id, { icon: ref } as Partial<Element>, 'Attach icon');
+		} else {
+			// No element under the drop point — place a standalone icon at the cursor, centered on it.
+			const id = commands.createAt('icon', {
+				x: world.x - 16,
+				y: world.y - 16,
+				width: 32,
+				height: 32
+			});
+			commands.patch(
+				id,
+				{ iconName: ref.name, svgPath: ref.svgPath, viewBox: ref.viewBox } as Partial<Element>,
+				'Place icon'
+			);
+		}
+
+		// Notify the page shell so it can close the picker. Using a window CustomEvent keeps this
+		// component free of a parent prop just for the close signal.
+		window.dispatchEvent(new CustomEvent('lf-icon-attached'));
+	}
+
 	function onTextKeydown(e: KeyboardEvent): void {
 		// Escape COMMITS the text (Excalidraw textWysiwyg.tsx:646 → handleSubmit), it does NOT discard.
 		// An empty text box still gets discarded by commitTextEdit's empty-content rule, so pressing
@@ -235,7 +292,14 @@
 	}
 </script>
 
-<div class="canvas-host" bind:this={host}>
+<!-- svelte-ignore a11y_no_static_element_interactions — the drop target is a visual canvas;
+     the only interaction here is HTML5 DnD which has no keyboard analogue. -->
+<div
+	class="canvas-host"
+	bind:this={host}
+	ondragover={onCanvasDragOver}
+	ondrop={onCanvasDrop}
+>
 	<!-- Input listeners are attached imperatively in an $effect (see script) for reliable delivery. -->
 	<canvas bind:this={canvasEl} tabindex="0" style:cursor></canvas>
 

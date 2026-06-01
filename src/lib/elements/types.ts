@@ -27,7 +27,8 @@ export const SEMANTIC_TYPES = [
 	'tabs',
 	'modal',
 	'icon', // a placed Iconify icon (carries icon name + path data)
-	'divider'
+	'divider',
+	'svg' // a placed arbitrary SVG body (sanitized inner markup, rendered via Path2D)
 ] as const;
 export type SemanticType = (typeof SEMANTIC_TYPES)[number];
 
@@ -84,6 +85,19 @@ export const STROKE_STYLES = ['solid', 'dashed', 'dotted'] as const;
 export type FillStyle = 'solid' | 'hachure' | 'cross-hatch';
 export const FILL_STYLES = ['solid', 'hachure', 'cross-hatch'] as const;
 
+/**
+ * Reference to a single icon. Stored inline so the document is fully offline-round-trippable —
+ * `name` is the Iconify ph:... id (so Claude Code can re-import the exact icon in generated code),
+ * and `svgPath` + `viewBox` carry the raster body so the renderer doesn't need to re-resolve from
+ * the icon set at paint time. Used in two places: as a property of any element (BaseElement.icon)
+ * and as the body of the standalone IconElement. The svg element type uses a richer body field.
+ */
+export interface IconRef {
+	name: string; // e.g. "ph:trending-up"
+	svgPath: string; // concatenated `d` of every <path> in the body
+	viewBox: string; // e.g. "0 0 256 256"
+}
+
 export interface ElementStyle {
 	/** Fill / background color. CSS color string; `'transparent'` or undefined = no fill. */
 	fill?: string;
@@ -121,6 +135,17 @@ export interface BaseElement {
 	locked?: boolean;
 	/** When false, the element is hidden in the canvas (still exported unless filtered). */
 	hidden?: boolean;
+	/** Optional hyperlink (Excalidraw `actionLink.tsx`, ⌘K). Emitted by the export compiler as
+	 * `<a href="...">` wrapping the element's semantic output. */
+	url?: string;
+	/**
+	 * Optional embedded icon. Every element type can carry one — the renderer paints it in the
+	 * natural slot for that type (card header, input leading edge, nav brand, sidebar/list/tab
+	 * item, modal title). For elements with no natural slot (frame, container, divider) the icon
+	 * is rendered as a small top-left badge. The Markdown export emits `Icon: ph:<name>` so
+	 * Claude Code can import the exact icon in the generated SvelteKit code.
+	 */
+	icon?: IconRef;
 }
 
 /** A page/screen boundary or sub-region container. */
@@ -156,8 +181,13 @@ export interface ButtonElement extends BaseElement {
 	type: 'button';
 	content: string;
 	variant?: 'primary' | 'secondary' | 'ghost' | 'danger';
-	/** Optional leading icon (Iconify name + raw path so it round-trips offline). */
+	/**
+	 * @deprecated since icons unified onto `BaseElement.icon`. Old documents that stored the
+	 * leading icon as `iconName`/`iconSvgPath` are still readable; new code reads/writes `icon`.
+	 * The export compiler migrates either shape into the unified form.
+	 */
 	iconName?: string;
+	/** @deprecated see `iconName`. */
 	iconSvgPath?: string;
 }
 
@@ -232,6 +262,20 @@ export interface DividerElement extends BaseElement {
 	orientation?: 'horizontal' | 'vertical';
 }
 
+/**
+ * Arbitrary SVG body, pasted by the user. The body is the sanitized INNER markup (between
+ * `<svg>...</svg>`), with `<script>`, event handlers, and `javascript:` URLs stripped at the
+ * input boundary (RightPanel paste handler). The renderer extracts `<path d>` data and rasters
+ * via Path2D, so what reaches storage is always safe to paint.
+ */
+export interface SvgElement extends BaseElement {
+	type: 'svg';
+	/** Sanitized inner SVG markup (between <svg>...</svg>). */
+	body: string;
+	/** Source viewBox (auto-extracted from the pasted markup; falls back to "0 0 100 100"). */
+	viewBox: string;
+}
+
 /** Discriminated union of every semantic element. */
 export type Element =
 	| FrameElement
@@ -249,7 +293,8 @@ export type Element =
 	| TabsElement
 	| ModalElement
 	| IconElement
-	| DividerElement;
+	| DividerElement
+	| SvgElement;
 
 /** Map from SemanticType to its concrete element interface, for precise typing. */
 export interface ElementByType {
@@ -269,6 +314,7 @@ export interface ElementByType {
 	modal: ModalElement;
 	icon: IconElement;
 	divider: DividerElement;
+	svg: SvgElement;
 }
 
 export const SCHEMA_VERSION = 1 as const;

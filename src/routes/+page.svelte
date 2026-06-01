@@ -44,8 +44,10 @@
 	let libraryOpen = $state(false);
 	let restorePromptOpen = $state(false);
 	let toast = $state<string | null>(null);
-	// When the icon picker is opened from the toolbar Icon tool (place mode) vs. inspector (replace).
-	let iconPlaceMode = $state(false);
+	// Tracks WHY the icon picker is open. 'place' = toolbar Icon tool (sets pendingIcon, switches
+	// to icon tool). 'replace' = inspector Change-icon on the selected IconElement. 'attach' =
+	// inspector Add-icon on ANY selected element (sets BaseElement.icon).
+	let iconMode = $state<'place' | 'replace' | 'attach'>('place');
 
 	const autosave = new Autosave(() => $state.snapshot(scene.doc), 1500);
 
@@ -186,20 +188,24 @@
 	// ---- icon picker -------------------------------------------------------------------------
 
 	function openIconToolPicker(): void {
-		iconPlaceMode = true;
+		iconMode = 'place';
 		iconPickerOpen = true;
 	}
 	function openIconReplace(): void {
-		iconPlaceMode = false;
+		iconMode = 'replace';
+		iconPickerOpen = true;
+	}
+	function openIconAttachPicker(): void {
+		iconMode = 'attach';
 		iconPickerOpen = true;
 	}
 	function onIconSelected(icon: { name: string; svgPath: string; viewBox: string }): void {
 		iconPickerOpen = false;
-		if (iconPlaceMode) {
+		if (iconMode === 'place') {
 			editor.pendingIcon = icon;
 			editor.setTool('icon');
-		} else {
-			// Replace the icon on the selected icon element.
+		} else if (iconMode === 'replace') {
+			// Replace the icon body on the selected standalone IconElement.
 			const sel = scene.selectedElements;
 			const target = sel.find((s) => s.type === 'icon');
 			if (target) {
@@ -211,8 +217,31 @@
 					'Change icon'
 				);
 			}
+		} else {
+			// 'attach' — set the BaseElement.icon on every selected element. Works across mixed
+			// selections; standalone IconElements are skipped (their body is the icon, not a slot).
+			const ref = { name: icon.name, svgPath: icon.svgPath, viewBox: icon.viewBox };
+			for (const id of scene.selection) {
+				const el = scene.get(id);
+				if (!el || el.type === 'icon') continue;
+				commands.patch(
+					id,
+					{ icon: ref } as Partial<import('$lib/elements/types.js').Element>,
+					'Attach icon'
+				);
+			}
 		}
 	}
+
+	// Canvas dispatches `lf-icon-attached` after a successful drag-drop attach/place so the picker
+	// (if it was open during the drag) closes automatically.
+	$effect(() => {
+		const handler = (): void => {
+			iconPickerOpen = false;
+		};
+		window.addEventListener('lf-icon-attached', handler);
+		return () => window.removeEventListener('lf-icon-attached', handler);
+	});
 
 	// ---- keyboard ----------------------------------------------------------------------------
 
@@ -226,6 +255,7 @@
 	const TOOL_KEYS: Record<string, Tool> = {
 		v: 'select',
 		h: 'hand',
+		e: 'eraser', // Excalidraw `shapes.tsx` eraser key
 		f: 'frame',
 		c: 'container',
 		r: 'card', // R is muscle-memory for "rectangle" in Excalidraw; maps to our card
@@ -318,17 +348,50 @@
 			commands.toggleLockSelection();
 			return;
 		}
+		// Group (⌘G) / Ungroup (⌘⇧G) — Excalidraw `actionGroup.tsx:199` / `actionUngroup`. LF uses
+		// containment instead of `groupIds[]`, so Group wraps the selection in a new container and
+		// Ungroup dissolves selected containers, reparenting their children to the container's parent.
+		if (mod && e.key.toLowerCase() === 'g') {
+			e.preventDefault();
+			if (e.shiftKey) commands.ungroup();
+			else commands.group();
+			return;
+		}
+		// Hyperlink (⌘K), Excalidraw `actionLink.tsx` — set/edit a `url` on the selected element(s).
+		// Browser prompt is the simplest UX consistent with this local-desktop app's existing modal
+		// pattern (the restore-session dialog); a richer popover can replace it later.
+		if (mod && e.key.toLowerCase() === 'k') {
+			e.preventDefault();
+			const ids = [...scene.selection];
+			if (ids.length === 0) return;
+			const first = scene.get(ids[0]!);
+			const current = first?.url ?? '';
+			const next = window.prompt('Hyperlink URL (empty to remove):', current);
+			if (next === null) return;
+			const url = next.trim() === '' ? undefined : next.trim();
+			for (const id of ids) commands.patch(id, { url } as Partial<import('$lib/elements/types.js').Element>, url ? 'Set link' : 'Remove link');
+			return;
+		}
+		// Grid toggle (⌘'), Excalidraw `actionToggleGridMode.tsx`. Renders the dot-grid on/off.
+		if (mod && e.key === "'") {
+			e.preventDefault();
+			editor.gridVisible = !editor.gridVisible;
+			return;
+		}
 		// Z-order. Match on e.code so the Shift variants work regardless of the shifted character
-		// (']' → '}'). Shift = jump to the very front/back; no Shift = one step (Excalidraw parity).
+		// (']' → '}'). Excalidraw `actionZindex.tsx:96,134` uses TWO chord conventions per platform:
+		//   - macOS native:  ⌘⌥]/⌘⌥[ for bringToFront/sendToBack
+		//   - everywhere else (and as a cross-platform alias): ⌘⇧]/⌘⇧[
+		// We accept both so Mac power-user muscle memory works. Plain ⌘]/⌘[ = one step.
 		if (mod && e.code === 'BracketRight') {
 			e.preventDefault();
-			if (e.shiftKey) commands.bringToFront();
+			if (e.shiftKey || e.altKey) commands.bringToFront();
 			else commands.bringForward();
 			return;
 		}
 		if (mod && e.code === 'BracketLeft') {
 			e.preventDefault();
-			if (e.shiftKey) commands.sendToBack();
+			if (e.shiftKey || e.altKey) commands.sendToBack();
 			else commands.sendBackward();
 			return;
 		}
@@ -364,6 +427,19 @@
 			const dx = e.key === 'ArrowLeft' ? -step : e.key === 'ArrowRight' ? step : 0;
 			const dy = e.key === 'ArrowUp' ? -step : e.key === 'ArrowDown' ? step : 0;
 			commands.nudge(dx, dy);
+			return;
+		}
+		// Distribute (Alt+H / Alt+V), Excalidraw `actionDistribute.tsx:87,118` —
+		// `!event[KEYS.CTRL_OR_CMD] && event.altKey && event.code === CODES.H/V`. Must be checked
+		// BEFORE the bare-letter tool block (Alt+H would otherwise be consumed by the `h`→hand tool).
+		if (!mod && e.altKey && !e.shiftKey && e.code === 'KeyH') {
+			e.preventDefault();
+			commands.distribute('x');
+			return;
+		}
+		if (!mod && e.altKey && !e.shiftKey && e.code === 'KeyV') {
+			e.preventDefault();
+			commands.distribute('y');
 			return;
 		}
 		// Flip (⇧H / ⇧V), Excalidraw flipHorizontal / flipVertical.
@@ -438,7 +514,7 @@
 			{/if}
 			{#if showInspector}
 				<div class="panel-dock right">
-					<RightPanel onPickIcon={openIconReplace} />
+					<RightPanel onPickIcon={openIconReplace} onAttachIcon={openIconAttachPicker} />
 				</div>
 			{/if}
 		</main>

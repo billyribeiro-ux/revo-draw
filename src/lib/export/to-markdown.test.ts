@@ -195,8 +195,11 @@ Layout: flex-row, gap 0. Responsive: reflow.
 ### Sidebar — sidebar, fixed width 240px, left (fixed 240px, full height)
 Layout: flex-col, gap 8, padding 16.
   - Button (ghost): "Overview"  [icon: ph:house]  (hug, full width)
+    Icon: ph:house
   - Button (ghost): "Reports"  [icon: ph:chart-bar]  (hug, full width)
+    Icon: ph:chart-bar
   - Button (ghost): "Settings"  [icon: ph:gear]  (hug, full width)
+    Icon: ph:gear
 
 ### Main — container, full height (flex 1 (fills remaining), full height)
 Layout: flex-col, gap 24, padding 32. Responsive: reflow.

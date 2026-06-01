@@ -13,7 +13,7 @@
 import { bboxCenter, orientedCorners, type BBox, type Matrix, type Vec2 } from './geometry.ts';
 import type { Handle } from './hit-test.ts';
 import type { SnapGuide } from './snapping.ts';
-import type { Element, ElementId } from '../elements/types.ts';
+import type { Element, ElementId, IconRef } from '../elements/types.ts';
 
 export interface RenderInput {
 	ctx: CanvasRenderingContext2D;
@@ -44,6 +44,8 @@ export interface RenderInput {
 	/** Whether the editor is in dark or light surface — drives grid contrast. */
 	gridColor: string;
 	gridStrongColor: string;
+	/** When false, the dot-grid is suppressed (Excalidraw gridMode off, ⌘'). */
+	gridVisible: boolean;
 }
 
 const ACCENT = 'oklch(0.55 0.17 264)';
@@ -63,7 +65,7 @@ export function render(input: RenderInput): void {
 	ctx.fillStyle = 'oklch(0.955 0.004 110)';
 	ctx.fillRect(0, 0, cssWidth, cssHeight);
 
-	drawGrid(input);
+	if (input.gridVisible) drawGrid(input);
 
 	// Apply camera: subsequent draws use world coordinates. Compose DPR * worldToScreen.
 	const m = input.worldToScreen;
@@ -197,6 +199,9 @@ function drawElement(ctx: CanvasRenderingContext2D, el: Element, zoom: number): 
 		case 'divider':
 			drawDivider(ctx, el, zoom);
 			break;
+		case 'svg':
+			drawSvg(ctx, el, zoom);
+			break;
 	}
 	ctx.restore();
 }
@@ -289,6 +294,9 @@ function drawFrame(ctx: CanvasRenderingContext2D, el: Element, zoom: number): vo
 	ctx.textBaseline = 'bottom';
 	ctx.textAlign = 'left';
 	ctx.fillText(el.label ?? 'Frame', el.x, el.y - 8 / zoom);
+	if (el.icon) {
+		drawEmbeddedIcon(ctx, el.icon, el.x + 8 / zoom, el.y + 8 / zoom, 14 / zoom, zoom, INK_FAINT);
+	}
 }
 
 function drawContainer(ctx: CanvasRenderingContext2D, el: Element, zoom: number): void {
@@ -309,6 +317,9 @@ function drawContainer(ctx: CanvasRenderingContext2D, el: Element, zoom: number)
 	ctx.stroke();
 	ctx.restore();
 	if (el.label) labelText(ctx, el, el.label, zoom);
+	if (el.icon) {
+		drawEmbeddedIcon(ctx, el.icon, el.x + 8 / zoom, el.y + 8 / zoom, 14 / zoom, zoom, INK_FAINT);
+	}
 }
 
 function drawCard(ctx: CanvasRenderingContext2D, el: Element, zoom: number): void {
@@ -318,12 +329,16 @@ function drawCard(ctx: CanvasRenderingContext2D, el: Element, zoom: number): voi
 	ctx.shadowOffsetY = 2 / zoom;
 	fillStroke(ctx, el, zoom, { fill: 'oklch(1 0 0)', stroke: 'oklch(0.9 0.005 264)', radius: 8 });
 	ctx.restore();
+	if (el.icon) {
+		drawEmbeddedIcon(ctx, el.icon, el.x + 14 / zoom, el.y + 14 / zoom, 18 / zoom, zoom, INK);
+	}
 	if (el.label) {
 		ctx.fillStyle = INK;
 		ctx.font = `${600} ${13 / zoom}px var(--font-sans, sans-serif)`;
 		ctx.textBaseline = 'top';
 		ctx.textAlign = 'left';
-		ctx.fillText(el.label, el.x + 16 / zoom, el.y + 14 / zoom);
+		const labelX = el.icon ? el.x + 16 / zoom + 22 / zoom : el.x + 16 / zoom;
+		ctx.fillText(el.label, labelX, el.y + 14 / zoom);
 		// a faint value line beneath the title
 		ctx.fillStyle = INK_FAINT;
 		ctx.fillRect(el.x + 16 / zoom, el.y + 40 / zoom, Math.min(el.width - 32 / zoom, 80 / zoom), 18 / zoom);
@@ -332,12 +347,24 @@ function drawCard(ctx: CanvasRenderingContext2D, el: Element, zoom: number): voi
 
 function drawNav(ctx: CanvasRenderingContext2D, el: Element, zoom: number): void {
 	fillStroke(ctx, el, zoom, { fill: 'oklch(0.99 0.002 264)', stroke: 'oklch(0.9 0.005 264)', radius: el.style?.radius ?? 0 });
-	// Brand dot + a few nav pills.
+	// Brand dot (or embedded icon, when set) + a few nav pills.
 	const cy = el.y + el.height / 2;
-	ctx.fillStyle = ACCENT;
-	ctx.beginPath();
-	ctx.arc(el.x + 18 / zoom, cy, 5 / zoom, 0, Math.PI * 2);
-	ctx.fill();
+	if (el.icon) {
+		drawEmbeddedIcon(
+			ctx,
+			el.icon,
+			el.x + 14 / zoom - 8 / zoom,
+			cy - 8 / zoom,
+			16 / zoom,
+			zoom,
+			ACCENT
+		);
+	} else {
+		ctx.fillStyle = ACCENT;
+		ctx.beginPath();
+		ctx.arc(el.x + 18 / zoom, cy, 5 / zoom, 0, Math.PI * 2);
+		ctx.fill();
+	}
 	ctx.fillStyle = INK_FAINT;
 	let px = el.x + el.width - 60 / zoom;
 	for (let i = 0; i < 3; i++) {
@@ -354,9 +381,22 @@ function drawSidebar(ctx: CanvasRenderingContext2D, el: Element, zoom: number): 
 	for (let i = 0; i < 5; i++) {
 		const y = el.y + pad + i * 34 / zoom;
 		if (y > el.y + el.height - 20 / zoom) break;
-		ctx.beginPath();
-		ctx.arc(el.x + pad + 6 / zoom, y + 6 / zoom, 5 / zoom, 0, Math.PI * 2);
-		ctx.fill();
+		if (i === 0 && el.icon) {
+			drawEmbeddedIcon(
+				ctx,
+				el.icon,
+				el.x + pad + 4 / zoom - 7 / zoom,
+				y - 7 / zoom,
+				14 / zoom,
+				zoom,
+				INK_FAINT
+			);
+			ctx.fillStyle = INK_FAINT;
+		} else {
+			ctx.beginPath();
+			ctx.arc(el.x + pad + 6 / zoom, y + 6 / zoom, 5 / zoom, 0, Math.PI * 2);
+			ctx.fill();
+		}
 		roundRect(ctx, el.x + pad + 22 / zoom, y, Math.min(el.width - pad * 2 - 22 / zoom, 120 / zoom), 12 / zoom, 6 / zoom);
 		ctx.fill();
 	}
@@ -381,21 +421,58 @@ function drawButton(ctx: CanvasRenderingContext2D, el: Element, zoom: number): v
 		ctx.stroke();
 	}
 	const label = 'content' in el ? el.content : (el.label ?? 'Button');
-	ctx.fillStyle = variant === 'secondary' || variant === 'ghost' ? INK : 'oklch(0.99 0.01 256)';
+	const textColor = variant === 'secondary' || variant === 'ghost' ? INK : 'oklch(0.99 0.01 256)';
+	// Resolve embedded icon: prefer the unified BaseElement.icon; fall back to legacy
+	// ButtonElement.iconName/iconSvgPath fields (synthesized into an IconRef on the fly).
+	let buttonIcon: IconRef | null = el.icon ?? null;
+	if (!buttonIcon && 'iconName' in el && el.iconName && 'iconSvgPath' in el && el.iconSvgPath) {
+		buttonIcon = { name: el.iconName, svgPath: el.iconSvgPath, viewBox: '0 0 256 256' };
+	}
+	if (buttonIcon) {
+		drawEmbeddedIcon(
+			ctx,
+			buttonIcon,
+			el.x + 12 / zoom,
+			el.y + el.height / 2 - 7 / zoom,
+			14 / zoom,
+			zoom,
+			textColor
+		);
+	}
+	ctx.fillStyle = textColor;
 	ctx.font = `${el.style?.fontWeight ?? 550} ${(el.style?.fontSize ?? 13) / zoom}px var(--font-sans, sans-serif)`;
-	ctx.textAlign = 'center';
 	ctx.textBaseline = 'middle';
-	ctx.fillText(label, el.x + el.width / 2, el.y + el.height / 2);
+	if (buttonIcon) {
+		// Re-center the label inside the area right of the icon.
+		const iconRight = 12 / zoom + 14 / zoom + 6 / zoom; // pad + icon + gap
+		ctx.textAlign = 'center';
+		ctx.fillText(label, el.x + iconRight + (el.width - iconRight) / 2, el.y + el.height / 2);
+	} else {
+		ctx.textAlign = 'center';
+		ctx.fillText(label, el.x + el.width / 2, el.y + el.height / 2);
+	}
 }
 
 function drawInput(ctx: CanvasRenderingContext2D, el: Element, zoom: number): void {
 	fillStroke(ctx, el, zoom, { fill: 'oklch(1 0 0)', stroke: 'oklch(0.82 0.008 264)', radius: 6 });
+	if (el.icon) {
+		drawEmbeddedIcon(
+			ctx,
+			el.icon,
+			el.x + 12 / zoom,
+			el.y + el.height / 2 - 8 / zoom,
+			16 / zoom,
+			zoom,
+			INK_FAINT
+		);
+	}
 	const placeholder = 'placeholder' in el ? el.placeholder : undefined;
 	ctx.fillStyle = INK_FAINT;
 	ctx.font = `${400} ${13 / zoom}px var(--font-sans, sans-serif)`;
 	ctx.textAlign = 'left';
 	ctx.textBaseline = 'middle';
-	ctx.fillText(placeholder ?? el.label ?? 'Input', el.x + 12 / zoom, el.y + el.height / 2);
+	const textX = el.icon ? el.x + 12 / zoom + 28 / zoom : el.x + 12 / zoom;
+	ctx.fillText(placeholder ?? el.label ?? 'Input', textX, el.y + el.height / 2);
 }
 
 function drawText(ctx: CanvasRenderingContext2D, el: Element, zoom: number): void {
@@ -412,6 +489,9 @@ function drawText(ctx: CanvasRenderingContext2D, el: Element, zoom: number): voi
 	ctx.textBaseline = 'top';
 	const tx = align === 'center' ? el.x + el.width / 2 : align === 'end' ? el.x + el.width : el.x;
 	wrapText(ctx, content, tx, el.y, el.width, size * 1.35);
+	if (el.icon) {
+		drawEmbeddedIcon(ctx, el.icon, el.x + 8 / zoom, el.y + 8 / zoom, 14 / zoom, zoom, INK_FAINT);
+	}
 }
 
 function wrapText(
@@ -454,6 +534,9 @@ function drawImage(ctx: CanvasRenderingContext2D, el: Element, zoom: number): vo
 	ctx.lineTo(el.x + el.width * 0.74, el.y + el.height * 0.62);
 	ctx.lineTo(el.x + el.width - pad, el.y + el.height - pad);
 	ctx.stroke();
+	if (el.icon) {
+		drawEmbeddedIcon(ctx, el.icon, el.x + 8 / zoom, el.y + 8 / zoom, 14 / zoom, zoom, INK_FAINT);
+	}
 }
 
 function drawTable(ctx: CanvasRenderingContext2D, el: Element, zoom: number): void {
@@ -494,6 +577,9 @@ function drawTable(ctx: CanvasRenderingContext2D, el: Element, zoom: number): vo
 		ctx.moveTo(el.x, ry);
 		ctx.lineTo(el.x + el.width, ry);
 		ctx.stroke();
+	}
+	if (el.icon) {
+		drawEmbeddedIcon(ctx, el.icon, el.x + 8 / zoom, el.y + 8 / zoom, 14 / zoom, zoom, INK_FAINT);
 	}
 }
 
@@ -583,6 +669,9 @@ function drawChart(ctx: CanvasRenderingContext2D, el: Element, zoom: number): vo
 		}
 	}
 	ctx.restore();
+	if (el.icon) {
+		drawEmbeddedIcon(ctx, el.icon, el.x + 8 / zoom, el.y + 8 / zoom, 14 / zoom, zoom, INK_FAINT);
+	}
 }
 
 function drawList(ctx: CanvasRenderingContext2D, el: Element, zoom: number): void {
@@ -598,7 +687,17 @@ function drawList(ctx: CanvasRenderingContext2D, el: Element, zoom: number): voi
 	for (let i = 0; i < n; i++) {
 		const y = el.y + pad + i * rowH + rowH / 2;
 		if (y > el.y + el.height - pad) break;
-		if (ordered) {
+		if (i === 0 && el.icon) {
+			drawEmbeddedIcon(
+				ctx,
+				el.icon,
+				el.x + pad - 5 / zoom,
+				y - 6 / zoom,
+				12 / zoom,
+				zoom,
+				INK_FAINT
+			);
+		} else if (ordered) {
 			ctx.fillText(`${i + 1}.`, el.x + pad, y);
 		} else {
 			ctx.beginPath();
@@ -631,10 +730,22 @@ function drawTabs(ctx: CanvasRenderingContext2D, el: Element, zoom: number): voi
 			ctx.lineTo(tx + w, el.y + tabH);
 			ctx.stroke();
 			ctx.fillStyle = ACCENT;
+			if (el.icon) {
+				drawEmbeddedIcon(
+					ctx,
+					el.icon,
+					tx + 8 / zoom,
+					el.y + tabH / 2 - 7 / zoom,
+					14 / zoom,
+					zoom,
+					ACCENT
+				);
+			}
 		} else {
 			ctx.fillStyle = INK_FAINT;
 		}
-		ctx.fillText(t, tx + 12 / zoom, el.y + tabH / 2);
+		const textX = i === 0 && el.icon ? tx + 12 / zoom + 18 / zoom : tx + 12 / zoom;
+		ctx.fillText(t, textX, el.y + tabH / 2);
 		tx += w;
 	});
 	// Panel
@@ -652,11 +763,15 @@ function drawModal(ctx: CanvasRenderingContext2D, el: Element, zoom: number): vo
 	fillStroke(ctx, el, zoom, { fill: 'oklch(1 0 0)', stroke: 'oklch(0.86 0.006 264)', radius: 10 });
 	ctx.restore();
 	const title = 'title' in el ? el.title : (el.label ?? 'Modal');
+	if (el.icon) {
+		drawEmbeddedIcon(ctx, el.icon, el.x + 22 / zoom, el.y + 18 / zoom, 16 / zoom, zoom, INK);
+	}
 	ctx.fillStyle = INK;
 	ctx.font = `${640} ${15 / zoom}px var(--font-sans, sans-serif)`;
 	ctx.textBaseline = 'top';
 	ctx.textAlign = 'left';
-	ctx.fillText(title ?? 'Modal', el.x + 24 / zoom, el.y + 20 / zoom);
+	const titleX = el.icon ? el.x + 24 / zoom + 22 / zoom : el.x + 24 / zoom;
+	ctx.fillText(title ?? 'Modal', titleX, el.y + 20 / zoom);
 	// close glyph
 	ctx.strokeStyle = INK_FAINT;
 	ctx.lineWidth = strokeWidthFor(zoom, 1.5);
@@ -688,6 +803,95 @@ function drawIcon(ctx: CanvasRenderingContext2D, el: Element, zoom: number): voi
 		ctx.fill(path);
 	} catch {
 		// Malformed path data — skip silently rather than throw in the draw loop.
+	}
+	ctx.restore();
+}
+
+function drawSvg(ctx: CanvasRenderingContext2D, el: Element, zoom: number): void {
+	if (!('body' in el)) return;
+	const body = el.body;
+	const viewBox = 'viewBox' in el ? el.viewBox : '0 0 100 100';
+	if (!body || body.trim() === '') {
+		// Empty SVG body — dashed placeholder rect with a centered "SVG" label.
+		ctx.save();
+		roundRect(ctx, el.x, el.y, el.width, el.height, 4);
+		ctx.strokeStyle = 'oklch(0.8 0.01 264)';
+		ctx.lineWidth = strokeWidthFor(zoom, 1);
+		ctx.setLineDash([6 / zoom, 4 / zoom]);
+		ctx.stroke();
+		ctx.setLineDash([]);
+		ctx.fillStyle = INK_FAINT;
+		ctx.font = `${600} ${12 / zoom}px var(--font-sans, sans-serif)`;
+		ctx.textAlign = 'center';
+		ctx.textBaseline = 'middle';
+		ctx.fillText('SVG', el.x + el.width / 2, el.y + el.height / 2);
+		ctx.restore();
+		return;
+	}
+	// Extract every <path d="..."> from the body and concatenate the `d` strings into one path.
+	// The body has been sanitized at the input boundary (RightPanel paste handler) so what we
+	// see here is safe to parse for raster purposes — we never inject it back into the DOM.
+	const pathRe = /<path\b[^>]*\bd\s*=\s*(?:"([^"]*)"|'([^']*)')/gi;
+	const dParts: string[] = [];
+	let m: RegExpExecArray | null;
+	while ((m = pathRe.exec(body)) !== null) {
+		const d = m[1] ?? m[2];
+		if (d) dParts.push(d);
+	}
+	if (dParts.length === 0) {
+		// No <path d> data extractable — paint a placeholder so the user knows it's there.
+		ctx.save();
+		roundRect(ctx, el.x, el.y, el.width, el.height, 4);
+		ctx.strokeStyle = 'oklch(0.8 0.01 264)';
+		ctx.lineWidth = strokeWidthFor(zoom, 1);
+		ctx.setLineDash([6 / zoom, 4 / zoom]);
+		ctx.stroke();
+		ctx.setLineDash([]);
+		ctx.restore();
+		return;
+	}
+	const vb = parseViewBox(viewBox);
+	ctx.save();
+	ctx.translate(el.x, el.y);
+	ctx.scale(el.width / vb.w, el.height / vb.h);
+	ctx.translate(-vb.x, -vb.y);
+	ctx.fillStyle = el.style?.fill ?? INK;
+	try {
+		const path = new Path2D(dParts.join(' '));
+		ctx.fill(path);
+	} catch {
+		// Malformed path data — skip silently rather than throw in the draw loop.
+	}
+	ctx.restore();
+	if (el.icon) {
+		drawEmbeddedIcon(ctx, el.icon, el.x + 8 / zoom, el.y + 8 / zoom, 14 / zoom, zoom, INK_FAINT);
+	}
+}
+
+/** Paint an embedded icon ref at a world point. Used by every element type to render its
+ * BaseElement.icon when present. Mirrors `drawIcon` but for the composable icon-as-property
+ * case rather than a standalone IconElement. Below ~0.5 screen px the icon is skipped. */
+function drawEmbeddedIcon(
+	ctx: CanvasRenderingContext2D,
+	icon: IconRef,
+	x: number,
+	y: number,
+	size: number,
+	zoom: number,
+	color: string
+): void {
+	if (size * zoom < 0.5) return; // sub-pixel, skip
+	const vb = parseViewBox(icon.viewBox);
+	ctx.save();
+	ctx.translate(x, y);
+	ctx.scale(size / vb.w, size / vb.h);
+	ctx.translate(-vb.x, -vb.y);
+	ctx.fillStyle = color;
+	try {
+		const path = new Path2D(icon.svgPath);
+		ctx.fill(path);
+	} catch {
+		// Malformed path data — skip silently.
 	}
 	ctx.restore();
 }
@@ -724,6 +928,9 @@ function drawDivider(ctx: CanvasRenderingContext2D, el: Element, zoom: number): 
 	}
 	ctx.stroke();
 	ctx.setLineDash([]);
+	if (el.icon) {
+		drawEmbeddedIcon(ctx, el.icon, el.x + 8 / zoom, el.y + 8 / zoom, 14 / zoom, zoom, INK_FAINT);
+	}
 }
 
 // ---- overlays --------------------------------------------------------------------------------

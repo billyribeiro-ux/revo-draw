@@ -32,7 +32,8 @@ const DEFAULT_SIZE: Record<SemanticType, { width: number; height: number }> = {
 	tabs: { width: 400, height: 240 },
 	modal: { width: 480, height: 320 },
 	icon: { width: 32, height: 32 },
-	divider: { width: 240, height: 1 }
+	divider: { width: 240, height: 1 },
+	svg: { width: 120, height: 120 }
 };
 
 /** Default layout intent for container-like types. */
@@ -119,6 +120,8 @@ function perTypeStyle(type: SemanticType): ElementStyle | undefined {
 			return { fill: 'oklch(0.22 0.012 264)' };
 		case 'divider':
 			return { stroke: 'oklch(0.86 0.006 264)' };
+		case 'svg':
+			return { fill: 'oklch(0.22 0.012 264)' };
 		default:
 			return undefined;
 	}
@@ -142,7 +145,8 @@ export function defaultLabel(type: SemanticType): string {
 		tabs: 'Tabs',
 		modal: 'Modal',
 		icon: 'Icon',
-		divider: 'Divider'
+		divider: 'Divider',
+		svg: 'SVG'
 	};
 	return map[type];
 }
@@ -178,6 +182,10 @@ function typeSpecificDefaults(type: SemanticType): Record<string, unknown> {
 			// Placed icons must supply iconName/svgPath/viewBox explicitly via the picker;
 			// these are safe placeholders so the factory never yields an invalid element.
 			return { iconName: 'ph:square', svgPath: '', viewBox: '0 0 256 256' };
+		case 'svg':
+			// SVG bodies are supplied via the paste flow (RightPanel). The factory yields an
+			// empty body + the universal default viewBox so the placeholder paints sanely.
+			return { body: '', viewBox: '0 0 100 100' };
 		default:
 			return {};
 	}
@@ -194,16 +202,39 @@ export interface CreateElementInit {
 }
 
 /**
- * Build a complete element of the given semantic type. Geometry comes from `init`; everything
- * else falls back to type defaults. The result is a valid member of the discriminated union.
+ * Build a complete element of the given semantic type. Geometry comes from `init`; type-specific
+ * fields can ALSO be supplied via `init` (as `Partial<ElementByType[T]>` overrides) so callers
+ * like the drag-from-icon-picker and the paste-SVG modal can construct a complete element in a
+ * single transaction rather than create-then-patch (which would produce two undo entries). What
+ * is not supplied falls back to type defaults. The result is a valid member of the discriminated
+ * union. The `id`/`type`/`rotation` fields are NEVER overridable via init; everything else can be.
  */
 export function createElement<T extends SemanticType>(
 	type: T,
-	init: CreateElementInit
+	init: CreateElementInit & Partial<ElementByType[T]>
 ): ElementByType[T] {
 	const size = DEFAULT_SIZE[type];
 	const layout = isContainerType(type) ? defaultLayout(type) : undefined;
 	const style = defaultStyle(type);
+
+	// Strip the base-geometry fields from `init` so the spread of type-specific overrides at the
+	// end of `base` can't clobber them with a wrong value (e.g. `init.x` already lives in `x`).
+	// `id`/`type`/`rotation` are likewise immutable from init.
+	const {
+		x: _x,
+		y: _y,
+		width: _w,
+		height: _h,
+		parentId: _p,
+		z: _z,
+		label: _l,
+		// strip immutables in case a caller accidentally passes them via the partial
+		id: _id,
+		type: _t,
+		rotation: _r,
+		...typeOverrides
+	} = init as CreateElementInit & Partial<ElementByType[T]> & { id?: unknown; type?: unknown; rotation?: unknown };
+	void _x; void _y; void _w; void _h; void _p; void _z; void _l; void _id; void _t; void _r;
 
 	const base = {
 		id: uuidv7(),
@@ -218,7 +249,9 @@ export function createElement<T extends SemanticType>(
 		label: init.label,
 		...(layout ? { layout } : {}),
 		...(style ? { style } : {}),
-		...typeSpecificDefaults(type)
+		...typeSpecificDefaults(type),
+		// Type-specific overrides last so callers can supply e.g. {body, viewBox} for an svg.
+		...typeOverrides
 	};
 
 	// The construction above is exhaustively driven by `type`, so the object satisfies the

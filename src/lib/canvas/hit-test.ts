@@ -7,7 +7,7 @@
  */
 import {
 	bboxCenter,
-	bboxesIntersect,
+	bboxContains,
 	orientedBBox,
 	orientedCorners,
 	pointInOrientedBox,
@@ -104,15 +104,16 @@ export function hitTestPoint(ordered: readonly Element[], world: Vec2): Element 
 }
 
 /**
- * All elements whose oriented AABB intersects the marquee rect (world space). Partial overlap
- * counts. Returns ids in paint order.
+ * All elements whose oriented AABB is FULLY CONTAINED within the marquee rect (world space).
+ * Matches Excalidraw's default "contain" selection mode (`selection.ts:219`): the marquee must
+ * envelop the element for it to be selected. Returns ids in paint order.
  */
 export function hitTestMarquee(ordered: readonly Element[], marquee: BBox): ElementId[] {
 	const out: ElementId[] = [];
 	for (const el of ordered) {
 		if (el.hidden || el.locked) continue;
 		const box = orientedBBox(el, el.rotation);
-		if (bboxesIntersect(box, marquee)) out.push(el.id);
+		if (bboxContains(marquee, box)) out.push(el.id);
 	}
 	return out;
 }

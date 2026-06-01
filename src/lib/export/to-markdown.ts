@@ -169,6 +169,8 @@ function emitNode(
 		lines.push(`### ${labelOf(el)} — ${regionDescriptor(el, doc)}${sizing ? ` (${sizing})` : ''}`);
 		const intent = resolveIntent(node);
 		lines.push(layoutSentence(intent, node, false));
+		const iconLine = iconRefLine(el);
+		if (iconLine) lines.push(iconLine);
 		for (const child of node.children) emitNode(lines, child, depth + 1, doc, node);
 		lines.push('');
 		return;
@@ -180,12 +182,38 @@ function emitNode(
 	const sizing = parent ? childSizingHint(node, parent) : '';
 	lines.push(`${pad}- ${leafDescriptor(el)}${sizing ? `  (${sizing})` : ''}`);
 
+	// `svg` elements get a second descriptive line so Claude Code knows there's a custom inline
+	// SVG with a specific viewBox to honor (we deliberately do NOT inline the raw body markup —
+	// too noisy for the spec).
+	if (el.type === 'svg') {
+		const vb = el.viewBox || '0 0 100 100';
+		lines.push(`${pad}${INDENT}Inline SVG (custom illustration; viewBox: ${vb})`);
+	}
+
 	if (isContainerType(el.type) && node.children.length > 0) {
 		const intent = resolveIntent(node);
 		const responsive = responsiveClause(intent);
 		lines.push(`${pad}${INDENT}_Layout: ${layoutClause(intent)}.${responsive ? ` ${responsive}` : ''}_`);
+		const iconLine = iconRefLine(el);
+		if (iconLine) lines.push(`${pad}${INDENT}${iconLine}`);
 		for (const child of node.children) emitNode(lines, child, depth + 1, doc, node);
+	} else {
+		const iconLine = iconRefLine(el);
+		if (iconLine) lines.push(`${pad}${INDENT}${iconLine}`);
 	}
+}
+
+/**
+ * Emit the unified `Icon: ph:<name>` line for any element that carries an icon. Prefers the
+ * canonical `BaseElement.icon` field; falls back to the legacy `iconName` for buttons stored
+ * before the unified schema. Returns null when no icon is present. Placed AFTER the descriptor
+ * (and any per-element `_Layout: ..._` line) so byte-stable output is preserved for icon-less
+ * fixtures and the line appears in a fixed position relative to children.
+ */
+function iconRefLine(el: Element): string | null {
+	if (el.icon && el.icon.name) return `Icon: ${el.icon.name}`;
+	if (el.type === 'button' && el.iconName) return `Icon: ${el.iconName}`;
+	return null;
 }
 
 // ---- descriptors ----------------------------------------------------------------------------
@@ -356,6 +384,9 @@ function leafDescriptor(el: Element): string {
 		case 'divider': {
 			const o = 'orientation' in el ? el.orientation : 'horizontal';
 			return `Divider (${o ?? 'horizontal'})`;
+		}
+		case 'svg': {
+			return `SvgElement ${round(el.width)}×${round(el.height)}`;
 		}
 		case 'card':
 			return `Card: ${quote(labelOf(el))}`;

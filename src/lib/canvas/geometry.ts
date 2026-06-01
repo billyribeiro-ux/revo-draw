@@ -205,6 +205,20 @@ export function bboxesIntersect(a: BBox, b: BBox): boolean {
 	);
 }
 
+/**
+ * True iff `inner` is fully contained within `outer`. Matches Excalidraw `selection.ts:219`
+ * `boundsContainBounds` — used by marquee in CONTAIN mode (the Excalidraw default, where the
+ * marquee must envelop the element for it to be selected). Inclusive on edges.
+ */
+export function bboxContains(outer: BBox, inner: BBox): boolean {
+	return (
+		inner.x >= outer.x &&
+		inner.y >= outer.y &&
+		inner.x + inner.width <= outer.x + outer.width &&
+		inner.y + inner.height <= outer.y + outer.height
+	);
+}
+
 /** Axis-aligned bounds enclosing a set of points. */
 export function boundsOfPoints(points: readonly Vec2[]): BBox {
 	if (points.length === 0) return { x: 0, y: 0, width: 0, height: 0 };

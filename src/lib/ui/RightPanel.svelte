@@ -14,9 +14,12 @@
 	} from '$lib/elements/types.js';
 	import PhIcon from './PhIcon.svelte';
 
-	let { onPickIcon }: { onPickIcon: () => void } = $props();
+	let {
+		onPickIcon,
+		onAttachIcon
+	}: { onPickIcon: () => void; onAttachIcon: () => void } = $props();
 
-	const { scene, commands } = editor;
+	const { scene, commands, camera } = editor;
 
 	// The single "primary" selected element drives the inspector (last in selection order).
 	const sel = $derived(scene.selectedElements);
@@ -30,6 +33,86 @@
 	}
 	function num(v: number): number {
 		return Math.round(v * 100) / 100;
+	}
+
+	// ---- icon attachment ---------------------------------------------------------------------
+	// `BaseElement.icon` is supported on every element type EXCEPT the standalone IconElement,
+	// whose body IS the icon (changing the icon there uses `Change icon` via onPickIcon instead).
+
+	function removeIcon(): void {
+		if (!el) return;
+		commands.patch(el.id, { icon: undefined } as Partial<Element>, 'Remove icon');
+	}
+
+	// ---- paste SVG modal ---------------------------------------------------------------------
+
+	let svgModalOpen = $state(false);
+	let svgMarkup = $state('');
+	let svgError = $state<string | null>(null);
+	let svgTextarea = $state<HTMLTextAreaElement>();
+
+	function openSvgModal(): void {
+		svgMarkup = '';
+		svgError = null;
+		svgModalOpen = true;
+		queueMicrotask(() => svgTextarea?.focus());
+	}
+	function closeSvgModal(): void {
+		svgModalOpen = false;
+		svgError = null;
+	}
+
+	function sanitizeSvg(markup: string): { body: string; viewBox: string } | null {
+		const doc = new DOMParser().parseFromString(markup, 'image/svg+xml');
+		if (doc.querySelector('parsererror')) return null;
+		const root = doc.querySelector('svg');
+		if (!root) return null;
+		// Strip <script> elements outright.
+		for (const s of root.querySelectorAll('script')) s.remove();
+		// Strip on* attributes and javascript: URLs anywhere in the subtree. The DOM Element type
+		// shadows our `Element` import, so we use globalThis.Element to disambiguate.
+		const walker = doc.createTreeWalker(root, NodeFilter.SHOW_ELEMENT);
+		let node = walker.currentNode as globalThis.Element | null;
+		while (node) {
+			for (const attr of [...node.attributes]) {
+				if (attr.name.toLowerCase().startsWith('on')) node.removeAttribute(attr.name);
+				if (
+					/^(href|xlink:href)$/i.test(attr.name) &&
+					/^javascript:/i.test(attr.value)
+				) {
+					node.removeAttribute(attr.name);
+				}
+			}
+			node = walker.nextNode() as globalThis.Element | null;
+		}
+		const viewBox = root.getAttribute('viewBox') ?? '0 0 100 100';
+		return { body: root.innerHTML, viewBox };
+	}
+
+	function commitSvg(): void {
+		const result = sanitizeSvg(svgMarkup);
+		if (!result) {
+			svgError = 'Invalid SVG markup';
+			return;
+		}
+		const { body, viewBox } = result;
+		if (el && el.type === 'svg') {
+			commands.patch(el.id, { body, viewBox } as Partial<Element>, 'Edit SVG');
+		} else {
+			// No svg selected — create a fresh one at the viewport center.
+			const center = camera.toWorld({
+				x: camera.viewportWidth / 2,
+				y: camera.viewportHeight / 2
+			});
+			const id = commands.createAt('svg', {
+				x: center.x - 60,
+				y: center.y - 60,
+				width: 120,
+				height: 120
+			});
+			commands.patch(id, { body, viewBox } as Partial<Element>, 'Paste SVG');
+		}
+		closeSvgModal();
 	}
 </script>
 
@@ -47,6 +130,9 @@
 				Select an element to edit its semantic type, label, layout intent, sizing, and style. The
 				richer you tag elements, the better the exported Markdown spec.
 			</p>
+			<button class="ghost-btn paste-svg" onclick={openSvgModal}>
+				<PhIcon name="plus" size={14} /> Paste SVG markup…
+			</button>
 		</div>
 	{:else}
 		{@const e = el}
@@ -272,10 +358,42 @@
 						<span class="label">Alt text</span>
 						<input name="rightpanel-f27" autocomplete="off" type="text" value={e.alt ?? ''} oninput={(ev) => patch({ alt: (ev.currentTarget as HTMLInputElement).value }, 'Edit alt')} />
 					</label>
+				{:else if e.type === 'svg'}
+					<button class="ghost-btn" onclick={openSvgModal}>
+						<PhIcon name="plus" size={14} /> Edit SVG markup…
+					</button>
 				{:else}
 					<p class="hint">No extra content fields for this type.</p>
 				{/if}
 			</section>
+
+			<!-- Icon attachment — every element type EXCEPT the standalone IconElement (whose body
+			     IS the icon) can carry an embedded BaseElement.icon. -->
+			{#if e.type !== 'icon'}
+				<section class="field-group">
+					<h3>Icon</h3>
+					{#if e.icon}
+						{@const ic = e.icon}
+						<div class="icon-row">
+							<span class="attached-glyph" aria-hidden="true">
+								<!-- Trusted: svgPath comes from our bundled, first-party Phosphor set via the
+								     IconPicker (or a drag from same), never from user input. -->
+								<svg viewBox={ic.viewBox} width="18" height="18">
+									<path d={ic.svgPath} fill="currentColor" />
+								</svg>
+							</span>
+							<span class="icon-name">{ic.name}</span>
+							<button class="ghost-btn remove" onclick={removeIcon} title="Remove icon" aria-label="Remove icon">
+								<PhIcon name="x" size={12} />
+							</button>
+						</div>
+					{:else}
+						<button class="ghost-btn" onclick={onAttachIcon}>
+							<PhIcon name="plus" size={14} /> Add icon
+						</button>
+					{/if}
+				</section>
+			{/if}
 
 			<!-- Style hints -->
 			<section class="field-group">
@@ -345,6 +463,40 @@
 		</div>
 	{/if}
 </aside>
+
+<svelte:window
+	onkeydown={(e) => {
+		if (svgModalOpen && e.key === 'Escape') closeSvgModal();
+	}}
+/>
+
+{#if svgModalOpen}
+	<div class="svg-backdrop" aria-hidden="true" onclick={closeSvgModal}></div>
+	<div class="svg-modal" role="dialog" aria-modal="true" aria-label="Paste SVG markup">
+		<header class="svg-head">
+			<h3>Paste SVG markup</h3>
+			<button class="close" onclick={closeSvgModal} aria-label="Close">
+				<PhIcon name="x" size={16} />
+			</button>
+		</header>
+		<textarea
+			name="svg-modal-textarea"
+			autocomplete="off"
+			bind:this={svgTextarea}
+			bind:value={svgMarkup}
+			class="svg-textarea"
+			placeholder="<svg viewBox=&quot;0 0 100 100&quot;>...</svg>"
+			spellcheck="false"
+		></textarea>
+		{#if svgError}
+			<p class="svg-error" role="alert">{svgError}</p>
+		{/if}
+		<footer class="svg-actions">
+			<button class="ghost-btn" onclick={closeSvgModal}>Cancel</button>
+			<button class="ghost-btn primary-btn" onclick={commitSvg}>Commit</button>
+		</footer>
+	</div>
+{/if}
 
 <style>
 	.right-panel {
@@ -580,6 +732,123 @@
 			color: var(--danger);
 			border-color: var(--danger);
 			background: var(--danger-soft);
+		}
+	}
+
+	.paste-svg {
+		flex: 0 0 auto;
+		margin-block-start: var(--space-3);
+	}
+
+	.attached-glyph {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		inline-size: 22px;
+		block-size: 22px;
+		color: var(--ink);
+	}
+	.attached-glyph :global(svg) {
+		display: block;
+	}
+	.icon-row .remove {
+		flex: 0 0 auto;
+		padding: 4px 6px;
+	}
+
+	/* Paste-SVG modal */
+	.svg-backdrop {
+		position: fixed;
+		inset: 0;
+		background: oklch(0.2 0.02 264 / 0.28);
+		z-index: 60;
+	}
+	.svg-modal {
+		position: fixed;
+		inset-block-start: 50%;
+		inset-inline-start: 50%;
+		transform: translate(-50%, -50%);
+		inline-size: min(560px, 90vw);
+		block-size: min(480px, 80vh);
+		display: flex;
+		flex-direction: column;
+		background: var(--surface);
+		border: 1px solid var(--line-strong);
+		border-radius: var(--radius-lg);
+		box-shadow: var(--shadow-lg);
+		z-index: 61;
+		overflow: hidden;
+	}
+	.svg-head {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		padding: var(--space-3) var(--space-4);
+		border-block-end: 1px solid var(--line);
+	}
+	.svg-head h3 {
+		font-size: var(--text-sm);
+		font-weight: 600;
+		color: var(--ink);
+		text-transform: none;
+		letter-spacing: normal;
+	}
+	.svg-head .close {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		inline-size: 28px;
+		block-size: 28px;
+		border-radius: var(--radius-sm);
+		color: var(--ink-soft);
+		&:hover {
+			background: var(--surface-sunken);
+		}
+	}
+	.svg-textarea {
+		flex: 1;
+		margin: var(--space-3);
+		padding: var(--space-3);
+		font-family: var(--font-mono);
+		font-size: var(--text-xs);
+		line-height: 1.45;
+		resize: none;
+		border: 1px solid var(--line-strong);
+		border-radius: var(--radius-sm);
+		background: var(--surface-inset);
+		color: var(--ink);
+		outline: none;
+		&:focus {
+			border-color: var(--accent);
+			box-shadow: var(--ring-accent);
+		}
+	}
+	.svg-error {
+		margin-inline: var(--space-3);
+		padding: var(--space-2) var(--space-3);
+		font-size: var(--text-xs);
+		color: var(--danger);
+		background: var(--danger-soft);
+		border-radius: var(--radius-sm);
+	}
+	.svg-actions {
+		display: flex;
+		justify-content: flex-end;
+		gap: var(--space-2);
+		padding: var(--space-3) var(--space-4);
+		border-block-start: 1px solid var(--line);
+	}
+	.svg-actions .ghost-btn {
+		flex: 0 0 auto;
+		padding: 7px 14px;
+	}
+	.svg-actions .primary-btn {
+		color: var(--accent-ink);
+		background: var(--accent);
+		border-color: var(--accent);
+		&:hover {
+			background: var(--accent);
+			color: var(--accent-ink);
 		}
 	}
 </style>

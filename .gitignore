@@ -16,3 +16,6 @@ src-tauri/gen/
 
 # Local data
 *.lfdoc.bak
+
+# Reference codebases (audit/comparison only — not part of this repo)
+excalidraw-master/

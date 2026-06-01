@@ -318,7 +318,15 @@ export class SceneGraph {
 		if (this.selection.size > 0) this.selection = new SvelteSet();
 	}
 	selectAll(): void {
-		this.selection = new SvelteSet(Object.keys(this.doc.elements));
+		// Match Excalidraw `actionSelectAll.ts:28-38` — exclude locked and hidden elements (LF has
+		// no `isDeleted` tombstones or bound-text, the other Excalidraw exclusions). Keeps Cmd-A
+		// consistent with marquee + hit-test, which already skip hidden/locked.
+		const ids: ElementId[] = [];
+		for (const el of Object.values(this.doc.elements)) {
+			if (el.hidden || el.locked) continue;
+			ids.push(el.id);
+		}
+		this.selection = new SvelteSet(ids);
 	}
 	isSelected(id: ElementId): boolean {
 		return this.selection.has(id);

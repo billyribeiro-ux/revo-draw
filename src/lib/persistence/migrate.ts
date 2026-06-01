@@ -39,5 +39,31 @@ export function migrateDocument(value: unknown): LayoutDocument | null {
 		if (++guard > 64) return null; // defensive: never loop forever
 	}
 
+	// Non-versioned normalization pass: hoist any legacy `iconName`/`iconSvgPath` (originally only
+	// on buttons) onto the unified `BaseElement.icon` field. This is idempotent — elements that
+	// already carry `icon` are left untouched. Legacy fields are NOT deleted so partial rollback
+	// and external readers still work; new code reads `icon` exclusively.
+	normalizeLegacyIcons(doc);
+
 	return doc as unknown as LayoutDocument;
+}
+
+/**
+ * Walk every element in the document and, where a legacy `iconName`+`iconSvgPath` pair is set but
+ * the unified `icon` field is absent, populate `icon` from the pair using Phosphor's canonical
+ * viewBox (`0 0 256 256` — the source set every legacy doc was drawn from). Mutates in place.
+ */
+function normalizeLegacyIcons(doc: Record<string, unknown>): void {
+	const elements = doc.elements;
+	if (typeof elements !== 'object' || elements === null) return;
+	for (const el of Object.values(elements as Record<string, unknown>)) {
+		if (typeof el !== 'object' || el === null) continue;
+		const rec = el as Record<string, unknown>;
+		if (rec.icon) continue; // already on the unified field — leave alone (idempotent)
+		const name = rec.iconName;
+		const svgPath = rec.iconSvgPath;
+		if (typeof name !== 'string' || typeof svgPath !== 'string') continue;
+		if (name.length === 0 || svgPath.length === 0) continue;
+		rec.icon = { name, svgPath, viewBox: '0 0 256 256' };
+	}
 }

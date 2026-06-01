@@ -24,6 +24,9 @@
 	let total = $state(0);
 	// Rendered preview SVG strings keyed by short name (filled lazily as results arrive).
 	let previews = $state<Record<string, string>>({});
+	// Drag payloads keyed by short name. We cache them alongside previews so the synchronous
+	// `dragstart` handler can call `dataTransfer.setData` without awaiting `resolveIcon`.
+	let dragPayloads = $state<Record<string, string>>({});
 
 	// Load the set (lazy, offline) and run the search whenever the query changes while open.
 	$effect(() => {
@@ -34,11 +37,21 @@
 			const names = await searchIcons(q, 240);
 			results = names;
 			const map: Record<string, string> = {};
+			const dragMap: Record<string, string> = {};
 			for (const name of names) {
 				const icon = await resolveIcon(name);
-				if (icon) map[name] = iconToSvgString(icon, 22);
+				if (icon) {
+					map[name] = iconToSvgString(icon, 22);
+					dragMap[name] = JSON.stringify({
+						name: icon.name,
+						svgPath: combinePaths(icon.body),
+						viewBox: icon.viewBox,
+						body: icon.body
+					});
+				}
 			}
 			previews = map;
+			dragPayloads = dragMap;
 		})();
 	});
 
@@ -51,6 +64,18 @@
 			viewBox: icon.viewBox,
 			body: icon.body
 		});
+	}
+
+	// HTML5 drag-and-drop: serialize the resolved icon payload onto the dragstart event so the
+	// Canvas drop handler can attach it to a hovered element (or create a new IconElement).
+	// `dragstart` must set `dataTransfer` synchronously, so we read from the pre-resolved cache
+	// built alongside `previews`.
+	function onCellDragStart(ev: DragEvent, name: string): void {
+		if (!ev.dataTransfer) return;
+		const payload = dragPayloads[name];
+		if (!payload) return;
+		ev.dataTransfer.setData('application/x-layoutforge-icon', payload);
+		ev.dataTransfer.effectAllowed = 'copy';
 	}
 
 	$effect(() => {
@@ -87,7 +112,13 @@
 
 		<div class="grid">
 			{#each results as name (name)}
-				<button class="icon-cell" title={`ph:${name}`} onclick={() => choose(name)}>
+				<button
+					class="icon-cell"
+					title={`ph:${name}`}
+					draggable={true}
+					ondragstart={(ev) => onCellDragStart(ev, name)}
+					onclick={() => choose(name)}
+				>
 					<!-- Trusted SVG: built by iconToSvgString from the bundled, first-party Phosphor set.
 					     No user input reaches this string, so {@html} carries no XSS exposure here. -->
 					<span class="glyph">{@html previews[name] ?? ''}</span>

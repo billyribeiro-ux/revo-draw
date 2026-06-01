@@ -36,6 +36,7 @@ import { createElement } from '../elements/defaults.ts';
 export type Tool =
 	| 'select'
 	| 'hand'
+	| 'eraser'
 	| 'frame'
 	| 'container'
 	| 'card'
@@ -58,6 +59,11 @@ type DragMode =
 	| { kind: 'pan'; lastScreen: Vec2 }
 	| { kind: 'marquee'; startWorld: Vec2; additive: boolean }
 	| { kind: 'move'; startWorld: Vec2; lastWorld: Vec2; moved: boolean }
+	| {
+			kind: 'erase';
+			/** Ids deleted in this gesture, so a single drag-stroke is one undo entry. */
+			erased: Set<ElementId>;
+	  }
 	| {
 			kind: 'resize';
 			handle: HandleKind;
@@ -85,8 +91,9 @@ const HANDLE_SCREEN_PX = 9; // size + hit radius of transform handles
 const ROTATE_OFFSET_SCREEN = 26;
 const SNAP_SCREEN_PX = 6;
 const MIN_SIZE = 4;
-/** Click-vs-drag travel threshold in screen px before a move actually moves (Excalidraw = 10). */
-const DRAG_THRESHOLD_PX = 6;
+/** Click-vs-drag travel threshold in screen px before a move actually moves. Matches Excalidraw
+ * (`common/src/constants.ts:19` `DRAGGING_THRESHOLD = 10`). */
+const DRAG_THRESHOLD_PX = 10;
 
 export class Editor {
 	readonly scene: SceneGraph = scene;
@@ -102,10 +109,16 @@ export class Editor {
 	 * keeps the chosen look (Excalidraw's `currentItem*` pattern). Empty means "use type defaults".
 	 */
 	currentStyle = $state<Partial<import('../elements/types.ts').ElementStyle>>({});
-	/** When set, snapping is bypassed (alt held). */
+	/** When set, snapping is bypassed (alt held during a MOVE gesture). */
 	snapBypass = $state(false);
 	/** Whether space is held (pan mode hint for the cursor). */
 	spaceHeld = $state(false);
+	/** Dot-grid visibility (Excalidraw `actionToggleGridMode.tsx`, ⌘'). On by default. */
+	gridVisible = $state(true);
+	/** Live shift state during a gesture (drives rotate-to-15° snap, Excalidraw `shouldRotateWithDiscreteAngle`). */
+	#shiftHeld = false;
+	/** Live alt state during create/resize (drives "expand from center/anchor", Excalidraw `shouldResizeFromCenter`). */
+	#altHeld = false;
 	/**
 	 * Reactive flag, true for the duration of any active pointer gesture (create/move/resize/
 	 * rotate/marquee/pan). The style panel reads this to stay hidden while you're drawing — style
@@ -206,11 +219,23 @@ export class Editor {
 		opts: { shift: boolean; alt: boolean; space: boolean; middle: boolean }
 	): void {
 		this.snapBypass = opts.alt;
+		this.#altHeld = opts.alt;
+		this.#shiftHeld = opts.shift;
 		const world = this.camera.toWorld(screen);
 
 		// Pan: the Hand tool (H), space-drag, or middle button.
 		if (this.tool === 'hand' || opts.space || opts.middle) {
 			this.#drag = { kind: 'pan', lastScreen: screen };
+			return;
+		}
+
+		// Eraser tool (Excalidraw `actionCanvas.tsx:528` `keyTest: KEYS.E`): start a drag-delete
+		// gesture. Every element the pointer touches while held is removed; the whole stroke is one
+		// undo entry. The first hit fires here on pointerdown so a click-without-drag still deletes.
+		if (this.tool === 'eraser') {
+			this.history.begin('Erase');
+			this.#drag = { kind: 'erase', erased: new Set() };
+			this.#eraseAt(world);
 			return;
 		}
 
@@ -270,8 +295,14 @@ export class Editor {
 		this.#drag = { kind: 'marquee', startWorld: world, additive: opts.shift };
 	}
 
-	pointerMove(screen: Vec2, opts: { alt: boolean }): void {
+	pointerMove(screen: Vec2, opts: { alt: boolean; shift: boolean }): void {
+		// Alt has two meanings depending on the active gesture, matching Excalidraw:
+		//   - move:           alt = bypass snap (`snapBypass` field, read by `#applySnap`)
+		//   - create/resize:  alt = expand from center/anchor (`shouldResizeFromCenter`)
+		// Shift drives rotate-to-15° snap (Excalidraw `shouldRotateWithDiscreteAngle`).
 		this.snapBypass = opts.alt;
+		this.#altHeld = opts.alt;
+		this.#shiftHeld = opts.shift;
 		const world = this.camera.toWorld(screen);
 		this.cursorWorld = world;
 
@@ -334,6 +365,9 @@ export class Editor {
 			case 'create':
 				this.#updateCreate(world);
 				break;
+			case 'erase':
+				this.#eraseAt(world);
+				break;
 			case 'none':
 				break;
 		}
@@ -392,6 +426,11 @@ export class Editor {
 			case 'rotate':
 				this.history.commit();
 				break;
+			case 'erase':
+				// Empty erase-stroke (clicked on nothing) commits as a no-op — history.commit()
+				// detects no document change and discards the transaction silently.
+				this.history.commit();
+				break;
 			case 'pan':
 			case 'marquee':
 			case 'none':
@@ -401,7 +440,13 @@ export class Editor {
 
 	/** Abort the current gesture (Escape). Also exits a sticky creation tool back to Select. */
 	cancelGesture(): void {
-		if (this.#drag.kind === 'move' || this.#drag.kind === 'resize' || this.#drag.kind === 'rotate' || this.#drag.kind === 'create') {
+		if (
+			this.#drag.kind === 'move' ||
+			this.#drag.kind === 'resize' ||
+			this.#drag.kind === 'rotate' ||
+			this.#drag.kind === 'create' ||
+			this.#drag.kind === 'erase'
+		) {
 			this.history.cancel();
 		}
 		if (this.tool !== 'select') {
@@ -502,27 +547,55 @@ export class Editor {
 		if (distScreen >= DRAG_THRESHOLD_PX) this.#drag.dragged = true;
 		if (!this.#drag.dragged) return;
 
+		// Alt = expand symmetrically from the click point (Excalidraw `shouldResizeFromCenter`,
+		// `dragElements.ts:299-304`): the rect's CENTER stays at the click, width/height double.
+		const fromCenter = this.#altHeld;
+		const drawW = fromCenter ? w * 2 : w;
+		const drawH = fromCenter ? h * 2 : h;
+
 		// A divider is a 1-D line: it follows the DOMINANT drag axis and stays 1px on the cross axis,
 		// so dragging never inflates it into a thick box (thickness is the stroke weight, set in the
 		// renderer). Its orientation is the longer axis of the drag.
 		if (this.#drag.type === 'divider') {
-			const vertical = h >= w;
+			const vertical = drawH >= drawW;
+			const ox = fromCenter ? this.#drag.startWorld.x : Math.min(this.#drag.startWorld.x, world.x);
+			const oy = fromCenter ? this.#drag.startWorld.y : Math.min(this.#drag.startWorld.y, world.y);
 			this.scene.updateElement(el.id, {
-				x: vertical ? this.#drag.startWorld.x : Math.min(this.#drag.startWorld.x, world.x),
-				y: vertical ? Math.min(this.#drag.startWorld.y, world.y) : this.#drag.startWorld.y,
-				width: vertical ? 1 : Math.max(1, w),
-				height: vertical ? Math.max(1, h) : 1,
+				x: vertical ? this.#drag.startWorld.x : ox,
+				y: vertical ? oy : this.#drag.startWorld.y,
+				width: vertical ? 1 : Math.max(1, drawW),
+				height: vertical ? Math.max(1, drawH) : 1,
 				orientation: vertical ? 'vertical' : 'horizontal'
 			} as Partial<Element>);
 			return;
 		}
 
+		const ox = fromCenter
+			? this.#drag.startWorld.x - drawW / 2
+			: Math.min(this.#drag.startWorld.x, world.x);
+		const oy = fromCenter
+			? this.#drag.startWorld.y - drawH / 2
+			: Math.min(this.#drag.startWorld.y, world.y);
 		this.scene.updateElement(el.id, {
-			x: Math.min(this.#drag.startWorld.x, world.x),
-			y: Math.min(this.#drag.startWorld.y, world.y),
-			width: Math.max(1, w),
-			height: Math.max(1, h)
+			x: ox,
+			y: oy,
+			width: Math.max(1, drawW),
+			height: Math.max(1, drawH)
 		});
+	}
+
+	/**
+	 * Eraser stroke hit-test: delete the topmost element under `world` if any, and remember it so
+	 * subsequent pointer moves don't try to re-delete the same id (already-gone). The whole stroke
+	 * collapses into one undo entry via the gesture's history transaction. Locked elements are
+	 * skipped (same rule as the regular hit-test — locks the eraser too).
+	 */
+	#eraseAt(world: Vec2): void {
+		if (this.#drag.kind !== 'erase') return;
+		const hit = hitTestPoint(this.scene.ordered, world);
+		if (!hit || this.#drag.erased.has(hit.id)) return;
+		this.#drag.erased.add(hit.id);
+		this.scene.removeElement(hit.id);
 	}
 
 	/**
@@ -664,6 +737,23 @@ export class Editor {
 			height = origin.height + dy;
 		}
 
+		// Alt = resize from center (Excalidraw `shouldResizeFromCenter`, `resizeElements.ts:996-999`):
+		// the OPPOSITE side mirrors the dragged side, so the bbox grows symmetrically about its center.
+		if (this.#altHeld) {
+			if (handle.includes('w') || handle.includes('e')) {
+				const newW = 2 * width - origin.width;
+				const cx = origin.x + origin.width / 2;
+				width = newW;
+				x = cx - width / 2;
+			}
+			if (handle.includes('n') || handle.includes('s')) {
+				const newH = 2 * height - origin.height;
+				const cy = origin.y + origin.height / 2;
+				height = newH;
+				y = cy - height / 2;
+			}
+		}
+
 		// Aspect lock (shift): preserve original aspect ratio from the active corner.
 		if (this.#drag.aspect && origin.width > 0 && origin.height > 0) {
 			const ar = origin.width / origin.height;
@@ -776,8 +866,10 @@ export class Editor {
 		const { center, startAngle, origins } = this.#drag;
 		const angle = Math.atan2(world.y - center.y, world.x - center.x);
 		let delta = angle - startAngle;
-		// 15° snapping when alt is NOT held (alt = free rotate, matching bypass semantics).
-		if (!this.snapBypass) {
+		// Shift = snap to 15° (Excalidraw `shouldRotateWithDiscreteAngle`, `keys.ts:140` +
+		// `resizeElements.ts:222-225`). Default is FREE rotation; this inverted the prior
+		// snap-by-default convention to match Excalidraw muscle memory.
+		if (this.#shiftHeld) {
 			const step = Math.PI / 12;
 			delta = Math.round(delta / step) * step;
 		}
@@ -797,15 +889,21 @@ export class Editor {
 
 	// ---- zoom -------------------------------------------------------------------------------
 
-	wheel(screen: Vec2, deltaY: number, ctrl: boolean): void {
+	wheel(screen: Vec2, deltaX: number, deltaY: number, ctrl: boolean, shift: boolean): void {
 		if (ctrl) {
 			// Pinch / ctrl-scroll → zoom anchored at the cursor.
 			const factor = Math.exp(-deltaY * 0.01);
 			this.camera.zoomBy(factor, screen);
-		} else {
-			// Trackpad two-finger scroll → pan.
-			this.camera.panBy(0, -deltaY);
+			return;
 		}
+		if (shift) {
+			// Excalidraw: Shift+wheel = horizontal pan (treats vertical wheel as horizontal scroll).
+			this.camera.panBy(-deltaY, 0);
+			return;
+		}
+		// Trackpad two-finger scroll → pan in BOTH axes (Mac trackpads emit deltaX for horizontal
+		// swipe). Excalidraw `App.tsx:12819-12865` uses `deltaX`/`deltaY` together.
+		this.camera.panBy(-deltaX, -deltaY);
 	}
 
 	trackpadPan(dx: number, dy: number): void {
