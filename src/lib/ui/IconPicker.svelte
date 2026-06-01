@@ -20,6 +20,9 @@
 
 	let query = $state('');
 	let searchEl = $state<HTMLInputElement>();
+	let pickerEl = $state<HTMLDivElement>();
+	// Element focused before the picker opened, restored when it closes (Excalidraw Dialog).
+	let lastActive: HTMLElement | null = null;
 	let results = $state<string[]>([]);
 	let total = $state(0);
 	// Rendered preview SVG strings keyed by short name (filled lazily as results arrive).
@@ -79,8 +82,37 @@
 	}
 
 	$effect(() => {
-		if (open) queueMicrotask(() => searchEl?.focus());
+		if (open) {
+			lastActive = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+			queueMicrotask(() => searchEl?.focus());
+			return () => {
+				// Restore focus to the element that was focused before the picker opened
+				// (Excalidraw Dialog onClose). Guard against the element being detached.
+				if (lastActive && lastActive.isConnected) lastActive.focus();
+				lastActive = null;
+			};
+		}
 	});
+
+	// Tab-cycle focus within the modal so keyboard focus never escapes to the canvas
+	// behind it (Excalidraw Dialog queryFocusableElements + wrap).
+	function onPickerKeydown(e: KeyboardEvent): void {
+		if (e.key !== 'Tab' || !pickerEl) return;
+		const focusable = pickerEl.querySelectorAll<HTMLElement>(
+			'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+		);
+		if (focusable.length === 0) return;
+		const first = focusable[0];
+		const last = focusable[focusable.length - 1];
+		const active = document.activeElement;
+		if (!e.shiftKey && active === last) {
+			e.preventDefault();
+			first?.focus();
+		} else if (e.shiftKey && active === first) {
+			e.preventDefault();
+			last?.focus();
+		}
+	}
 </script>
 
 <svelte:window
@@ -93,8 +125,17 @@
 	<!-- Presentational overlay: click to dismiss. Keyboard dismissal is handled globally (Escape)
 	     above, so the backdrop itself is not a focus target. -->
 	<div class="backdrop" aria-hidden="true" onclick={onClose}></div>
-	<div class="picker" role="dialog" aria-modal="true" aria-label="Icon picker">
+	<div
+		class="picker"
+		bind:this={pickerEl}
+		role="dialog"
+		tabindex="-1"
+		aria-modal="true"
+		aria-labelledby="iconpicker-title"
+		onkeydown={onPickerKeydown}
+	>
 		<header>
+			<h2 id="iconpicker-title" class="title">Icon picker</h2>
 			<div class="search">
 				<PhIcon name="search" size={15} />
 				<input name="iconpicker-f1" autocomplete="off"
@@ -155,12 +196,47 @@
 		z-index: 41;
 		overflow: hidden;
 	}
+	/* Entrance animation matching Excalidraw Modal (backdrop fade + content scale-in),
+	   gated behind reduced-motion. */
+	@media (prefers-reduced-motion: no-preference) {
+		.backdrop {
+			animation: picker-backdrop-fade 0.1s linear forwards;
+		}
+		.picker {
+			animation: picker-content-in 0.12s ease-out forwards;
+		}
+	}
+	@keyframes picker-backdrop-fade {
+		from {
+			opacity: 0;
+		}
+		to {
+			opacity: 1;
+		}
+	}
+	@keyframes picker-content-in {
+		from {
+			opacity: 0;
+			transform: translate(-50%, -50%) scale(0.9);
+		}
+		to {
+			opacity: 1;
+			transform: translate(-50%, -50%) scale(1);
+		}
+	}
 	header {
 		display: flex;
 		align-items: center;
 		gap: var(--space-2);
 		padding: var(--space-3);
 		border-block-end: 1px solid var(--line);
+	}
+	.title {
+		font-size: var(--text-sm);
+		font-weight: 650;
+		color: var(--ink);
+		white-space: nowrap;
+		margin-inline-end: var(--space-1);
 	}
 	.search {
 		flex: 1;
@@ -194,8 +270,12 @@
 		block-size: 32px;
 		border-radius: var(--radius-sm);
 		color: var(--ink-soft);
+		transition: color 0.1s ease;
 		&:hover {
-			background: var(--surface-sunken);
+			color: var(--ink);
+		}
+		&:active {
+			color: var(--ink-soft);
 		}
 	}
 	.grid {

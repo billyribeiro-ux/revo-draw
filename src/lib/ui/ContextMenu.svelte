@@ -193,6 +193,6 @@
 	.sep {
 		border: none;
 		border-top: 1px solid var(--line);
-		margin: 4px 0;
+		margin: 0;
 	}
 </style>
