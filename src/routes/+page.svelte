@@ -723,7 +723,11 @@
 		z-index: 4;
 		pointer-events: none;
 	}
-	.ui-overlay :where(.panel-dock) {
+	.ui-overlay :where(.panel-dock, .style-panel) {
+		/* `.style-panel` is a direct child of the pointer-transparent overlay; without this it
+		   inherits pointer-events:none, so clicks on its color swatches fall THROUGH to the canvas
+		   (which clears the selection and hides the panel — "the palette disappears when I click it").
+		   Re-enabling events here keeps clicks on the panel/popover instead of the canvas. */
 		pointer-events: auto;
 	}
 	/* Excalidraw `styles.scss:352-362`: the top row is pointer-transparent and EVERY direct child
