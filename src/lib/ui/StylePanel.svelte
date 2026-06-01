@@ -1,6 +1,17 @@
 <script lang="ts">
 	import { editor } from '$lib/canvas/editor.svelte.js';
-	import { BACKGROUND_PICKS, PALETTE_GRID, STROKE_PICKS, TRANSPARENT } from '$lib/elements/palette.js';
+	import {
+		BACKGROUND_PICKS,
+		BG_DEFAULT_SHADE,
+		PICKER_ORDER,
+		STROKE_DEFAULT_SHADE,
+		STROKE_PICKS,
+		TRANSPARENT,
+		baseColorAt,
+		findColorPosition,
+		normalizeHex,
+		shadesOf
+	} from '$lib/elements/palette.js';
 	import { STROKE_STYLES, STROKE_WIDTHS, type StrokeStyle, type StrokeWidth } from '$lib/elements/types.js';
 
 	const { scene, commands } = editor;
@@ -91,6 +102,31 @@
 		editor.currentStyle = { ...editor.currentStyle, opacity: v };
 	}
 
+	// Picker-box pickers: set the color but keep the popover OPEN, so you can refine base→shade the
+	// way Excalidraw's ColorPicker stays open while you pick. (The inline quick-pick row still uses
+	// setStroke/setBg, which close the popover.)
+	function applyStroke(color: string): void {
+		commands.setStyleOnSelection({ stroke: color }, 'Stroke color');
+		editor.currentStyle = { ...editor.currentStyle, stroke: color };
+	}
+	function applyBg(color: string): void {
+		commands.setStyleOnSelection({ fill: color }, 'Fill color');
+		editor.currentStyle = { ...editor.currentStyle, fill: color };
+	}
+	function setHex(input: string, apply: (c: string) => void): void {
+		const hex = normalizeHex(input);
+		if (hex) apply(hex);
+	}
+	/** Active base-grid shade + the shade-row colors for the current color (Excalidraw PickerColorList/ShadeList). */
+	function pickerState(
+		current: string,
+		defaultShade: number
+	): { gridShade: number; shades: readonly string[] | null } {
+		const pos = findColorPosition(current);
+		const gridShade = pos && pos.shade >= 0 ? pos.shade : defaultShade;
+		return { gridShade, shades: pos ? shadesOf(pos.name) : null };
+	}
+
 	const curStroke = $derived(primary?.style?.stroke ?? '#1e1e1e');
 	const curBg = $derived(primary?.style?.fill ?? TRANSPARENT);
 	const curWidth = $derived<StrokeWidth>(primary?.style?.strokeWidth ?? 'bold');
@@ -111,6 +147,56 @@
 	}
 </script>
 
+{#snippet pickerBox(current: string, defaultShade: number, apply: (c: string) => void)}
+	{@const st = pickerState(current, defaultShade)}
+	{@const activeName = findColorPosition(current)?.name}
+	<div class="pp">
+		<div class="pp-heading">Colors</div>
+		<div class="pp-grid">
+			{#each PICKER_ORDER as name (name)}
+				{@const c = baseColorAt(name, st.gridShade)}
+				<button
+					class="pp-swatch"
+					class:active={activeName === name}
+					class:transparent={c === 'transparent'}
+					style:background={c === 'transparent' ? undefined : c}
+					title={name}
+					aria-label={name}
+					onclick={() => apply(c)}
+				></button>
+			{/each}
+		</div>
+		{#if st.shades}
+			<div class="pp-heading">Shades</div>
+			<div class="pp-grid">
+				{#each st.shades as c, i (i)}
+					<button
+						class="pp-swatch"
+						class:active={current.toLowerCase() === c.toLowerCase()}
+						style:background={c}
+						title={`Shade ${i + 1}`}
+						aria-label={`Shade ${i + 1}`}
+						onclick={() => apply(c)}
+					></button>
+				{/each}
+			</div>
+		{/if}
+		<label class="pp-hex">
+			<span class="pp-hash">#</span>
+			<input
+				name="pp-hex"
+				class="pp-hex-input"
+				type="text"
+				autocomplete="off"
+				spellcheck="false"
+				value={(current ?? '').replace(/^#/, '')}
+				oninput={(e) => setHex((e.currentTarget as HTMLInputElement).value, apply)}
+				aria-label="Hex color"
+			/>
+		</label>
+	</div>
+{/snippet}
+
 {#if show}
 	<div class="style-panel" class:shifted={editor.layersOpen} role="group" aria-label="Style" bind:this={panelEl}>
 		<!-- Stroke color -->
@@ -123,15 +209,7 @@
 				<div class="more">
 					<button class="swatch current" class:bordered={isLight(curStroke)} style:background={curStroke} onclick={toggleStroke} aria-label="More stroke colors"></button>
 					{#if strokeOpen}
-						<div class="grid-pop">
-							{#each PALETTE_GRID as row (row.name)}
-								<div class="grid-row">
-									{#each row.shades as c (c)}
-										<button class="swatch sm" class:bordered={isLight(c)} style:background={c} onclick={() => { setStroke(c); strokeOpen = false; }} aria-label={c}></button>
-									{/each}
-								</div>
-							{/each}
-						</div>
+						<div class="grid-pop">{@render pickerBox(curStroke, STROKE_DEFAULT_SHADE, applyStroke)}</div>
 					{/if}
 				</div>
 			</div>
@@ -147,18 +225,7 @@
 				<div class="more">
 					<button class="swatch current" class:transparent={curBg === TRANSPARENT} class:bordered={isLight(curBg)} style:background={curBg === TRANSPARENT ? 'transparent' : curBg} onclick={toggleBg} aria-label="More fill colors"></button>
 					{#if bgOpen}
-						<div class="grid-pop">
-							<div class="grid-row">
-								<button class="swatch sm transparent" onclick={() => { setBg(TRANSPARENT); bgOpen = false; }} aria-label="Transparent"></button>
-							</div>
-							{#each PALETTE_GRID as row (row.name)}
-								<div class="grid-row">
-									{#each row.shades as c (c)}
-										<button class="swatch sm" class:bordered={isLight(c)} style:background={c} onclick={() => { setBg(c); bgOpen = false; }} aria-label={c}></button>
-									{/each}
-								</div>
-							{/each}
-						</div>
+						<div class="grid-pop">{@render pickerBox(curBg, BG_DEFAULT_SHADE, applyBg)}</div>
 					{/if}
 				</div>
 			</div>
@@ -274,18 +341,8 @@
 		border-radius: 5px;
 	}
 	:global(.x-web) .grid-pop {
-		gap: 0.25rem;
 		padding: 0.5rem;
 		max-inline-size: none;
-	}
-	:global(.x-web) .grid-row {
-		gap: 0.25rem;
-	}
-	:global(.x-web) .swatch.sm {
-		inline-size: 1.875rem;
-		block-size: 1.875rem;
-		border-radius: 4px;
-		box-shadow: inset 0 0 0 1px oklch(0 0 0 / 0.08);
 	}
 	@keyframes pop {
 		from {
@@ -361,23 +418,84 @@
 		inset-inline-end: 0;
 		display: flex;
 		flex-direction: column;
-		gap: 4px;
-		padding: 8px;
+		padding: 0.5rem;
 		inline-size: max-content;
-		max-inline-size: 200px;
+		max-inline-size: 240px;
 		background: var(--surface);
 		border: 1px solid var(--line-strong);
 		border-radius: var(--radius-md);
 		box-shadow: var(--shadow-lg);
 		z-index: 30;
 	}
-	.grid-row {
+
+	/* Excalidraw ColorPicker box (verified against ColorPicker.scss): a "Colors" heading + a
+	   5-column base grid of named colors, a "Shades" row, and a #-prefixed hex input. */
+	.pp {
 		display: flex;
-		gap: 4px;
+		flex-direction: column;
+		gap: 0.5rem;
 	}
-	.swatch.sm {
-		inline-size: 18px;
-		block-size: 18px;
+	.pp-heading {
+		font-size: 0.75rem;
+		color: var(--ink-faint);
+		padding: 0 0.25rem;
+		text-align: start;
+	}
+	.pp-grid {
+		display: grid;
+		grid-template-columns: repeat(5, 1.875rem);
+		gap: 0.25rem;
+	}
+	.pp-swatch {
+		inline-size: 1.875rem;
+		block-size: 1.875rem;
+		border-radius: 0.5rem;
+		box-shadow: inset 0 0 0 1px #d9d9d9;
+		position: relative;
+		transition: transform var(--dur-1) var(--ease);
+	}
+	.pp-swatch:hover:not(.active) {
+		transform: scale(1.075);
+	}
+	.pp-swatch.active {
+		box-shadow: 0 0 0 1px var(--accent);
+	}
+	.pp-swatch.transparent {
+		background-image:
+			linear-gradient(45deg, var(--line) 25%, transparent 25%),
+			linear-gradient(-45deg, var(--line) 25%, transparent 25%),
+			linear-gradient(45deg, transparent 75%, var(--line) 75%),
+			linear-gradient(-45deg, transparent 75%, var(--line) 75%);
+		background-size: 8px 8px;
+		background-position: 0 0, 0 4px, 4px -4px, -4px 0;
+	}
+	.pp-hex {
+		display: grid;
+		grid-template-columns: auto 1fr;
+		align-items: center;
+		gap: 4px;
+		border: 1px solid var(--line);
+		border-radius: 8px;
+		padding: 0 8px;
+		margin-block-start: 2px;
+	}
+	.pp-hex:focus-within {
+		box-shadow: 0 0 0 1px var(--accent);
+	}
+	.pp-hash {
+		color: var(--ink-faint);
+		font-size: 0.875rem;
+	}
+	.pp-hex-input {
+		border: 0;
+		background: none;
+		outline: none;
+		padding: 6px 2px;
+		font-size: 0.875rem;
+		color: var(--ink);
+		inline-size: 100%;
+		min-inline-size: 0;
+		letter-spacing: 0.4px;
 	}
 
 	.seg {

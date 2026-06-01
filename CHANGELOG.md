@@ -18,6 +18,20 @@ Newest first. "Done" = committed on this branch with tests green; "Pending" = no
   citations). Honest conclusion: NOT a 100% match — large ABSENT surface is intentional (no
   collab/firebase/mobile/React/linear-arrow/freedraw), plus real divergences listed below.
 
+### Web-shell visual parity
+- **Color picker box rebuilt to Excalidraw's ColorPicker** (`src/lib/ui/StylePanel.svelte`,
+  `src/lib/elements/palette.ts`) — the "more colors" popover was a 10×5 hue-grid; it now matches
+  Excalidraw's structure verified against `ColorPicker.scss`/`Picker.tsx`: a **"Colors" heading +
+  5-column base grid of the 15 named colors** (transparent/white/gray/black/bronze + 10 hues at the
+  active shade), a **"Shades" row** (5 shades of the active color), and a **`#`-prefixed hex input**.
+  Geometry matched exactly: 1.875rem swatches, 0.25rem gap, 0.5rem padding, 4px/0.5rem radii,
+  inset 1px #d9d9d9 outline, scale(1.075) hover. Palette hex values are Excalidraw's exact
+  open-color set. Picking a base color keeps the popover open to refine the shade (Excalidraw
+  behavior). `pnpm check` 0/0, svelte-autofixer clean, 141 tests green.
+  - NOTE: matched against Excalidraw source spec; **pixel-parity not yet visually confirmed** — I
+    cannot see the live app (Chrome extension unpaired, no headless browser in repo). Needs a
+    screenshot or Chrome connection to verify and to catch remaining web-shell diffs.
+
 ### Fixes (from the parity audit; controller logic was already proven correct by headless tests)
 - **Phosphor icon recolor** (`src/lib/canvas/renderer.ts`) — added exported `iconInk(style)` that
   resolves a glyph's ink as `stroke ?? fill ?? INK`. Icons are monochrome glyphs whose visible
