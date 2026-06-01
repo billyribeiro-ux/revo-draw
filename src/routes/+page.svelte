@@ -734,7 +734,11 @@
 	}
 	.menu-island {
 		padding: 0;
-		overflow: hidden;
+		/* NOTE: do NOT set overflow:hidden here. The FileMenu dropdown (.menu) is an absolutely
+		   positioned child that drops below this island; clipping it to the 2.25rem button box made
+		   the menu button appear dead (it toggled open but the menu was clipped away). The hamburger's
+		   hover background is already rounded by the button's own border-radius, so no clip is needed. */
+		overflow: visible;
 	}
 
 	/* Square icon button inside an island (zoom/undo/redo). 2rem hit target, 8px radius. */
