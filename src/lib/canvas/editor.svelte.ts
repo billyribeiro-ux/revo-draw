@@ -219,10 +219,14 @@ export class Editor {
 	 * for a multi-selection they sit on the axis-aligned union bounds.
 	 */
 	currentHandles(): Handle[] {
+		// Place handles HANDLE_SCREEN_PX outside the box (constant on screen) so they never cover the
+		// element body — otherwise small elements (e.g. a 32×32 icon) can't be dragged: every click
+		// lands on a resize handle. Matches Excalidraw, where handles sit outside the selection rect.
+		const margin = this.camera.screenDistanceToWorld(HANDLE_SCREEN_PX);
 		const sole = this.soleSelected;
-		if (sole) return orientedHandles(sole, sole.rotation, this.rotateOffsetWorld);
+		if (sole) return orientedHandles(sole, sole.rotation, this.rotateOffsetWorld, margin);
 		const bounds = this.scene.selectionBounds;
-		return bounds ? selectionHandles(bounds, this.rotateOffsetWorld) : [];
+		return bounds ? selectionHandles(bounds, this.rotateOffsetWorld, margin) : [];
 	}
 
 	// ---- tool selection ---------------------------------------------------------------------

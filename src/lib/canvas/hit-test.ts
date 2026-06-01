@@ -35,8 +35,16 @@ export interface Handle {
 }
 
 /** The eight resize handles + one rotate handle for a selection box (axis-aligned in world). */
-export function selectionHandles(bounds: BBox, rotateOffsetWorld: number): Handle[] {
-	const { x, y, width: w, height: h } = bounds;
+export function selectionHandles(bounds: BBox, rotateOffsetWorld: number, marginWorld = 0): Handle[] {
+	// Inflate the box by `marginWorld` so handles sit OUTSIDE the selection, leaving the whole body
+	// free to drag (Excalidraw places handles outside the box via `dashedLineMargin + handleMargin`,
+	// transformHandles.ts:158). Without this, a small element's handles cover its body and every
+	// off-centre click resizes instead of moves.
+	const m = marginWorld;
+	const x = bounds.x - m;
+	const y = bounds.y - m;
+	const w = bounds.width + m * 2;
+	const h = bounds.height + m * 2;
 	const cx = x + w / 2;
 	const cy = y + h / 2;
 	return [
@@ -57,10 +65,22 @@ export function selectionHandles(bounds: BBox, rotateOffsetWorld: number): Handl
  * so resize/rotate affordances sit on the visual outline of a rotated element. The rotate handle
  * is offset perpendicular to the top edge. Handle `kind`s name the LOCAL (pre-rotation) corner.
  */
-export function orientedHandles(el: BBox, rotation: number, rotateOffsetWorld: number): Handle[] {
+export function orientedHandles(
+	el: BBox,
+	rotation: number,
+	rotateOffsetWorld: number,
+	marginWorld = 0
+): Handle[] {
 	const c = bboxCenter(el);
 	const place = (lx: number, ly: number): Vec2 => rotate({ x: lx, y: ly }, rotation, c);
-	const { x, y, width: w, height: h } = el;
+	// Inflate by `marginWorld` so handles sit OUTSIDE the element, keeping the body free to drag
+	// (matches Excalidraw, transformHandles.ts:158). The center is unchanged (symmetric inflate),
+	// so rotation about `c` is unaffected.
+	const m = marginWorld;
+	const x = el.x - m;
+	const y = el.y - m;
+	const w = el.width + m * 2;
+	const h = el.height + m * 2;
 	const cx = x + w / 2;
 	const cy = y + h / 2;
 	return [

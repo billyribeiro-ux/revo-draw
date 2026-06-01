@@ -101,6 +101,14 @@ async function key(text, opts = {}) {
 	);
 	await sleep(20);
 }
+// Live screen position of a transform handle (by kind), read from the controller. Robust to the
+// handles' outward margin (they sit OUTSIDE the box so the body stays draggable), so resize/rotate
+// checks grab the real handle rather than a hard-coded box-corner coordinate.
+async function handleAt(kind) {
+	return await ev(
+		`(() => { const e = window.__e; const h = e.currentHandles().find((h) => h.kind === ${JSON.stringify(kind)}); if (!h) return null; const m = e.camera.worldToScreen; return { x: m.a * h.world.x + m.c * h.world.y + m.e, y: m.b * h.world.x + m.d * h.world.y + m.f }; })()`
+	);
+}
 
 const results = [];
 const near = (a, b, t = 8) => Math.abs(a - b) <= t;
@@ -182,16 +190,18 @@ try {
 	await reset(); await ev(`window.__e.setTool('card')`); await drag(200, 150, 440, 310);
 	await ev(`window.__e.setTool('select')`); await click(320, 230);
 	before = (await cards())[0];
-	// SE handle is at element bottom-right in screen coords (zoom=1, pan=0): (x+w, y+h) → (440,310)
-	await drag(440, 310, 540, 410); // grow +100,+100
+	// Grab the SE handle at its live position (it sits just OUTSIDE the box now), drag +100,+100.
+	const se = await handleAt('se');
+	await drag(se.x, se.y, se.x + 100, se.y + 100); // grow +100,+100
 	after = (await cards())[0];
 	check('SE handle resize grows width/height', near(after.w - before.w, 100) && near(after.h - before.h, 100) && near(after.x, before.x) && near(after.y, before.y), `dw=${after.w - before.w} dh=${after.h - before.h}`);
 
 	// 12. ROTATE handle changes rotation.
 	await reset(); await ev(`window.__e.setTool('card')`); await drag(300, 200, 460, 320);
 	await ev(`window.__e.setTool('select')`); await click(380, 260);
-	// rotate handle is above top-center by ~26px screen: center x=380, top y=200 → handle ~ (380, 174)
-	await drag(380, 174, 460, 200);
+	// Grab the rotate handle at its live position (above top-center) and swing it sideways.
+	const rot = await handleAt('rotate');
+	await drag(rot.x, rot.y, rot.x + 80, rot.y + 26);
 	after = (await cards())[0];
 	check('rotate handle changes element rotation', Math.abs(after.rot) > 0.01, `rot=${after.rot.toFixed(3)}`);
 
