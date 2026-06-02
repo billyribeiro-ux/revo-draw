@@ -3,6 +3,7 @@
 // it. Freedraw: pointer-down starts a stroke, drag accumulates local points (perfect-freehand).
 // Mutations go through the vendored model so fractional indices + ShapeCache stay correct.
 import {
+  getCommonBounds,
   hitElementItself,
   mutateElement,
   newElement,
@@ -40,6 +41,12 @@ export class DrawController {
   #mode: CreateMode | null = null;
   #originX = 0;
   #originY = 0;
+
+  // move-drag state
+  #dragging = false;
+  #dragStartX = 0;
+  #dragStartY = 0;
+  #dragOrigins = new Map<string, { x: number; y: number }>();
 
   setTool(tool: Tool): void {
     this.activeTool = tool;
@@ -85,11 +92,42 @@ export class DrawController {
     this.appState.setState({ selectedElementIds: id ? { [id]: true } : {} });
   }
 
+  /** True if a scene point falls within the current selection's bounding box. */
+  #pointInSelection(x: number, y: number): boolean {
+    const selected = this.selectedElements;
+    if (!selected.length) {
+      return false;
+    }
+    const [x1, y1, x2, y2] = getCommonBounds(selected);
+    return x >= x1 && x <= x2 && y >= y1 && y <= y2;
+  }
+
+  #beginDrag(x: number, y: number): void {
+    this.#dragging = true;
+    this.#dragStartX = x;
+    this.#dragStartY = y;
+    this.#dragOrigins = new Map(
+      this.selectedElements.map((e) => [e.id, { x: e.x, y: e.y }]),
+    );
+  }
+
   pointerDown(clientX: number, clientY: number): void {
     const { x, y } = this.#toScene(clientX, clientY);
 
     if (this.activeTool === "selection") {
-      this.#select(this.#hitTest(x, y));
+      // grabbing inside the current selection starts a move...
+      if (this.selectedId && this.#pointInSelection(x, y)) {
+        this.#beginDrag(x, y);
+        return;
+      }
+      // ...otherwise hit-test for a new selection (which can then be dragged)
+      const hitId = this.#hitTest(x, y);
+      if (hitId) {
+        this.#select(hitId);
+        this.#beginDrag(x, y);
+      } else {
+        this.#select(null);
+      }
       return;
     }
 
@@ -119,6 +157,22 @@ export class DrawController {
   }
 
   pointerMove(clientX: number, clientY: number): void {
+    // moving the current selection (origin-based, so no floating drift)
+    if (this.#dragging) {
+      const { x, y } = this.#toScene(clientX, clientY);
+      const dx = x - this.#dragStartX;
+      const dy = y - this.#dragStartY;
+      const map = this.scene.scene.getNonDeletedElementsMap();
+      for (const el of this.selectedElements) {
+        const origin = this.#dragOrigins.get(el.id);
+        if (origin) {
+          mutateElement(el, map, { x: origin.x + dx, y: origin.y + dy });
+        }
+      }
+      this.scene.scene.triggerUpdate();
+      return;
+    }
+
     if (!this.#creating) {
       return;
     }
@@ -148,6 +202,13 @@ export class DrawController {
   }
 
   pointerUp(): void {
+    // end a move-drag
+    if (this.#dragging) {
+      this.#dragging = false;
+      this.#dragOrigins.clear();
+      return;
+    }
+
     const creating = this.#creating;
     const mode = this.#mode;
     if (!creating) {

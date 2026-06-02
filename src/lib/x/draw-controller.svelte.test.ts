@@ -79,6 +79,23 @@ describe("DrawController — generic-create gesture", () => {
     expect(c.selectedElements.length).toBe(0);
   });
 
+  it("drags the selected element by the pointer delta (origin-based)", () => {
+    const c = new DrawController();
+    c.setTool("rectangle");
+    c.pointerDown(100, 100);
+    c.pointerMove(200, 180); // rect x=100 y=100 w=100 h=80
+    c.pointerUp();
+
+    c.setTool("selection");
+    c.pointerDown(100, 140); // left outline → select + begin drag
+    c.pointerMove(150, 170); // dx=50 dy=30
+    c.pointerUp();
+
+    const el = c.scene.elements[0]!;
+    expect(Math.round(el.x)).toBe(150);
+    expect(Math.round(el.y)).toBe(130);
+  });
+
   it("freedraw accumulates local points along the stroke", () => {
     const c = new DrawController();
     c.setTool("freedraw");

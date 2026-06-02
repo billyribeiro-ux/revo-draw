@@ -138,10 +138,20 @@ Phase 3.
 - **Evidence:** `pnpm check` 0/0 (907 files) · `pnpm test` 163 passing (104 pure + 59 runes) ·
   `pnpm build` clean · CDP selection probe PASS + screenshot.
 
-**Next (Phase 3 cont.):** drag-to-move a selected element; resize/rotate via the handles
-(`resizeElements`/`transformHandles`) + marquee multi-select. Then line/arrow (`LinearElementEditor`),
-text (textarea overlay), image. The real editor controller also unlocks the deferred Store/History
-undo-redo wiring.
+- **Drag-to-move works** — selection-tool pointer-down inside the selection bbox (`getCommonBounds`)
+  or on an element's outline begins an origin-based move (no float drift); pointer-move translates
+  selected elements by the scene-delta; the selection overlay follows. **Browser-verified**
+  (`scripts/probe-x-move.mjs`): drew a rect at (300,200), dragged it +120,+90 → landed exactly at
+  (420,290), still selected; screenshot confirms. +1 controller test (7 total). Autofixer clean
+  (kept `#dragOrigins` a plain `Map` — non-reactive internal drag bookkeeping).
+- **Evidence:** `pnpm check` 0/0 (907 files) · `pnpm test` 164 passing (104 pure + 60 runes) ·
+  `pnpm build` clean · CDP move probe PASS + screenshot.
+
+**Tools/interactions working:** draw (rectangle/ellipse/diamond/freedraw), select, **move**.
+
+**Next (Phase 3 cont.):** resize/rotate via the handles (`resizeElements`/`transformHandles` hit-test)
++ marquee multi-select. Then line/arrow (`LinearElementEditor`), text (textarea overlay), image.
+The real editor controller also unlocks the deferred Store/History undo-redo wiring.
 
 ---
 
