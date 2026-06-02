@@ -75,9 +75,24 @@ runes `AppState`, reactive `EditorScene` all vendored, adapted to runes, and pro
 Remaining undo/redo wiring (`Store`+`History`+`CaptureUpdateAction` on the controller) folds into
 Phase 3.
 
-**Next: Phase 2** — the visible payoff: 3-canvas Svelte shell (static / new-element / interactive)
-+ `ShapeCache` + rough.js, rendering rectangle/ellipse/diamond from a generic-create tool. Reuse
-`src/lib/canvas/{camera,geometry}` substrate.
+### Phase 2 — Rendering: **IN PROGRESS** 🔧
+
+- Vendored the static render path: `excalidraw/renderer/{staticScene,renderNewElementScene,
+  helpers,roundRect}.ts` + `components/hyperlink/helpers.ts` (the only non-renderer dep staticScene
+  pulls). `shape.ts` + `renderElement.ts` were already in `element/`. Deferred to their phases:
+  `interactiveScene.ts` (Phase 3 selection overlay), `renderSnaps.ts` (Phase 7), `animation.ts`
+  (laser trails), `staticSvgScene.ts` (Phase 6 SVG export).
+- **rough.js proven at runtime** (`src/lib/element/shape-roughjs.test.ts`, 3 tests):
+  `ShapeCache.generateElementShape` produces hand-drawn `Drawable` path-ops for a rectangle, is
+  **seed-deterministic** (same seed → byte-identical geometry — the basis of a stable hand-drawn
+  look across reloads), and varies with seed. The visual heart of Excalidraw works in our toolchain.
+- **Evidence:** `pnpm check` 0/0 (898 files) · `pnpm test` 157 passing (104 pure + 53 runes) ·
+  `pnpm build` clean.
+
+**Next (Phase 2 cont.):** the 3-canvas Svelte shell (`StaticCanvas` / `NewElementCanvas` /
+`InteractiveCanvas`) wired to `staticScene` render fn, DPR via `bootstrapCanvas`, reading the
+reactive `EditorScene` + `EditorAppState`; then a generic-create tool to draw rectangle/ellipse/
+diamond. Reuse `src/lib/canvas/{camera,geometry}` substrate.
 
 ---
 
