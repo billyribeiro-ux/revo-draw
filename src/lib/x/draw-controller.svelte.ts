@@ -45,6 +45,10 @@ import type { App, AppState } from "@excalidraw/excalidraw/types";
 
 import { EditorAppState } from "$lib/state/app-state.svelte.ts";
 import { EditorScene } from "$lib/scene/editor-scene.svelte.ts";
+import {
+  restoreFromLocalStorage,
+  saveToLocalStorage,
+} from "$lib/x/persistence/web-storage.ts";
 
 // Editor-interface shape used by resizeTest (handle sizing). Desktop/mouse defaults.
 const EDITOR_INTERFACE: EditorInterface = {
@@ -108,7 +112,16 @@ export class DrawController {
       this.#history.record(increment.delta);
       this.#syncHistoryFlags();
     });
-    // capture the initial (empty) snapshot as the undo baseline
+
+    // restore any prior drawing from localStorage before establishing the baseline
+    const restored = restoreFromLocalStorage();
+    if (restored && restored.elements.length > 0) {
+      this.#elements = syncInvalidIndices(restored.elements);
+      this.scene.replaceAllElements(this.#elements);
+      this.appState.setState(restored.appState);
+    }
+
+    // capture the initial snapshot (empty or restored) as the undo baseline
     this.#commit();
   }
 
@@ -122,6 +135,11 @@ export class DrawController {
     this.#store.scheduleCapture();
     this.#store.commit(
       this.scene.scene.getElementsMapIncludingDeleted() as SceneElementsMap,
+      this.appState.current,
+    );
+    // persist to localStorage so the drawing survives reload
+    saveToLocalStorage(
+      this.scene.scene.getElementsIncludingDeleted(),
       this.appState.current,
     );
   }
@@ -182,6 +200,17 @@ export class DrawController {
   }
   setStrokeWidth(width: number): void {
     this.#applyStyle({ strokeWidth: width }, { currentItemStrokeWidth: width });
+  }
+
+  get theme(): AppState["theme"] {
+    return this.appState.current.theme;
+  }
+
+  /** Toggle light/dark theme and persist it. */
+  toggleTheme(): void {
+    const next: AppState["theme"] = this.appState.current.theme === "dark" ? "light" : "dark";
+    this.appState.setState({ theme: next });
+    saveToLocalStorage(this.scene.scene.getElementsIncludingDeleted(), this.appState.current);
   }
 
   #applyStyle(

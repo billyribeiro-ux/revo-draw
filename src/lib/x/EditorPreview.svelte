@@ -4,6 +4,8 @@
   // select it and the interactive overlay paints Excalidraw's selection box + transform handles.
   import rough from 'roughjs/bin/rough';
 
+  import '$lib/x/css/theme.css';
+
   import { renderStaticScene } from '@excalidraw/excalidraw/renderer/staticScene';
   import { renderInteractiveScene } from '@excalidraw/excalidraw/renderer/interactiveScene';
 
@@ -204,17 +206,26 @@
 
 <svelte:window {onkeydown} />
 
-<div class="toolbar">
-  {#each tools as tool (tool)}
+<div class="excalidraw" class:theme--dark={controller.theme === 'dark'}>
+  <div class="toolbar">
+    {#each tools as tool (tool)}
+      <button
+        type="button"
+        class:active={controller.activeTool === tool}
+        onclick={() => controller.setTool(tool)}
+      >
+        {tool}
+      </button>
+    {/each}
     <button
       type="button"
-      class:active={controller.activeTool === tool}
-      onclick={() => controller.setTool(tool)}
+      class="theme-toggle"
+      aria-label="toggle theme"
+      onclick={() => controller.toggleTheme()}
     >
-      {tool}
+      {controller.theme === 'dark' ? '☀' : '☾'}
     </button>
-  {/each}
-</div>
+  </div>
 
 <div class="properties">
   <div class="prop-group">
@@ -291,9 +302,46 @@
       }}
     ></textarea>
   {/if}
+  </div>
 </div>
 
 <style>
+  /* dark mode: invert the canvas (Excalidraw's filter approach) + dark chrome */
+  .excalidraw.theme--dark .layer {
+    filter: var(--theme-filter, invert(93%) hue-rotate(180deg));
+  }
+
+  .theme-toggle {
+    padding: 6px 10px;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    background: transparent;
+    cursor: pointer;
+    font-size: 14px;
+  }
+
+  .excalidraw.theme--dark .toolbar,
+  .excalidraw.theme--dark .properties {
+    background: #232329;
+    border-color: #31313a;
+    color: #ced4da;
+  }
+
+  .excalidraw.theme--dark .toolbar button,
+  .excalidraw.theme--dark .widths button {
+    color: #ced4da;
+  }
+
+  .excalidraw.theme--dark .toolbar button.active,
+  .excalidraw.theme--dark .widths button.active {
+    background: #2d2d38;
+    border-color: #4263eb;
+  }
+
+  .excalidraw.theme--dark .prop-label {
+    color: #909296;
+  }
+
   .canvas-wrap {
     position: relative;
     width: 100vw;

@@ -213,10 +213,29 @@ Phase 3.
 **Interactions:** draw, select, move, resize, rotate, delete, duplicate, undo/redo.
 **Styling:** stroke color, background color, stroke width (new + selected elements).
 
-**Remaining for full parity (tracked, multi-session):** image tool; marquee multi-select + modifier
-keys; multi-point linear editor; the rest of the UI shell (Phase 5 — full toolbar chrome, opacity/
-fill-style/sloppiness/edges/font controls, color *pickers*, menus, dialogs, stats, context menu);
-dark mode + localStorage (Phase 6); binding + snapping (Phase 7); Tauri (Phase 8).
+- **Parallel workflow (4 agents) + Phase 6 integration — dark mode & localStorage.** A Workflow
+  fan-out produced 4 disjoint, self-verified assets under `src/lib/x/`: `css/theme.css` (faithful
+  port of Excalidraw's light/dark CSS variables + `--theme-filter`), `persistence/web-storage.ts`
+  (localStorage save/restore of elements + filtered appState + theme), `icons.ts` (18 real
+  Excalidraw SVG tool/action icons), `ColorPicker.svelte` (swatch + hex picker). Then integrated
+  the two highest-value ones:
+  - **localStorage persistence** — controller restores on construct (before the undo baseline) and
+    `saveToLocalStorage` on every `#commit()`. **Browser-verified**: drew a shape → reload → restored.
+  - **Dark mode** — `EditorPreview` wraps the UI in `.excalidraw` + `class:theme--dark`, imports
+    `theme.css`, applies `--theme-filter` to the canvases, dark chrome, and a sun/moon toggle
+    (`controller.toggleTheme`, persisted). **Browser-verified**: `theme--dark` applied, canvas filter
+    `invert(0.93) hue-rotate(180deg)` computed, chrome renders dark.
+  `icons.ts` + `ColorPicker.svelte` are ready-to-wire assets for the next UI pass.
+- **Evidence:** `pnpm check` 0/0 (910 files) · `pnpm test` 171 passing · `pnpm build` clean ·
+  CDP persistence+dark-mode probe PASS.
+
+**Done:** model/scene/store/history; 7 tools; select/move/resize/rotate/delete/duplicate/undo-redo;
+stroke/background/width styling; **localStorage persistence**; **dark mode**.
+
+**Remaining for full parity (tracked):** wire `icons.ts`/`ColorPicker.svelte` into the chrome; image
+tool; marquee multi-select + modifier keys; multi-point linear editor; the rest of the UI shell
+(opacity/fill-style/sloppiness/edges/font controls, menus, dialogs, stats, context menu); binding +
+snapping (Phase 7); Tauri (Phase 8).
 
 ---
 
