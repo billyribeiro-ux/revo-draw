@@ -1,9 +1,12 @@
 import { defineConfig } from 'vitest/config';
 
+import { excalidrawAliases } from './vitest.aliases.ts';
+
 // Pure-logic unit tests (export compiler determinism, geometry, snapping). These modules
 // import no Svelte runtime, so a plain node environment with no SvelteKit plugin is correct
 // and fast. Keeping this separate from vite.config.ts avoids loading the SvelteKit plugin.
 export default defineConfig({
+	resolve: { alias: excalidrawAliases },
 	test: {
 		include: ['src/**/*.{test,spec}.ts'],
 		// `.svelte.test.ts` files need the Svelte compiler (runes) — they run under

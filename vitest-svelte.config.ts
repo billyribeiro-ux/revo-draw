@@ -1,6 +1,8 @@
 import { svelte, vitePreprocess } from '@sveltejs/vite-plugin-svelte';
 import { defineConfig } from 'vitest/config';
 
+import { excalidrawAliases } from './vitest.aliases.ts';
+
 /**
  * Vitest config for tests that exercise rune-bearing modules (`.svelte.ts`). These must be
  * compiled by the Svelte plugin so `$state`/`$derived`/`$effect` are defined — the plain-node
@@ -16,7 +18,8 @@ export default defineConfig({
 		})
 	],
 	resolve: {
-		conditions: ['browser']
+		conditions: ['browser'],
+		alias: excalidrawAliases
 	},
 	test: {
 		include: ['src/**/*.svelte.test.ts'],

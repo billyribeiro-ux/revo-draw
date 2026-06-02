@@ -30,10 +30,22 @@ alongside the still-running LayoutForge app. Done:
 - **Evidence:** `pnpm check` 0 errors / 0 warnings (884 files) · `pnpm build` clean ·
   `pnpm test` 141 passing (94 pure + 47 runes) · existing app unbroken.
 
-**Next: Phase 1** — adapt + wire the element model, Scene, Store, Delta, History (`src/lib/scene/`,
-`src/lib/state/app-state.svelte.ts`); replace the LayoutForge tree/integer-z model. The vendored
-`element/*` + `excalidraw/types.ts` already compile, so Phase 1 is adaptation-to-runes + wiring,
-not fresh porting.
+### Phase 1 — Model / Scene / Store / History: **IN PROGRESS** 🔧
+
+- Vendored remaining React-free model files: `excalidraw/history.ts`, `excalidraw/appState.ts`
+  (`getDefaultAppState`). Scene/store/delta already present in `element/`.
+- Wired `@excalidraw/*` aliases into both vitest configs (`vitest.aliases.ts`) so the vendored
+  packages resolve under test, not just under the SvelteKit build.
+- **Runtime gate proven** (`src/lib/element/port-model.test.ts`, 4 tests): `newElement` factory
+  (seed/version/nonce/id), `syncInvalidIndices` + `validateFractionalIndices` (strictly-increasing
+  fractional order), `mutateElement` (version bump + nonce regen), `newElementWith` (immutability).
+  → the vendored model executes correctly in vitest 4 / Vite 8, not merely type-checks.
+- **Evidence:** `pnpm check` 0/0 (887 files) · `pnpm test` 145 passing (98 pure + 47 runes) ·
+  `pnpm build` clean.
+
+**Next (Phase 1 cont.):** runes `AppState` (`src/lib/state/app-state.svelte.ts` from
+`getDefaultAppState`); a reactive scene wrapper over the vendored `Scene`; wire `Store` +
+`CaptureUpdateAction` + `History` for undo/redo with a do→undo→redo round-trip test.
 
 ---
 
