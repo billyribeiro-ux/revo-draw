@@ -3,27 +3,52 @@
 // it. Freedraw: pointer-down starts a stroke, drag accumulates local points (perfect-freehand).
 // Mutations go through the vendored model so fractional indices + ShapeCache stay correct.
 import {
+  deepCopyElement,
+  duplicateElement,
   getCommonBounds,
   hitElementItself,
   mutateElement,
   newElement,
+  newElementWith,
   newFreeDrawElement,
+  orderByFractionalIndex,
+  resizeTest,
+  Store,
   syncInvalidIndices,
+  transformElements,
 } from "@excalidraw/element";
 
 import { viewportCoordsToSceneCoords } from "@excalidraw/common";
 
 import { pointFrom } from "@excalidraw/math";
 
+import { History } from "@excalidraw/excalidraw/history";
+
+import type { TransformHandleType } from "@excalidraw/element";
+
 import type {
   ExcalidrawElement,
   ExcalidrawFreeDrawElement,
   NonDeletedExcalidrawElement,
+  OrderedExcalidrawElement,
+  SceneElementsMap,
 } from "@excalidraw/element/types";
 import type { GlobalPoint, LocalPoint } from "@excalidraw/math";
+import type { EditorInterface } from "@excalidraw/common";
+import type { App, AppState } from "@excalidraw/excalidraw/types";
 
 import { EditorAppState } from "$lib/state/app-state.svelte.ts";
 import { EditorScene } from "$lib/scene/editor-scene.svelte.ts";
+
+// Editor-interface shape used by resizeTest (handle sizing). Desktop/mouse defaults.
+const EDITOR_INTERFACE: EditorInterface = {
+  formFactor: "desktop",
+  desktopUIMode: "full",
+  userAgent: { isMobileDevice: false, platform: "other" },
+  isTouchScreen: false,
+  canFitSidebar: true,
+  isLandscape: true,
+};
 
 export type ShapeTool = "rectangle" | "ellipse" | "diamond";
 export type Tool = "selection" | ShapeTool | "freedraw";
@@ -48,8 +73,121 @@ export class DrawController {
   #dragStartY = 0;
   #dragOrigins = new Map<string, { x: number; y: number }>();
 
+  // resize/rotate state
+  #resizeHandle: TransformHandleType | null = null;
+  #resizeOriginals = new Map<string, NonDeletedExcalidrawElement>();
+  #resizeCenterX = 0;
+  #resizeCenterY = 0;
+
+  // undo/redo (Store captures snapshots → durable increments → History stacks)
+  #store: Store;
+  #history: History;
+  canUndo = $state(false);
+  canRedo = $state(false);
+
+  constructor() {
+    const self = this;
+    // Store/History only read app.scene + app.state at runtime (one documented boundary cast).
+    const app = {
+      scene: this.scene.scene,
+      get state(): AppState {
+        return self.appState.current;
+      },
+    } as unknown as App;
+    this.#store = new Store(app);
+    this.#history = new History(this.#store);
+    this.#store.onDurableIncrementEmitter.on((increment) => {
+      this.#history.record(increment.delta);
+      this.#syncHistoryFlags();
+    });
+    // capture the initial (empty) snapshot as the undo baseline
+    this.#commit();
+  }
+
+  #syncHistoryFlags(): void {
+    this.canUndo = !this.#history.isUndoStackEmpty;
+    this.canRedo = !this.#history.isRedoStackEmpty;
+  }
+
+  /** Snapshot the current scene+appState into one durable history entry (call after a gesture). */
+  #commit(): void {
+    this.#store.scheduleCapture();
+    this.#store.commit(
+      this.scene.scene.getElementsMapIncludingDeleted() as SceneElementsMap,
+      this.appState.current,
+    );
+  }
+
+  #applyHistory(result: [SceneElementsMap, AppState]): void {
+    const [elementsMap, appState] = result;
+    const ordered = orderByFractionalIndex(
+      Array.from(elementsMap.values()) as OrderedExcalidrawElement[],
+    );
+    this.#elements = ordered;
+    this.scene.replaceAllElements(ordered);
+    this.appState.current = appState;
+    const selected = Object.keys(appState.selectedElementIds);
+    this.selectedId = selected.length ? selected[0]! : null;
+    this.#syncHistoryFlags();
+  }
+
+  undo(): void {
+    const result = this.#history.undo(
+      this.scene.scene.getElementsMapIncludingDeleted() as SceneElementsMap,
+      this.appState.current,
+    );
+    if (result) {
+      this.#applyHistory(result);
+    }
+  }
+
+  redo(): void {
+    const result = this.#history.redo(
+      this.scene.scene.getElementsMapIncludingDeleted() as SceneElementsMap,
+      this.appState.current,
+    );
+    if (result) {
+      this.#applyHistory(result);
+    }
+  }
+
   setTool(tool: Tool): void {
     this.activeTool = tool;
+  }
+
+  /** Clear the current selection. */
+  deselect(): void {
+    this.#select(null);
+  }
+
+  /** Delete the selected element(s). */
+  deleteSelected(): void {
+    const id = this.selectedId;
+    if (!id) {
+      return;
+    }
+    this.#elements = this.#elements.filter((e) => e.id !== id);
+    this.#select(null);
+    syncInvalidIndices(this.#elements);
+    this.scene.replaceAllElements(this.#elements);
+    this.#commit();
+  }
+
+  /** Duplicate the selected element offset by (10,10) and select the copy. */
+  duplicateSelected(): void {
+    const orig = this.selectedElements[0];
+    if (!orig) {
+      return;
+    }
+    const copy = newElementWith(duplicateElement(null, new Map(), orig, true), {
+      x: orig.x + 10,
+      y: orig.y + 10,
+    });
+    this.#elements.push(copy);
+    syncInvalidIndices(this.#elements);
+    this.scene.replaceAllElements(this.#elements);
+    this.#select(copy.id);
+    this.#commit();
   }
 
   #toScene(clientX: number, clientY: number): { x: number; y: number } {
@@ -111,11 +249,46 @@ export class DrawController {
     );
   }
 
+  /** Which transform handle (corner/edge/rotation) is under a scene point, if the element is selected. */
+  #handleAt(x: number, y: number): TransformHandleType | null {
+    const sel = this.selectedElements[0];
+    if (!sel) {
+      return null;
+    }
+    const handle = resizeTest(
+      sel,
+      this.scene.scene.getNonDeletedElementsMap(),
+      this.appState.current,
+      x,
+      y,
+      this.appState.current.zoom,
+      "mouse",
+      EDITOR_INTERFACE,
+    );
+    return handle || null;
+  }
+
+  #beginResize(handle: TransformHandleType): void {
+    this.#resizeHandle = handle;
+    this.#resizeOriginals = new Map(
+      this.selectedElements.map((e) => [e.id, deepCopyElement(e)]),
+    );
+    const [x1, y1, x2, y2] = getCommonBounds(this.selectedElements);
+    this.#resizeCenterX = (x1 + x2) / 2;
+    this.#resizeCenterY = (y1 + y2) / 2;
+  }
+
   pointerDown(clientX: number, clientY: number): void {
     const { x, y } = this.#toScene(clientX, clientY);
 
     if (this.activeTool === "selection") {
-      // grabbing inside the current selection starts a move...
+      // a transform handle on the current selection starts a resize/rotate...
+      const handle = this.#handleAt(x, y);
+      if (handle) {
+        this.#beginResize(handle);
+        return;
+      }
+      // ...grabbing inside the current selection starts a move...
       if (this.selectedId && this.#pointInSelection(x, y)) {
         this.#beginDrag(x, y);
         return;
@@ -157,6 +330,26 @@ export class DrawController {
   }
 
   pointerMove(clientX: number, clientY: number): void {
+    // resizing / rotating the current selection via a transform handle
+    if (this.#resizeHandle) {
+      const { x, y } = this.#toScene(clientX, clientY);
+      transformElements(
+        this.#resizeOriginals,
+        this.#resizeHandle,
+        this.selectedElements,
+        this.scene.scene,
+        false, // shouldRotateWithDiscreteAngle (shift)
+        false, // shouldResizeFromCenter (alt)
+        false, // shouldMaintainAspectRatio (shift)
+        x,
+        y,
+        this.#resizeCenterX,
+        this.#resizeCenterY,
+      );
+      this.scene.scene.triggerUpdate();
+      return;
+    }
+
     // moving the current selection (origin-based, so no floating drift)
     if (this.#dragging) {
       const { x, y } = this.#toScene(clientX, clientY);
@@ -202,10 +395,19 @@ export class DrawController {
   }
 
   pointerUp(): void {
+    // end a resize/rotate
+    if (this.#resizeHandle) {
+      this.#resizeHandle = null;
+      this.#resizeOriginals.clear();
+      this.#commit();
+      return;
+    }
+
     // end a move-drag
     if (this.#dragging) {
       this.#dragging = false;
       this.#dragOrigins.clear();
+      this.#commit();
       return;
     }
 
@@ -223,6 +425,9 @@ export class DrawController {
       syncInvalidIndices(this.#elements);
       this.scene.replaceAllElements(this.#elements);
     }
+
+    // one durable history entry per completed gesture (no-op if nothing changed)
+    this.#commit();
 
     // Excalidraw default: revert to selection after drawing one element
     this.activeTool = "selection";
