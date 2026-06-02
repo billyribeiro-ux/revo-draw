@@ -1,10 +1,11 @@
 <script lang="ts">
-  // Phase 2 → 3 interactive preview: draw hand-drawn shapes by dragging. Wires a <canvas> to the
-  // vendored renderStaticScene (driven by the reactive EditorScene + AppState on the DrawController)
-  // and routes pointer events into the generic-create gesture. Isolated on /x.
+  // Phase 3 preview: two stacked canvases (static scene + interactive overlay), driven by the
+  // reactive DrawController. Draw shapes by dragging; with the selection tool, click a shape to
+  // select it and the interactive overlay paints Excalidraw's selection box + transform handles.
   import rough from 'roughjs/bin/rough';
 
   import { renderStaticScene } from '@excalidraw/excalidraw/renderer/staticScene';
+  import { renderInteractiveScene } from '@excalidraw/excalidraw/renderer/interactiveScene';
 
   import type {
     NonDeletedSceneElementsMap,
@@ -12,21 +13,36 @@
   } from '@excalidraw/element/types';
   import type {
     RenderableElementsMap,
-    StaticCanvasRenderConfig
+    StaticCanvasRenderConfig,
+    InteractiveCanvasRenderConfig
   } from '@excalidraw/excalidraw/scene/types';
-  import type { StaticCanvasAppState } from '@excalidraw/excalidraw/types';
+  import type {
+    StaticCanvasAppState,
+    InteractiveCanvasAppState,
+    AppClassProperties
+  } from '@excalidraw/excalidraw/types';
+  import type { EditorInterface } from '@excalidraw/common';
 
   import { DrawController, type Tool } from '$lib/x/draw-controller.svelte.ts';
 
   const controller = new DrawController();
   const { scene, appState } = controller;
 
-  // expose for headless CDP probes (typed, no `any`)
   (window as unknown as { __draw?: DrawController }).__draw = controller;
 
-  let canvas = $state<HTMLCanvasElement>();
+  let staticCanvas = $state<HTMLCanvasElement>();
+  let interactiveCanvas = $state<HTMLCanvasElement>();
 
-  const tools: Tool[] = ['selection', 'rectangle', 'ellipse', 'diamond'];
+  const tools: Tool[] = ['selection', 'rectangle', 'ellipse', 'diamond', 'freedraw'];
+
+  const editorInterface: EditorInterface = {
+    formFactor: 'desktop',
+    desktopUIMode: 'full',
+    userAgent: { isMobileDevice: false, platform: 'other' },
+    isTouchScreen: false,
+    canFitSidebar: true,
+    isLandscape: true
+  };
 
   function relative(e: PointerEvent): { x: number; y: number } {
     const rect = (e.currentTarget as HTMLCanvasElement).getBoundingClientRect();
@@ -48,30 +64,30 @@
     controller.pointerUp();
   }
 
-  $effect(() => {
-    const el = canvas;
-    if (!el) {
-      return;
-    }
-
-    const scale = window.devicePixelRatio || 1;
+  function sizeCanvas(el: HTMLCanvasElement, scale: number): { width: number; height: number } {
     const width = el.clientWidth;
     const height = el.clientHeight;
-
     el.style.width = `${width}px`;
     el.style.height = `${height}px`;
     el.width = width * scale;
     el.height = height * scale;
+    return { width, height };
+  }
 
-    // reactive deps: repaint when elements mutate or app state changes
+  function staticAppState(width: number, height: number): StaticCanvasAppState {
+    return { ...appState.current, width, height, offsetLeft: 0, offsetTop: 0 };
+  }
+
+  // Static scene
+  $effect(() => {
+    const el = staticCanvas;
+    if (!el) {
+      return;
+    }
+    const scale = window.devicePixelRatio || 1;
+    const { width, height } = sizeCanvas(el, scale);
     const visibleElements = scene.elements;
-    const st: StaticCanvasAppState = {
-      ...appState.current,
-      width,
-      height,
-      offsetLeft: 0,
-      offsetTop: 0
-    };
+    const elementsMap = scene.scene.getNonDeletedElementsMap();
 
     const renderConfig: StaticCanvasRenderConfig = {
       canvasBackgroundColor: appState.current.viewBackgroundColor,
@@ -84,8 +100,6 @@
       theme: appState.current.theme
     };
 
-    const elementsMap = scene.scene.getNonDeletedElementsMap();
-
     renderStaticScene(
       {
         canvas: el,
@@ -94,10 +108,58 @@
         elementsMap: elementsMap as Map<string, OrderedExcalidrawElement> as RenderableElementsMap,
         allElementsMap: elementsMap as NonDeletedSceneElementsMap,
         visibleElements,
-        appState: st,
+        appState: staticAppState(width, height),
         renderConfig
       },
       false
+    );
+  });
+
+  // Interactive overlay (selection box, transform handles, marquee)
+  $effect(() => {
+    const el = interactiveCanvas;
+    if (!el) {
+      return;
+    }
+    const scale = window.devicePixelRatio || 1;
+    const { width, height } = sizeCanvas(el, scale);
+    const visibleElements = scene.elements;
+    const selectedElements = controller.selectedElements;
+    const elementsMap = scene.scene.getNonDeletedElementsMap();
+
+    // interactiveScene reads only app.state / app.lastPointerMoveCoords / app.bindModeHandler
+    const app = {
+      state: appState.current,
+      lastPointerMoveCoords: null,
+      bindModeHandler: null
+    } as unknown as AppClassProperties;
+
+    const renderConfig: InteractiveCanvasRenderConfig = {
+      remoteSelectedElementIds: new Map(),
+      remotePointerViewportCoords: new Map(),
+      remotePointerUserStates: new Map(),
+      remotePointerUsernames: new Map(),
+      remotePointerButton: new Map(),
+      selectionColor: '#6965db',
+      lastViewportPosition: { x: 0, y: 0 },
+      renderScrollbars: false
+    };
+
+    renderInteractiveScene(
+      {
+        app,
+        canvas: el,
+        scale,
+        elementsMap: elementsMap as Map<string, OrderedExcalidrawElement> as RenderableElementsMap,
+        allElementsMap: elementsMap as NonDeletedSceneElementsMap,
+        visibleElements,
+        selectedElements,
+        appState: staticAppState(width, height) as unknown as InteractiveCanvasAppState,
+        renderConfig,
+        editorInterface,
+        callback: () => {},
+        deltaTime: 0
+      }
     );
   });
 </script>
@@ -114,19 +176,30 @@
   {/each}
 </div>
 
-<canvas
-  bind:this={canvas}
-  class="excalidraw-preview"
-  {onpointerdown}
-  {onpointermove}
-  {onpointerup}
-></canvas>
+<div class="canvas-wrap">
+  <canvas bind:this={staticCanvas} class="layer"></canvas>
+  <canvas
+    bind:this={interactiveCanvas}
+    class="layer"
+    {onpointerdown}
+    {onpointermove}
+    {onpointerup}
+  ></canvas>
+</div>
 
 <style>
-  .excalidraw-preview {
-    display: block;
+  .canvas-wrap {
+    position: relative;
     width: 100vw;
     height: 100vh;
+  }
+
+  .layer {
+    position: absolute;
+    inset: 0;
+    display: block;
+    width: 100%;
+    height: 100%;
     touch-action: none;
   }
 

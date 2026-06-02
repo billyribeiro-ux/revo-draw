@@ -109,10 +109,49 @@ Phase 3.
 - **Evidence:** `pnpm check` 0/0 (903 files) · `pnpm test` 161 passing (104 pure + 57 runes) ·
   `pnpm build` clean · CDP draw probe PASS + screenshot.
 
-**Next (Phase 3):** the faithful 3-canvas split (`StaticCanvas`/`NewElementCanvas`/`InteractiveCanvas`)
-+ selection/resize/rotate/marquee overlay (vendor `interactiveScene`) + remaining tools
-(line/arrow via `LinearElementEditor`, freedraw, text, image) + the real editor controller (which
-also unlocks the deferred Store/History undo-redo wiring). Reuse `src/lib/canvas/{camera,geometry}`.
+- **Freedraw works (perfect-freehand)** — controller branches generic-create vs freedraw: a stroke
+  seeds a local `[0,0]` point and accumulates `pointFrom<LocalPoint>(dx,dy)` per move (dup-sample
+  skip), `simulatePressure` for mouse. **Browser-verified** (`scripts/probe-x-freedraw.mjs`): a
+  41-point wavy stroke captured + painted (4234 px); screenshot shows a smooth tapered
+  perfect-freehand pen line. 1 unit test added (5 controller tests total). Autofixer clean.
+- **Evidence:** `pnpm check` 0/0 (903 files) · `pnpm test` 162 passing (104 pure + 58 runes) ·
+  `pnpm build` clean · CDP freedraw probe PASS + screenshot.
+
+**Tools working:** selection (no-op), rectangle, ellipse, diamond (generic-create), freedraw.
+
+- **Interactive-overlay renderer vendored & compiling** — replaced the `scrollbars`/`snapping`
+  stubs with the real React-clean implementations; vendored `textAutoResizeHandle`, `renderSnaps`,
+  and `renderer/interactiveScene.ts` (the selection/handles/marquee/snap-line overlay renderer).
+  Collaboration excluded via a minimal `clients.ts` stub (`getClientColor`/`renderRemoteCursors`
+  no-op — no remote cursors). Added `getLanguage` to the i18n stub (scrollbars RTL check).
+- **Evidence:** `pnpm check` 0/0 (907 files) · existing app + tests + build unaffected.
+
+- **🎉 SELECTION WORKS (real Excalidraw overlay)** — `EditorPreview` is now a two-canvas stack
+  (static scene + interactive overlay). The selection tool hit-tests via `hitElementItself`
+  (`element/collision.ts`; topmost-first; transparent shapes hit on their outline — faithful), sets
+  `selectedElementIds`, and `renderInteractiveScene` paints Excalidraw's exact selection box + 4
+  corner resize handles + rotation handle. interactiveScene's runtime `app` need is just
+  `{state, lastPointerMoveCoords, bindModeHandler}` (one documented assertion). **Browser-verified**
+  (`scripts/probe-x-select.mjs`): drew a rect, clicked its edge → selected (id matches), overlay
+  painted 1924 px; screenshot shows the purple bounding box + handles. +1 controller test (6 total).
+  Autofixer clean.
+- **Evidence:** `pnpm check` 0/0 (907 files) · `pnpm test` 163 passing (104 pure + 59 runes) ·
+  `pnpm build` clean · CDP selection probe PASS + screenshot.
+
+- **Drag-to-move works** — selection-tool pointer-down inside the selection bbox (`getCommonBounds`)
+  or on an element's outline begins an origin-based move (no float drift); pointer-move translates
+  selected elements by the scene-delta; the selection overlay follows. **Browser-verified**
+  (`scripts/probe-x-move.mjs`): drew a rect at (300,200), dragged it +120,+90 → landed exactly at
+  (420,290), still selected; screenshot confirms. +1 controller test (7 total). Autofixer clean
+  (kept `#dragOrigins` a plain `Map` — non-reactive internal drag bookkeeping).
+- **Evidence:** `pnpm check` 0/0 (907 files) · `pnpm test` 164 passing (104 pure + 60 runes) ·
+  `pnpm build` clean · CDP move probe PASS + screenshot.
+
+**Tools/interactions working:** draw (rectangle/ellipse/diamond/freedraw), select, **move**.
+
+**Next (Phase 3 cont.):** resize/rotate via the handles (`resizeElements`/`transformHandles` hit-test)
++ marquee multi-select. Then line/arrow (`LinearElementEditor`), text (textarea overlay), image.
+The real editor controller also unlocks the deferred Store/History undo-redo wiring.
 
 ---
 
