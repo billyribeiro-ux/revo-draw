@@ -26,6 +26,9 @@
   import type { EditorInterface } from '@excalidraw/common';
 
   import { DrawController, type Tool } from '$lib/x/draw-controller.svelte.ts';
+  import { ICONS } from '$lib/x/icons.ts';
+  import StyleControls from '$lib/x/StyleControls.svelte';
+  import Stats from '$lib/x/Stats.svelte';
 
   const controller = new DrawController();
   const { scene, appState } = controller;
@@ -211,10 +214,13 @@
     {#each tools as tool (tool)}
       <button
         type="button"
+        class="tool-btn"
         class:active={controller.activeTool === tool}
+        title={tool}
+        aria-label={tool}
         onclick={() => controller.setTool(tool)}
       >
-        {tool}
+        {#if ICONS[tool]}{@html ICONS[tool]}{:else}{tool}{/if}
       </button>
     {/each}
     <button
@@ -272,7 +278,25 @@
       {/each}
     </div>
   </div>
+
+  <StyleControls
+    fillStyle={controller.fillStyle}
+    strokeStyle={controller.strokeStyle}
+    sloppiness={controller.sloppiness}
+    edges={controller.edges}
+    opacity={controller.opacity}
+    onFillStyle={(v) => controller.setFillStyle(v)}
+    onStrokeStyle={(v) => controller.setStrokeStyle(v)}
+    onSloppiness={(v) => controller.setSloppiness(v)}
+    onEdges={(v) => controller.setEdges(v)}
+    onOpacity={(v) => controller.setOpacity(v)}
+  />
 </div>
+
+<Stats
+  element={controller.selectedElements[0] ?? null}
+  sceneCount={controller.scene.elements.length}
+/>
 
 <div class="canvas-wrap">
   <canvas bind:this={staticCanvas} class="layer"></canvas>
@@ -401,6 +425,19 @@
   .toolbar button.active {
     background: #e7f5ff;
     border-color: #a5d8ff;
+  }
+
+  .tool-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 32px;
+    height: 32px;
+  }
+
+  .toolbar button :global(svg) {
+    width: 18px;
+    height: 18px;
   }
 
   .properties {

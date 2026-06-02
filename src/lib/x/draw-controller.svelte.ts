@@ -22,7 +22,7 @@ import {
   transformElements,
 } from "@excalidraw/element";
 
-import { viewportCoordsToSceneCoords } from "@excalidraw/common";
+import { ROUNDNESS, viewportCoordsToSceneCoords } from "@excalidraw/common";
 
 import { pointFrom } from "@excalidraw/math";
 
@@ -202,6 +202,52 @@ export class DrawController {
     this.#applyStyle({ strokeWidth: width }, { currentItemStrokeWidth: width });
   }
 
+  get opacity(): number {
+    return this.appState.current.currentItemOpacity;
+  }
+  get fillStyle(): AppState["currentItemFillStyle"] {
+    return this.appState.current.currentItemFillStyle;
+  }
+  get strokeStyle(): AppState["currentItemStrokeStyle"] {
+    return this.appState.current.currentItemStrokeStyle;
+  }
+  get sloppiness(): number {
+    return this.appState.current.currentItemRoughness;
+  }
+
+  setOpacity(opacity: number): void {
+    this.#applyStyle({ opacity }, { currentItemOpacity: opacity });
+  }
+  setFillStyle(fillStyle: AppState["currentItemFillStyle"]): void {
+    this.#applyStyle({ fillStyle }, { currentItemFillStyle: fillStyle });
+  }
+  setStrokeStyle(strokeStyle: AppState["currentItemStrokeStyle"]): void {
+    this.#applyStyle({ strokeStyle }, { currentItemStrokeStyle: strokeStyle });
+  }
+  setSloppiness(roughness: number): void {
+    this.#applyStyle({ roughness }, { currentItemRoughness: roughness });
+  }
+
+  get edges(): "sharp" | "round" {
+    return this.appState.current.currentItemRoundness === "round" ? "round" : "sharp";
+  }
+  setEdges(value: "sharp" | "round"): void {
+    this.appState.setState({ currentItemRoundness: value });
+    const id = this.selectedId;
+    if (!id) {
+      return;
+    }
+    const map = this.scene.scene.getNonDeletedElementsMap();
+    const el = map.get(id);
+    if (el) {
+      mutateElement(el, map, {
+        roundness: value === "round" ? { type: ROUNDNESS.ADAPTIVE_RADIUS } : null,
+      });
+      this.scene.scene.triggerUpdate();
+      this.#commit();
+    }
+  }
+
   get theme(): AppState["theme"] {
     return this.appState.current.theme;
   }
@@ -214,7 +260,15 @@ export class DrawController {
   }
 
   #applyStyle(
-    elementPatch: { strokeColor?: string; backgroundColor?: string; strokeWidth?: number },
+    elementPatch: {
+      strokeColor?: string;
+      backgroundColor?: string;
+      strokeWidth?: number;
+      opacity?: number;
+      fillStyle?: AppState["currentItemFillStyle"];
+      strokeStyle?: AppState["currentItemStrokeStyle"];
+      roughness?: number;
+    },
     appStatePatch: Partial<AppState>,
   ): void {
     this.appState.setState(appStatePatch);

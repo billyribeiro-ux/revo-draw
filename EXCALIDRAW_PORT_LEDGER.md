@@ -229,13 +229,28 @@ Phase 3.
 - **Evidence:** `pnpm check` 0/0 (910 files) · `pnpm test` 171 passing · `pnpm build` clean ·
   CDP persistence+dark-mode probe PASS.
 
-**Done:** model/scene/store/history; 7 tools; select/move/resize/rotate/delete/duplicate/undo-redo;
-stroke/background/width styling; **localStorage persistence**; **dark mode**.
+- **Wave 2 (3 parallel agents) + real Excalidraw chrome integrated.** Workflow produced disjoint
+  props-driven components: `StyleControls.svelte` (fill/stroke-style/sloppiness/edges/opacity),
+  `ContextMenu.svelte`, `Stats.svelte`. Integrated:
+  - **Toolbar now uses the real Excalidraw SVG icons** (`icons.ts`) — pointer/shapes/line/arrow/
+    text/pencil/moon — replacing text labels.
+  - **Full properties panel**: added controller setters `setOpacity/setFillStyle/setStrokeStyle/
+    setSloppiness/setEdges` (over `appState.currentItem*` + applied to the selection), wired into
+    `StyleControls` (Fill, Stroke style, Sloppiness, Edges, Opacity with the purple active highlight).
+  - **Stats panel** (top-left) showing the selected element's X/Y/W/H/angle + scene count.
+  - `ContextMenu.svelte` lands as a ready-to-wire asset (right-click menu).
+  - **Browser-verified**: screenshot shows the editor now reads as Excalidraw — icon toolbar, the full
+    property controls, stats, a styled selected shape.
+- **Evidence:** `pnpm check` 0/0 (913 files) · `pnpm test` 171 passing · `pnpm build` clean · CDP
+  chrome probe (8 tool icons rendered, opacity range + stats present).
 
-**Remaining for full parity (tracked):** wire `icons.ts`/`ColorPicker.svelte` into the chrome; image
-tool; marquee multi-select + modifier keys; multi-point linear editor; the rest of the UI shell
-(opacity/fill-style/sloppiness/edges/font controls, menus, dialogs, stats, context menu); binding +
-snapping (Phase 7); Tauri (Phase 8).
+**Done:** model/scene/store/history; 7 tools; select/move/resize/rotate/delete/duplicate/undo-redo;
+**full style controls** (color/width/fill/stroke-style/sloppiness/edges/opacity); **localStorage
+persistence**; **dark mode**; **real icon toolbar**; **stats panel**.
+
+**Remaining for full parity (tracked):** wire `ContextMenu.svelte` (right-click) + `ColorPicker.svelte`
+(hex popover); image tool; eraser/laser tools; pan/zoom + footer; marquee multi-select + modifier
+keys; multi-point linear editor; menus + dialogs (export/help); binding + snapping (Phase 7); Tauri.
 
 ---
 
