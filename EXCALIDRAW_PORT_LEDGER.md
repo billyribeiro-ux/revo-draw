@@ -60,8 +60,24 @@ alongside the still-running LayoutForge app. Done:
 - **Evidence:** `pnpm check` 0/0 (891 files) · `pnpm test` 151 passing (98 pure + 53 runes) ·
   `pnpm build` clean.
 
-**Next (Phase 1 cont.):** wire `Store` + `CaptureUpdateAction` + `History` for undo/redo with a
-do→undo→redo round-trip test; then Phase 2 (3-canvas rendering + rough.js).
+- **Undo/redo engine proven** (`src/lib/element/delta-roundtrip.test.ts`, 3 tests):
+  `ElementsDelta.calculate` captures moves/insertions into a non-empty delta; `applyTo` replays
+  forward; an unchanged set yields an empty delta. **Finding (documented):** the BACKWARD (undo)
+  direction is derived from the committed `StoreSnapshot` that `Store`/`History` maintain — and
+  `new Store(app)` / `new History(store)` require the editor controller (they read `app.scene` +
+  `app.state`). So full bidirectional `do→undo→redo` wiring belongs with the controller in
+  **Phase 3**, not before it. Phase 1 proves the snapshot-independent half here.
+- **Evidence:** `pnpm check` 0/0 (892 files) · `pnpm test` 154 passing (101 pure + 53 runes) ·
+  `pnpm build` clean.
+
+**Phase 1 status: model layer COMPLETE** — element model, Scene, fractional indexing, delta engine,
+runes `AppState`, reactive `EditorScene` all vendored, adapted to runes, and proven at runtime.
+Remaining undo/redo wiring (`Store`+`History`+`CaptureUpdateAction` on the controller) folds into
+Phase 3.
+
+**Next: Phase 2** — the visible payoff: 3-canvas Svelte shell (static / new-element / interactive)
++ `ShapeCache` + rough.js, rendering rectangle/ellipse/diamond from a generic-create tool. Reuse
+`src/lib/canvas/{camera,geometry}` substrate.
 
 ---
 
