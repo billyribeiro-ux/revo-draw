@@ -16,10 +16,14 @@
 		// needed because Vite/Rolldown bundles, it never tsc-emits. Stops editors flagging `.js`
 		// specifiers that have no on-disk counterpart.
 		"allowImportingTsExtensions": true,
-		"noUncheckedIndexedAccess": true,
-		"noImplicitOverride": true,
-		"noUnusedLocals": true,
-		"noUnusedParameters": true,
+		// Mirror Excalidraw's own compiler strictness (packages/tsconfig.base.json: `strict: true`
+		// only) for the vendored port. `strict` + zero-`any` is the floor we keep; the extra flags
+		// below were LayoutForge-era additions the vendored Excalidraw tree isn't written for
+		// (every `arr[i]` would become `T | undefined`). Re-enable for greenfield code later.
+		"noUncheckedIndexedAccess": false,
+		"noImplicitOverride": false,
+		"noUnusedLocals": false,
+		"noUnusedParameters": false,
 		"exactOptionalPropertyTypes": false,
 		"types": ["node", "vite/client", "unplugin-icons/types/svelte"]
 	}
