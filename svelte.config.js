@@ -14,7 +14,16 @@ const config = {
 			strict: false
 		}),
 		alias: {
-			$lib: 'src/lib'
+			$lib: 'src/lib',
+			// Vendored Excalidraw monorepo packages — ported near-verbatim under src/lib/ so
+			// cross-package imports (`@excalidraw/math`, `@excalidraw/element`, …) resolve
+			// unchanged. Aliases feed both Vite/Rolldown and the generated tsconfig.
+			'@excalidraw/math': 'src/lib/math',
+			'@excalidraw/common': 'src/lib/common',
+			'@excalidraw/element': 'src/lib/element',
+			'@excalidraw/utils': 'src/lib/utils',
+			'@excalidraw/fractional-indexing': 'src/lib/fractional-indexing',
+			'@excalidraw/excalidraw': 'src/lib/excalidraw'
 		}
 	}
 };
