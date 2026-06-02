@@ -1,10 +1,9 @@
 <script lang="ts">
-  // Phase 2 visible-payoff proof: render real Excalidraw elements (hand-drawn via rough.js) onto a
-  // canvas using the vendored `renderStaticScene`, driven by the reactive EditorScene + AppState.
-  // Isolated on the /x dev route so the existing app is untouched while the render path is proven.
+  // Phase 2 → 3 interactive preview: draw hand-drawn shapes by dragging. Wires a <canvas> to the
+  // vendored renderStaticScene (driven by the reactive EditorScene + AppState on the DrawController)
+  // and routes pointer events into the generic-create gesture. Isolated on /x.
   import rough from 'roughjs/bin/rough';
 
-  import { newElement, syncInvalidIndices } from '@excalidraw/element';
   import { renderStaticScene } from '@excalidraw/excalidraw/renderer/staticScene';
 
   import type {
@@ -17,20 +16,37 @@
   } from '@excalidraw/excalidraw/scene/types';
   import type { StaticCanvasAppState } from '@excalidraw/excalidraw/types';
 
-  import { EditorScene } from '$lib/scene/editor-scene.svelte.ts';
-  import { EditorAppState } from '$lib/state/app-state.svelte.ts';
+  import { DrawController, type Tool } from '$lib/x/draw-controller.svelte.ts';
 
-  // A starter scene: hand-drawn rectangle, ellipse, diamond — the three generic shapes.
-  const initial = syncInvalidIndices([
-    newElement({ type: 'rectangle', x: 120, y: 120, width: 220, height: 130, backgroundColor: '#a5d8ff' }),
-    newElement({ type: 'ellipse', x: 400, y: 150, width: 170, height: 170, backgroundColor: '#ffc9c9' }),
-    newElement({ type: 'diamond', x: 220, y: 330, width: 200, height: 140, backgroundColor: '#b2f2bb' })
-  ]);
+  const controller = new DrawController();
+  const { scene, appState } = controller;
 
-  const scene = new EditorScene(initial);
-  const appState = new EditorAppState();
+  // expose for headless CDP probes (typed, no `any`)
+  (window as unknown as { __draw?: DrawController }).__draw = controller;
 
   let canvas = $state<HTMLCanvasElement>();
+
+  const tools: Tool[] = ['selection', 'rectangle', 'ellipse', 'diamond'];
+
+  function relative(e: PointerEvent): { x: number; y: number } {
+    const rect = (e.currentTarget as HTMLCanvasElement).getBoundingClientRect();
+    return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+  }
+
+  function onpointerdown(e: PointerEvent): void {
+    (e.currentTarget as HTMLCanvasElement).setPointerCapture(e.pointerId);
+    const { x, y } = relative(e);
+    controller.pointerDown(x, y);
+  }
+
+  function onpointermove(e: PointerEvent): void {
+    const { x, y } = relative(e);
+    controller.pointerMove(x, y);
+  }
+
+  function onpointerup(): void {
+    controller.pointerUp();
+  }
 
   $effect(() => {
     const el = canvas;
@@ -47,7 +63,7 @@
     el.width = width * scale;
     el.height = height * scale;
 
-    // reactive deps: re-render when elements mutate or app state changes
+    // reactive deps: repaint when elements mutate or app state changes
     const visibleElements = scene.elements;
     const st: StaticCanvasAppState = {
       ...appState.current,
@@ -86,12 +102,61 @@
   });
 </script>
 
-<canvas bind:this={canvas} class="excalidraw-preview"></canvas>
+<div class="toolbar">
+  {#each tools as tool (tool)}
+    <button
+      type="button"
+      class:active={controller.activeTool === tool}
+      onclick={() => controller.setTool(tool)}
+    >
+      {tool}
+    </button>
+  {/each}
+</div>
+
+<canvas
+  bind:this={canvas}
+  class="excalidraw-preview"
+  {onpointerdown}
+  {onpointermove}
+  {onpointerup}
+></canvas>
 
 <style>
   .excalidraw-preview {
     display: block;
     width: 100vw;
     height: 100vh;
+    touch-action: none;
+  }
+
+  .toolbar {
+    position: fixed;
+    top: 12px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 4px;
+    padding: 6px;
+    background: #fff;
+    border: 1px solid #e0e0e0;
+    border-radius: 10px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    z-index: 10;
+  }
+
+  .toolbar button {
+    padding: 6px 12px;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    background: transparent;
+    font-size: 13px;
+    cursor: pointer;
+    text-transform: capitalize;
+  }
+
+  .toolbar button.active {
+    background: #e7f5ff;
+    border-color: #a5d8ff;
   }
 </style>

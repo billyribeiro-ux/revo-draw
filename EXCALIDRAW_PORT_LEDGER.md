@@ -98,10 +98,21 @@ Phase 3.
 - **Evidence:** `pnpm check` 0/0 (901 files) · `pnpm test` 157 passing · `pnpm build` clean ·
   CDP render probe PASS (68k px) + visual screenshot.
 
-**Next (Phase 2 → 3):** promote `EditorPreview` into the faithful 3-canvas split (`StaticCanvas` /
-`NewElementCanvas` / `InteractiveCanvas`); add the pointer/tool state machine (generic-create:
-drag to draw rectangle/ellipse/diamond) + selection overlay (vendor `interactiveScene`). Reuse
-`src/lib/canvas/{camera,geometry}` substrate.
+- **🎉 INTERACTIVE DRAWING WORKS** — `src/lib/x/draw-controller.svelte.ts` implements Excalidraw's
+  generic-create gesture: pointer-down makes a zero-size element of the active tool, drag resizes
+  it (negative-direction aware via `viewportCoordsToSceneCoords` + `mutateElement` → ShapeCache
+  invalidated → repaint), pointer-up finalizes (discards zero-size clicks) and reverts to selection.
+  `EditorPreview.svelte` gained a tool toolbar + pointer handlers. **Browser-verified**
+  (`scripts/probe-x-draw.mjs`): synthesized drags drew a 220×140 rectangle, 180×160 ellipse,
+  200×140 diamond (dims exactly match drag boxes → coord conversion correct), tool reverted each
+  time. 4 unit tests (`draw-controller.svelte.test.ts`); added `$lib` alias to the vitest configs.
+- **Evidence:** `pnpm check` 0/0 (903 files) · `pnpm test` 161 passing (104 pure + 57 runes) ·
+  `pnpm build` clean · CDP draw probe PASS + screenshot.
+
+**Next (Phase 3):** the faithful 3-canvas split (`StaticCanvas`/`NewElementCanvas`/`InteractiveCanvas`)
++ selection/resize/rotate/marquee overlay (vendor `interactiveScene`) + remaining tools
+(line/arrow via `LinearElementEditor`, freedraw, text, image) + the real editor controller (which
+also unlocks the deferred Store/History undo-redo wiring). Reuse `src/lib/canvas/{camera,geometry}`.
 
 ---
 

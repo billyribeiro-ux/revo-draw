@@ -8,6 +8,8 @@ import { resolve } from 'node:path';
 const pkg = (name: string) => resolve(import.meta.dirname, 'src/lib', name);
 
 export const excalidrawAliases = [
+	// SvelteKit's `$lib` (provided by the plugin in the app build; declared here for tests).
+	{ find: '$lib', replacement: pkg('') },
 	{ find: '@excalidraw/math', replacement: pkg('math') },
 	{ find: '@excalidraw/common', replacement: pkg('common') },
 	{ find: '@excalidraw/element', replacement: pkg('element') },
