@@ -89,10 +89,19 @@ Phase 3.
 - **Evidence:** `pnpm check` 0/0 (898 files) · `pnpm test` 157 passing (104 pure + 53 runes) ·
   `pnpm build` clean.
 
-**Next (Phase 2 cont.):** the 3-canvas Svelte shell (`StaticCanvas` / `NewElementCanvas` /
-`InteractiveCanvas`) wired to `staticScene` render fn, DPR via `bootstrapCanvas`, reading the
-reactive `EditorScene` + `EditorAppState`; then a generic-create tool to draw rectangle/ellipse/
-diamond. Reuse `src/lib/canvas/{camera,geometry}` substrate.
+- **🎉 SHAPES RENDER IN THE BROWSER** — `src/lib/x/EditorPreview.svelte` (+ dev route
+  `src/routes/x/+page.svelte` at `/x`, isolated from the LayoutForge app) wires a `<canvas>` to the
+  vendored `renderStaticScene`, driven by the reactive `EditorScene` + `EditorAppState`. Renders a
+  hand-drawn rectangle, ellipse, and diamond via rough.js. **Browser-verified** with a headless-CDP
+  probe (`scripts/probe-x-render.mjs`): 68,516 non-background canvas pixels painted; screenshot
+  confirms Excalidraw's signature sketchy strokes. Svelte autofixer clean.
+- **Evidence:** `pnpm check` 0/0 (901 files) · `pnpm test` 157 passing · `pnpm build` clean ·
+  CDP render probe PASS (68k px) + visual screenshot.
+
+**Next (Phase 2 → 3):** promote `EditorPreview` into the faithful 3-canvas split (`StaticCanvas` /
+`NewElementCanvas` / `InteractiveCanvas`); add the pointer/tool state machine (generic-create:
+drag to draw rectangle/ellipse/diamond) + selection overlay (vendor `interactiveScene`). Reuse
+`src/lib/canvas/{camera,geometry}` substrate.
 
 ---
 
