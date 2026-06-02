@@ -119,10 +119,18 @@ Phase 3.
 
 **Tools working:** selection (no-op), rectangle, ellipse, diamond (generic-create), freedraw.
 
-**Next (Phase 3 cont.):** selection + hit-test + the interactive overlay (`StaticCanvas` /
-`InteractiveCanvas` split; vendor `interactiveScene` + its `scrollbars`/`textAutoResizeHandle`
-deps; resize/rotate/marquee); then line/arrow (`LinearElementEditor`), text (textarea overlay),
-image. The real editor controller also unlocks the deferred Store/History undo-redo wiring.
+- **Interactive-overlay renderer vendored & compiling** — replaced the `scrollbars`/`snapping`
+  stubs with the real React-clean implementations; vendored `textAutoResizeHandle`, `renderSnaps`,
+  and `renderer/interactiveScene.ts` (the selection/handles/marquee/snap-line overlay renderer).
+  Collaboration excluded via a minimal `clients.ts` stub (`getClientColor`/`renderRemoteCursors`
+  no-op — no remote cursors). Added `getLanguage` to the i18n stub (scrollbars RTL check).
+- **Evidence:** `pnpm check` 0/0 (907 files) · existing app + tests + build unaffected.
+
+**Next (Phase 3 cont.):** wire the interactive overlay — second `<canvas>` driven by
+`renderInteractiveScene`, hit-test (`element/collision.ts`) on selection-tool click →
+`selectedElementIds`, then drag-to-move + resize/rotate/marquee handles. Then line/arrow
+(`LinearElementEditor`), text (textarea overlay), image. The real editor controller also unlocks
+the deferred Store/History undo-redo wiring.
 
 ---
 
