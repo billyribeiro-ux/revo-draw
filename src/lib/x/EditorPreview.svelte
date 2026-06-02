@@ -29,6 +29,9 @@
   import { ICONS } from '$lib/x/icons.ts';
   import StyleControls from '$lib/x/StyleControls.svelte';
   import Stats from '$lib/x/Stats.svelte';
+  import ContextMenu from '$lib/x/ContextMenu.svelte';
+  import MainMenu from '$lib/x/MainMenu.svelte';
+  import HelpDialog from '$lib/x/HelpDialog.svelte';
 
   const controller = new DrawController();
   const { scene, appState } = controller;
@@ -84,6 +87,41 @@
     controller.pointerUp();
   }
 
+  function onwheel(e: WheelEvent): void {
+    e.preventDefault();
+    if (e.ctrlKey || e.metaKey) {
+      controller.zoomAt(Math.exp(-e.deltaY * 0.001), e.clientX, e.clientY);
+    } else {
+      controller.panBy(e.deltaX, e.deltaY);
+    }
+  }
+
+  // menus / dialogs / right-click
+  let menuOpen = $state(false);
+  let helpOpen = $state(false);
+  let contextAt = $state<{ x: number; y: number } | null>(null);
+
+  function oncontextmenu(e: MouseEvent): void {
+    e.preventDefault();
+    controller.selectAt(e.clientX, e.clientY);
+    contextAt = { x: e.clientX, y: e.clientY };
+  }
+
+  const contextItems = [
+    { label: 'Duplicate', shortcut: '⌘D', action: () => controller.duplicateSelected() },
+    { label: 'Delete', shortcut: 'Del', action: () => controller.deleteSelected() },
+    'separator' as const,
+    { label: 'Select none', action: () => controller.deselect() }
+  ];
+
+  const menuItems = $derived([
+    { label: 'Reset the canvas', icon: ICONS.trash, action: () => controller.clear() },
+    { label: 'Reset view', action: () => controller.resetView() },
+    'separator' as const,
+    { label: controller.theme === 'dark' ? 'Light mode' : 'Dark mode', action: () => controller.toggleTheme() },
+    { label: 'Keyboard shortcuts', action: () => (helpOpen = true) }
+  ]);
+
   function onkeydown(e: KeyboardEvent): void {
     // while typing in the text-editor overlay, let the textarea handle keys natively
     if (e.target instanceof HTMLTextAreaElement) {
@@ -104,6 +142,8 @@
         controller.undo();
       }
       e.preventDefault();
+    } else if (e.key === '?') {
+      helpOpen = true;
     }
   }
 
@@ -211,6 +251,15 @@
 
 <div class="excalidraw" class:theme--dark={controller.theme === 'dark'}>
   <div class="toolbar">
+    <button
+      type="button"
+      class="tool-btn"
+      title="Menu"
+      aria-label="menu"
+      onclick={() => (menuOpen = !menuOpen)}
+    >
+      ☰
+    </button>
     {#each tools as tool (tool)}
       <button
         type="button"
@@ -306,6 +355,8 @@
     {onpointerdown}
     {onpointermove}
     {onpointerup}
+    {onwheel}
+    {oncontextmenu}
   ></canvas>
 
   {#if controller.editingText}
@@ -327,6 +378,18 @@
     ></textarea>
   {/if}
   </div>
+
+  {#if contextAt}
+    <ContextMenu
+      x={contextAt.x}
+      y={contextAt.y}
+      items={contextItems}
+      onClose={() => (contextAt = null)}
+    />
+  {/if}
+
+  <MainMenu open={menuOpen} onClose={() => (menuOpen = false)} items={menuItems} />
+  <HelpDialog open={helpOpen} onClose={() => (helpOpen = false)} />
 </div>
 
 <style>

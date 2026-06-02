@@ -244,13 +244,26 @@ Phase 3.
 - **Evidence:** `pnpm check` 0/0 (913 files) · `pnpm test` 171 passing · `pnpm build` clean · CDP
   chrome probe (8 tool icons rendered, opacity range + stats present).
 
-**Done:** model/scene/store/history; 7 tools; select/move/resize/rotate/delete/duplicate/undo-redo;
-**full style controls** (color/width/fill/stroke-style/sloppiness/edges/opacity); **localStorage
-persistence**; **dark mode**; **real icon toolbar**; **stats panel**.
+- **Wave 3 (3 parallel agents) + navigation/menus integrated.** Workflow produced `image-support.ts`
+  (image element + cache helpers), `HelpDialog.svelte`, `MainMenu.svelte`. Integrated:
+  - **Pan / zoom** — controller `panBy` (wheel) + `zoomAt` (ctrl+wheel, zoom-around-cursor) + `resetView`;
+    the render reads `appState.scroll*/zoom` so it all flows through. EditorPreview `onwheel` handler.
+  - **Right-click context menu** — wired wave-2's `ContextMenu` (Duplicate/Delete/Select-none); right-click
+    selects under cursor (`controller.selectAt`) then opens the menu.
+  - **Main menu** (hamburger ☰): Reset canvas (`controller.clear`), Reset view, Light/Dark mode, Shortcuts.
+  - **Help dialog** (`?` key + menu) — full Tools/Editor keyboard-shortcut reference with `<kbd>` chips.
+  - `image-support.ts` lands as a ready-to-wire asset (image tool).
+  - **Browser-verified** (`scripts/probe-x-nav.mjs`): ctrl+wheel zoom 1→~1.3/tick, right-click menu,
+    hamburger menu, `?` help dialog all work; screenshot shows the full Excalidraw-faithful editor.
+- **Evidence:** `pnpm check` 0/0 (916 files) · `pnpm test` 171 passing · `pnpm build` clean · CDP nav probe PASS.
 
-**Remaining for full parity (tracked):** wire `ContextMenu.svelte` (right-click) + `ColorPicker.svelte`
-(hex popover); image tool; eraser/laser tools; pan/zoom + footer; marquee multi-select + modifier
-keys; multi-point linear editor; menus + dialogs (export/help); binding + snapping (Phase 7); Tauri.
+**Done:** model/scene/store/history; 7 tools; select/move/resize/rotate/delete/duplicate/undo-redo;
+full style controls; localStorage persistence; dark mode; real icon toolbar; stats; **pan/zoom**;
+**right-click context menu**; **main menu**; **help dialog (shortcuts)**.
+
+**Remaining for full parity (tracked):** wire `image-support.ts` (image tool) + `ColorPicker.svelte`
+(hex popover); eraser/laser tools; footer (zoom %); marquee multi-select + modifier keys; multi-point
+linear editor; export dialog (PNG/SVG); binding + snapping (Phase 7); Tauri (Phase 8).
 
 ---
 

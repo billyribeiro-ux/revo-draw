@@ -41,7 +41,7 @@ import type {
 } from "@excalidraw/element/types";
 import type { GlobalPoint, LocalPoint } from "@excalidraw/math";
 import type { EditorInterface } from "@excalidraw/common";
-import type { App, AppState } from "@excalidraw/excalidraw/types";
+import type { App, AppState, NormalizedZoomValue } from "@excalidraw/excalidraw/types";
 
 import { EditorAppState } from "$lib/state/app-state.svelte.ts";
 import { EditorScene } from "$lib/scene/editor-scene.svelte.ts";
@@ -179,6 +179,42 @@ export class DrawController {
 
   setTool(tool: Tool): void {
     this.activeTool = tool;
+  }
+
+  // --- camera (pan / zoom) ---
+  get zoom(): number {
+    return this.appState.current.zoom.value;
+  }
+
+  /** Pan by a viewport-pixel delta (wheel / space-drag). scroll is in scene units. */
+  panBy(viewportDx: number, viewportDy: number): void {
+    const a = this.appState.current;
+    this.appState.setState({
+      scrollX: a.scrollX - viewportDx / a.zoom.value,
+      scrollY: a.scrollY - viewportDy / a.zoom.value,
+    });
+  }
+
+  /** Zoom by a factor around a viewport point, keeping that scene point fixed. */
+  zoomAt(factor: number, viewportX: number, viewportY: number): void {
+    const a = this.appState.current;
+    const z = a.zoom.value;
+    const nz = Math.min(30, Math.max(0.1, z * factor));
+    const sceneX = (viewportX - a.offsetLeft) / z - a.scrollX;
+    const sceneY = (viewportY - a.offsetTop) / z - a.scrollY;
+    this.appState.setState({
+      zoom: { value: nz as NormalizedZoomValue },
+      scrollX: (viewportX - a.offsetLeft) / nz - sceneX,
+      scrollY: (viewportY - a.offsetTop) / nz - sceneY,
+    });
+  }
+
+  resetView(): void {
+    this.appState.setState({
+      zoom: { value: 1 as NormalizedZoomValue },
+      scrollX: 0,
+      scrollY: 0,
+    });
   }
 
   // --- current style (drives new elements; mirrors Excalidraw's appState.currentItem*) ---
@@ -352,6 +388,20 @@ export class DrawController {
   /** Clear the current selection. */
   deselect(): void {
     this.#select(null);
+  }
+
+  /** Remove all elements (reset canvas). */
+  clear(): void {
+    this.#elements = [];
+    this.#select(null);
+    this.scene.replaceAllElements([]);
+    this.#commit();
+  }
+
+  /** Select the topmost element at a viewport point (used by right-click). */
+  selectAt(clientX: number, clientY: number): void {
+    const { x, y } = this.#toScene(clientX, clientY);
+    this.#select(this.#hitTest(x, y));
   }
 
   /** Delete the selected element(s). */
