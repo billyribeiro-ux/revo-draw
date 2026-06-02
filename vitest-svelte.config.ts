@@ -23,6 +23,7 @@ export default defineConfig({
 	},
 	test: {
 		include: ['src/**/*.svelte.test.ts'],
-		environment: 'node'
+		environment: 'node',
+		setupFiles: ['./vitest.setup.ts']
 	}
 });
