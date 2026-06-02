@@ -60,8 +60,59 @@ alongside the still-running LayoutForge app. Done:
 - **Evidence:** `pnpm check` 0/0 (891 files) · `pnpm test` 151 passing (98 pure + 53 runes) ·
   `pnpm build` clean.
 
-**Next (Phase 1 cont.):** wire `Store` + `CaptureUpdateAction` + `History` for undo/redo with a
-do→undo→redo round-trip test; then Phase 2 (3-canvas rendering + rough.js).
+- **Undo/redo engine proven** (`src/lib/element/delta-roundtrip.test.ts`, 3 tests):
+  `ElementsDelta.calculate` captures moves/insertions into a non-empty delta; `applyTo` replays
+  forward; an unchanged set yields an empty delta. **Finding (documented):** the BACKWARD (undo)
+  direction is derived from the committed `StoreSnapshot` that `Store`/`History` maintain — and
+  `new Store(app)` / `new History(store)` require the editor controller (they read `app.scene` +
+  `app.state`). So full bidirectional `do→undo→redo` wiring belongs with the controller in
+  **Phase 3**, not before it. Phase 1 proves the snapshot-independent half here.
+- **Evidence:** `pnpm check` 0/0 (892 files) · `pnpm test` 154 passing (101 pure + 53 runes) ·
+  `pnpm build` clean.
+
+**Phase 1 status: model layer COMPLETE** — element model, Scene, fractional indexing, delta engine,
+runes `AppState`, reactive `EditorScene` all vendored, adapted to runes, and proven at runtime.
+Remaining undo/redo wiring (`Store`+`History`+`CaptureUpdateAction` on the controller) folds into
+Phase 3.
+
+### Phase 2 — Rendering: **IN PROGRESS** 🔧
+
+- Vendored the static render path: `excalidraw/renderer/{staticScene,renderNewElementScene,
+  helpers,roundRect}.ts` + `components/hyperlink/helpers.ts` (the only non-renderer dep staticScene
+  pulls). `shape.ts` + `renderElement.ts` were already in `element/`. Deferred to their phases:
+  `interactiveScene.ts` (Phase 3 selection overlay), `renderSnaps.ts` (Phase 7), `animation.ts`
+  (laser trails), `staticSvgScene.ts` (Phase 6 SVG export).
+- **rough.js proven at runtime** (`src/lib/element/shape-roughjs.test.ts`, 3 tests):
+  `ShapeCache.generateElementShape` produces hand-drawn `Drawable` path-ops for a rectangle, is
+  **seed-deterministic** (same seed → byte-identical geometry — the basis of a stable hand-drawn
+  look across reloads), and varies with seed. The visual heart of Excalidraw works in our toolchain.
+- **Evidence:** `pnpm check` 0/0 (898 files) · `pnpm test` 157 passing (104 pure + 53 runes) ·
+  `pnpm build` clean.
+
+- **🎉 SHAPES RENDER IN THE BROWSER** — `src/lib/x/EditorPreview.svelte` (+ dev route
+  `src/routes/x/+page.svelte` at `/x`, isolated from the LayoutForge app) wires a `<canvas>` to the
+  vendored `renderStaticScene`, driven by the reactive `EditorScene` + `EditorAppState`. Renders a
+  hand-drawn rectangle, ellipse, and diamond via rough.js. **Browser-verified** with a headless-CDP
+  probe (`scripts/probe-x-render.mjs`): 68,516 non-background canvas pixels painted; screenshot
+  confirms Excalidraw's signature sketchy strokes. Svelte autofixer clean.
+- **Evidence:** `pnpm check` 0/0 (901 files) · `pnpm test` 157 passing · `pnpm build` clean ·
+  CDP render probe PASS (68k px) + visual screenshot.
+
+- **🎉 INTERACTIVE DRAWING WORKS** — `src/lib/x/draw-controller.svelte.ts` implements Excalidraw's
+  generic-create gesture: pointer-down makes a zero-size element of the active tool, drag resizes
+  it (negative-direction aware via `viewportCoordsToSceneCoords` + `mutateElement` → ShapeCache
+  invalidated → repaint), pointer-up finalizes (discards zero-size clicks) and reverts to selection.
+  `EditorPreview.svelte` gained a tool toolbar + pointer handlers. **Browser-verified**
+  (`scripts/probe-x-draw.mjs`): synthesized drags drew a 220×140 rectangle, 180×160 ellipse,
+  200×140 diamond (dims exactly match drag boxes → coord conversion correct), tool reverted each
+  time. 4 unit tests (`draw-controller.svelte.test.ts`); added `$lib` alias to the vitest configs.
+- **Evidence:** `pnpm check` 0/0 (903 files) · `pnpm test` 161 passing (104 pure + 57 runes) ·
+  `pnpm build` clean · CDP draw probe PASS + screenshot.
+
+**Next (Phase 3):** the faithful 3-canvas split (`StaticCanvas`/`NewElementCanvas`/`InteractiveCanvas`)
++ selection/resize/rotate/marquee overlay (vendor `interactiveScene`) + remaining tools
+(line/arrow via `LinearElementEditor`, freedraw, text, image) + the real editor controller (which
+also unlocks the deferred Store/History undo-redo wiring). Reuse `src/lib/canvas/{camera,geometry}`.
 
 ---
 
