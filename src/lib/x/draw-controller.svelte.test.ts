@@ -203,6 +203,26 @@ describe("DrawController — generic-create gesture", () => {
     expect(c.scene.elements[0]!.x).toBe(x0);
   });
 
+  it("line and arrow tools create 2-point linear elements", () => {
+    const c = new DrawController();
+
+    c.setTool("line");
+    c.pointerDown(100, 100);
+    c.pointerMove(250, 180);
+    c.pointerUp();
+    const line = c.scene.elements[0]! as { type: string; points: readonly unknown[] };
+    expect(line.type).toBe("line");
+    expect(line.points.length).toBe(2);
+
+    c.setTool("arrow");
+    c.pointerDown(300, 100);
+    c.pointerMove(450, 200);
+    c.pointerUp();
+    const arrow = c.scene.elements[1]! as { type: string; endArrowhead: string | null };
+    expect(arrow.type).toBe("arrow");
+    expect(arrow.endArrowhead).toBe("arrow");
+  });
+
   it("freedraw accumulates local points along the stroke", () => {
     const c = new DrawController();
     c.setTool("freedraw");

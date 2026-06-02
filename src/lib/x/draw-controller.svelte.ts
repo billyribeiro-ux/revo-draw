@@ -11,6 +11,7 @@ import {
   newElement,
   newElementWith,
   newFreeDrawElement,
+  newLinearElement,
   orderByFractionalIndex,
   resizeTest,
   Store,
@@ -29,6 +30,7 @@ import type { TransformHandleType } from "@excalidraw/element";
 import type {
   ExcalidrawElement,
   ExcalidrawFreeDrawElement,
+  ExcalidrawLinearElement,
   NonDeletedExcalidrawElement,
   OrderedExcalidrawElement,
   SceneElementsMap,
@@ -51,9 +53,10 @@ const EDITOR_INTERFACE: EditorInterface = {
 };
 
 export type ShapeTool = "rectangle" | "ellipse" | "diamond";
-export type Tool = "selection" | ShapeTool | "freedraw";
+export type LinearTool = "line" | "arrow";
+export type Tool = "selection" | ShapeTool | "freedraw" | LinearTool;
 
-type CreateMode = "generic" | "freedraw";
+type CreateMode = "generic" | "freedraw" | "linear";
 
 export class DrawController {
   readonly scene = new EditorScene();
@@ -319,6 +322,18 @@ export class DrawController {
         simulatePressure: true,
       });
       this.#mode = "freedraw";
+    } else if (this.activeTool === "line" || this.activeTool === "arrow") {
+      let linear = newLinearElement({
+        type: this.activeTool,
+        x,
+        y,
+        points: [pointFrom<LocalPoint>(0, 0), pointFrom<LocalPoint>(0, 0)],
+      });
+      if (this.activeTool === "arrow") {
+        linear = newElementWith(linear, { endArrowhead: "arrow" });
+      }
+      this.#creating = linear;
+      this.#mode = "linear";
     } else {
       this.#creating = newElement({ type: this.activeTool, x, y, width: 0, height: 0 });
       this.#mode = "generic";
@@ -381,6 +396,15 @@ export class DrawController {
         return; // skip duplicate sample
       }
       mutateElement(el, map, { points: [...el.points, pointFrom<LocalPoint>(dx, dy)] });
+    } else if (this.#mode === "linear") {
+      // 2-point linear element: second point tracks the pointer (local coords)
+      const el = this.#creating as ExcalidrawLinearElement;
+      mutateElement(el, map, {
+        points: [
+          pointFrom<LocalPoint>(0, 0),
+          pointFrom<LocalPoint>(x - this.#originX, y - this.#originY),
+        ],
+      });
     } else {
       // negative-direction aware: position at the min corner, size is the abs delta
       mutateElement(this.#creating, map, {
@@ -419,8 +443,12 @@ export class DrawController {
     this.#creating = null;
     this.#mode = null;
 
-    // discard an accidental click for shapes (no drag → zero size)
-    if (mode === "generic" && creating.width < 1 && creating.height < 1) {
+    // discard an accidental click (no drag → zero size) for shapes and linear elements
+    if (
+      (mode === "generic" || mode === "linear") &&
+      creating.width < 1 &&
+      creating.height < 1
+    ) {
       this.#elements = this.#elements.filter((e) => e !== creating);
       syncInvalidIndices(this.#elements);
       this.scene.replaceAllElements(this.#elements);

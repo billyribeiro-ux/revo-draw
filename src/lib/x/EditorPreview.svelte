@@ -33,7 +33,7 @@
   let staticCanvas = $state<HTMLCanvasElement>();
   let interactiveCanvas = $state<HTMLCanvasElement>();
 
-  const tools: Tool[] = ['selection', 'rectangle', 'ellipse', 'diamond', 'freedraw'];
+  const tools: Tool[] = ['selection', 'rectangle', 'ellipse', 'diamond', 'line', 'arrow', 'freedraw'];
 
   const editorInterface: EditorInterface = {
     formFactor: 'desktop',

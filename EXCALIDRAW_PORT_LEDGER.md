@@ -177,12 +177,21 @@ Phase 3.
 - **Evidence:** `pnpm check` 0/0 (907 files) · `pnpm test` 169 passing (104 pure + 65 runes) ·
   `pnpm build` clean · CDP undo/redo probe PASS.
 
-**Interactions working:** draw (rectangle/ellipse/diamond/freedraw), select, move, resize, rotate,
-delete, duplicate, deselect, **undo/redo**.
+- **Line + arrow tools** — drag-create 2-point linear elements via `newLinearElement`; the second
+  point tracks the pointer (local coords), `mutateElement` auto-computes the bbox
+  (`getSizeFromPoints`); arrows get `endArrowhead: "arrow"`. **Browser-verified**
+  (`scripts/probe-x-linear.mjs`): line (2 pts) + arrow (2 pts, arrowhead) drawn + painted;
+  screenshot shows a plain line and an arrow with a rendered arrowhead. +1 controller test (13
+  total). (Multi-point/segment editing via `LinearElementEditor` is a later refinement.)
+- **Evidence:** `pnpm check` 0/0 (907 files) · `pnpm test` 170 passing (104 pure + 66 runes) ·
+  `pnpm build` clean · CDP line/arrow probe PASS.
 
-**Next (Phase 3 cont.):** marquee multi-select + modifier keys (shift = aspect/discrete-angle, alt =
-from-center). Then line/arrow (`LinearElementEditor`), text (textarea overlay), image. Then the full
-UI shell (Phase 5, `src/lib/x/`), dark mode + localStorage (Phase 6), Tauri (Phase 8).
+**Tools working:** rectangle, ellipse, diamond, line, arrow, freedraw, selection.
+**Interactions working:** draw, select, move, resize, rotate, delete, duplicate, deselect, undo/redo.
+
+**Next:** text (textarea overlay) + image; marquee multi-select + modifier keys; multi-point linear
+editor. Then the full UI shell (Phase 5, `src/lib/x/` — real toolbar/properties-panel/color-pickers/
+menus/dialogs), dark mode + localStorage (Phase 6), Phase 7 fidelity (binding, snapping), Tauri (8).
 
 ---
 
