@@ -147,11 +147,22 @@ Phase 3.
 - **Evidence:** `pnpm check` 0/0 (907 files) · `pnpm test` 164 passing (104 pure + 60 runes) ·
   `pnpm build` clean · CDP move probe PASS + screenshot.
 
-**Tools/interactions working:** draw (rectangle/ellipse/diamond/freedraw), select, **move**.
+- **🎉 RESIZE + ROTATE work (real Excalidraw transform math)** — selection-tool pointer-down on a
+  transform handle (`resizeTest`) begins a resize/rotate; pointer-move runs `transformElements`
+  (corner/edge resize + rotation-handle rotation) against deep-copied originals + the selection
+  center; `Scene.mutateElement` auto-repaints; the selection overlay follows. **Browser-verified**
+  (`scripts/probe-x-resize.mjs`, querying real handle positions via `getTransformHandles`): SE-handle
+  drag grew a rect 200×160 → 304×264; rotation-handle drag set angle 0 → 0.677 rad (~39°);
+  screenshot shows the resized, rotated shape with the rotated selection box. +1 controller test
+  (8 total). Autofixer clean (resize/drag origin maps are non-reactive plain `Map`s).
+- **Evidence:** `pnpm check` 0/0 (907 files) · `pnpm test` 165 passing (104 pure + 61 runes) ·
+  `pnpm build` clean · CDP resize/rotate probe PASS + screenshot.
 
-**Next (Phase 3 cont.):** resize/rotate via the handles (`resizeElements`/`transformHandles` hit-test)
-+ marquee multi-select. Then line/arrow (`LinearElementEditor`), text (textarea overlay), image.
-The real editor controller also unlocks the deferred Store/History undo-redo wiring.
+**Interactions working:** draw (rectangle/ellipse/diamond/freedraw), select, move, resize, rotate.
+
+**Next (Phase 3 cont.):** marquee multi-select + multi-element move/resize; modifier keys (shift =
+aspect/discrete-angle, alt = from-center). Then line/arrow (`LinearElementEditor`), text (textarea
+overlay), image. The real editor controller also unlocks the deferred Store/History undo-redo wiring.
 
 ---
 

@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 
+import { getTransformHandles } from "@excalidraw/element";
+
 import { DrawController } from "./draw-controller.svelte.ts";
 
 // Default app state has zoom 1, scroll 0, offsets 0 → scene coords == client coords here.
@@ -94,6 +96,39 @@ describe("DrawController — generic-create gesture", () => {
     const el = c.scene.elements[0]!;
     expect(Math.round(el.x)).toBe(150);
     expect(Math.round(el.y)).toBe(130);
+  });
+
+  it("resizes the selected element by dragging a corner handle", () => {
+    const c = new DrawController();
+    c.setTool("rectangle");
+    c.pointerDown(100, 100);
+    c.pointerMove(300, 260); // rect 100,100 w=200 h=160
+    c.pointerUp();
+
+    c.setTool("selection");
+    c.pointerDown(100, 150); // left outline → select
+    c.pointerUp();
+
+    const el = c.scene.elements[0]!;
+    const w0 = el.width;
+    const h0 = el.height;
+
+    // grab the SE handle (computed) and drag it out by +80,+60
+    const hs = getTransformHandles(
+      el,
+      c.appState.current.zoom,
+      c.scene.scene.getNonDeletedElementsMap(),
+      "mouse",
+    );
+    const se = hs.se!;
+    const cx = se[0] + se[2] / 2;
+    const cy = se[1] + se[3] / 2;
+    c.pointerDown(cx, cy);
+    c.pointerMove(cx + 80, cy + 60);
+    c.pointerUp();
+
+    expect(el.width).toBeGreaterThan(w0 + 50);
+    expect(el.height).toBeGreaterThan(h0 + 40);
   });
 
   it("freedraw accumulates local points along the stroke", () => {

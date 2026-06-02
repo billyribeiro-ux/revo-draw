@@ -3,17 +3,22 @@
 // it. Freedraw: pointer-down starts a stroke, drag accumulates local points (perfect-freehand).
 // Mutations go through the vendored model so fractional indices + ShapeCache stay correct.
 import {
+  deepCopyElement,
   getCommonBounds,
   hitElementItself,
   mutateElement,
   newElement,
   newFreeDrawElement,
+  resizeTest,
   syncInvalidIndices,
+  transformElements,
 } from "@excalidraw/element";
 
 import { viewportCoordsToSceneCoords } from "@excalidraw/common";
 
 import { pointFrom } from "@excalidraw/math";
+
+import type { TransformHandleType } from "@excalidraw/element";
 
 import type {
   ExcalidrawElement,
@@ -21,9 +26,20 @@ import type {
   NonDeletedExcalidrawElement,
 } from "@excalidraw/element/types";
 import type { GlobalPoint, LocalPoint } from "@excalidraw/math";
+import type { EditorInterface } from "@excalidraw/common";
 
 import { EditorAppState } from "$lib/state/app-state.svelte.ts";
 import { EditorScene } from "$lib/scene/editor-scene.svelte.ts";
+
+// Editor-interface shape used by resizeTest (handle sizing). Desktop/mouse defaults.
+const EDITOR_INTERFACE: EditorInterface = {
+  formFactor: "desktop",
+  desktopUIMode: "full",
+  userAgent: { isMobileDevice: false, platform: "other" },
+  isTouchScreen: false,
+  canFitSidebar: true,
+  isLandscape: true,
+};
 
 export type ShapeTool = "rectangle" | "ellipse" | "diamond";
 export type Tool = "selection" | ShapeTool | "freedraw";
@@ -47,6 +63,12 @@ export class DrawController {
   #dragStartX = 0;
   #dragStartY = 0;
   #dragOrigins = new Map<string, { x: number; y: number }>();
+
+  // resize/rotate state
+  #resizeHandle: TransformHandleType | null = null;
+  #resizeOriginals = new Map<string, NonDeletedExcalidrawElement>();
+  #resizeCenterX = 0;
+  #resizeCenterY = 0;
 
   setTool(tool: Tool): void {
     this.activeTool = tool;
@@ -111,11 +133,46 @@ export class DrawController {
     );
   }
 
+  /** Which transform handle (corner/edge/rotation) is under a scene point, if the element is selected. */
+  #handleAt(x: number, y: number): TransformHandleType | null {
+    const sel = this.selectedElements[0];
+    if (!sel) {
+      return null;
+    }
+    const handle = resizeTest(
+      sel,
+      this.scene.scene.getNonDeletedElementsMap(),
+      this.appState.current,
+      x,
+      y,
+      this.appState.current.zoom,
+      "mouse",
+      EDITOR_INTERFACE,
+    );
+    return handle || null;
+  }
+
+  #beginResize(handle: TransformHandleType): void {
+    this.#resizeHandle = handle;
+    this.#resizeOriginals = new Map(
+      this.selectedElements.map((e) => [e.id, deepCopyElement(e)]),
+    );
+    const [x1, y1, x2, y2] = getCommonBounds(this.selectedElements);
+    this.#resizeCenterX = (x1 + x2) / 2;
+    this.#resizeCenterY = (y1 + y2) / 2;
+  }
+
   pointerDown(clientX: number, clientY: number): void {
     const { x, y } = this.#toScene(clientX, clientY);
 
     if (this.activeTool === "selection") {
-      // grabbing inside the current selection starts a move...
+      // a transform handle on the current selection starts a resize/rotate...
+      const handle = this.#handleAt(x, y);
+      if (handle) {
+        this.#beginResize(handle);
+        return;
+      }
+      // ...grabbing inside the current selection starts a move...
       if (this.selectedId && this.#pointInSelection(x, y)) {
         this.#beginDrag(x, y);
         return;
@@ -157,6 +214,26 @@ export class DrawController {
   }
 
   pointerMove(clientX: number, clientY: number): void {
+    // resizing / rotating the current selection via a transform handle
+    if (this.#resizeHandle) {
+      const { x, y } = this.#toScene(clientX, clientY);
+      transformElements(
+        this.#resizeOriginals,
+        this.#resizeHandle,
+        this.selectedElements,
+        this.scene.scene,
+        false, // shouldRotateWithDiscreteAngle (shift)
+        false, // shouldResizeFromCenter (alt)
+        false, // shouldMaintainAspectRatio (shift)
+        x,
+        y,
+        this.#resizeCenterX,
+        this.#resizeCenterY,
+      );
+      this.scene.scene.triggerUpdate();
+      return;
+    }
+
     // moving the current selection (origin-based, so no floating drift)
     if (this.#dragging) {
       const { x, y } = this.#toScene(clientX, clientY);
@@ -202,6 +279,13 @@ export class DrawController {
   }
 
   pointerUp(): void {
+    // end a resize/rotate
+    if (this.#resizeHandle) {
+      this.#resizeHandle = null;
+      this.#resizeOriginals.clear();
+      return;
+    }
+
     // end a move-drag
     if (this.#dragging) {
       this.#dragging = false;
