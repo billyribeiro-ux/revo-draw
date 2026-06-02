@@ -2,14 +2,24 @@
 // Generic-create (rectangle/ellipse/diamond): pointer-down makes a zero-size element, drag resizes
 // it. Freedraw: pointer-down starts a stroke, drag accumulates local points (perfect-freehand).
 // Mutations go through the vendored model so fractional indices + ShapeCache stay correct.
-import { mutateElement, newElement, newFreeDrawElement, syncInvalidIndices } from "@excalidraw/element";
+import {
+  hitElementItself,
+  mutateElement,
+  newElement,
+  newFreeDrawElement,
+  syncInvalidIndices,
+} from "@excalidraw/element";
 
 import { viewportCoordsToSceneCoords } from "@excalidraw/common";
 
 import { pointFrom } from "@excalidraw/math";
 
-import type { ExcalidrawElement, ExcalidrawFreeDrawElement } from "@excalidraw/element/types";
-import type { LocalPoint } from "@excalidraw/math";
+import type {
+  ExcalidrawElement,
+  ExcalidrawFreeDrawElement,
+  NonDeletedExcalidrawElement,
+} from "@excalidraw/element/types";
+import type { GlobalPoint, LocalPoint } from "@excalidraw/math";
 
 import { EditorAppState } from "$lib/state/app-state.svelte.ts";
 import { EditorScene } from "$lib/scene/editor-scene.svelte.ts";
@@ -23,6 +33,7 @@ export class DrawController {
   readonly scene = new EditorScene();
   readonly appState = new EditorAppState();
   activeTool = $state<Tool>("rectangle");
+  selectedId = $state<string | null>(null);
 
   #elements: ExcalidrawElement[] = [];
   #creating: ExcalidrawElement | null = null;
@@ -48,11 +59,42 @@ export class DrawController {
     );
   }
 
+  /** Selected elements, for the interactive overlay renderer. */
+  get selectedElements(): readonly NonDeletedExcalidrawElement[] {
+    const id = this.selectedId;
+    return id ? this.scene.elements.filter((e) => e.id === id) : [];
+  }
+
+  #hitTest(sceneX: number, sceneY: number): string | null {
+    const elementsMap = this.scene.scene.getNonDeletedElementsMap();
+    const threshold = 10 / this.appState.current.zoom.value;
+    const point = pointFrom<GlobalPoint>(sceneX, sceneY);
+    const els = this.scene.elements;
+    // topmost (last in z-order) first
+    for (let i = els.length - 1; i >= 0; i--) {
+      const element = els[i]!;
+      if (hitElementItself({ point, element, threshold, elementsMap })) {
+        return element.id;
+      }
+    }
+    return null;
+  }
+
+  #select(id: string | null): void {
+    this.selectedId = id;
+    this.appState.setState({ selectedElementIds: id ? { [id]: true } : {} });
+  }
+
   pointerDown(clientX: number, clientY: number): void {
+    const { x, y } = this.#toScene(clientX, clientY);
+
     if (this.activeTool === "selection") {
+      this.#select(this.#hitTest(x, y));
       return;
     }
-    const { x, y } = this.#toScene(clientX, clientY);
+
+    // starting a new shape clears any current selection
+    this.#select(null);
     this.#originX = x;
     this.#originY = y;
 

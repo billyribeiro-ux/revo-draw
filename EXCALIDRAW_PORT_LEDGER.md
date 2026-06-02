@@ -126,11 +126,22 @@ Phase 3.
   no-op — no remote cursors). Added `getLanguage` to the i18n stub (scrollbars RTL check).
 - **Evidence:** `pnpm check` 0/0 (907 files) · existing app + tests + build unaffected.
 
-**Next (Phase 3 cont.):** wire the interactive overlay — second `<canvas>` driven by
-`renderInteractiveScene`, hit-test (`element/collision.ts`) on selection-tool click →
-`selectedElementIds`, then drag-to-move + resize/rotate/marquee handles. Then line/arrow
-(`LinearElementEditor`), text (textarea overlay), image. The real editor controller also unlocks
-the deferred Store/History undo-redo wiring.
+- **🎉 SELECTION WORKS (real Excalidraw overlay)** — `EditorPreview` is now a two-canvas stack
+  (static scene + interactive overlay). The selection tool hit-tests via `hitElementItself`
+  (`element/collision.ts`; topmost-first; transparent shapes hit on their outline — faithful), sets
+  `selectedElementIds`, and `renderInteractiveScene` paints Excalidraw's exact selection box + 4
+  corner resize handles + rotation handle. interactiveScene's runtime `app` need is just
+  `{state, lastPointerMoveCoords, bindModeHandler}` (one documented assertion). **Browser-verified**
+  (`scripts/probe-x-select.mjs`): drew a rect, clicked its edge → selected (id matches), overlay
+  painted 1924 px; screenshot shows the purple bounding box + handles. +1 controller test (6 total).
+  Autofixer clean.
+- **Evidence:** `pnpm check` 0/0 (907 files) · `pnpm test` 163 passing (104 pure + 59 runes) ·
+  `pnpm build` clean · CDP selection probe PASS + screenshot.
+
+**Next (Phase 3 cont.):** drag-to-move a selected element; resize/rotate via the handles
+(`resizeElements`/`transformHandles`) + marquee multi-select. Then line/arrow (`LinearElementEditor`),
+text (textarea overlay), image. The real editor controller also unlocks the deferred Store/History
+undo-redo wiring.
 
 ---
 

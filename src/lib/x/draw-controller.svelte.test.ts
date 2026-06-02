@@ -58,6 +58,27 @@ describe("DrawController — generic-create gesture", () => {
     expect(c.scene.elements.length).toBe(0);
   });
 
+  it("selection tool hit-tests an element on its outline and clears on a miss", () => {
+    const c = new DrawController();
+    // draw a transparent rectangle 100,100 → 300,200
+    c.setTool("rectangle");
+    c.pointerDown(100, 100);
+    c.pointerMove(300, 200);
+    c.pointerUp();
+    const id = c.scene.elements[0]!.id;
+
+    // click the left outline (transparent shapes hit on the stroke, not interior)
+    c.setTool("selection");
+    c.pointerDown(100, 150);
+    expect(c.selectedId).toBe(id);
+    expect(c.selectedElements.length).toBe(1);
+
+    // click empty space → deselect
+    c.pointerDown(600, 600);
+    expect(c.selectedId).toBeNull();
+    expect(c.selectedElements.length).toBe(0);
+  });
+
   it("freedraw accumulates local points along the stroke", () => {
     const c = new DrawController();
     c.setTool("freedraw");
