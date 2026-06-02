@@ -26,7 +26,7 @@
 
   let canvas = $state<HTMLCanvasElement>();
 
-  const tools: Tool[] = ['selection', 'rectangle', 'ellipse', 'diamond'];
+  const tools: Tool[] = ['selection', 'rectangle', 'ellipse', 'diamond', 'freedraw'];
 
   function relative(e: PointerEvent): { x: number; y: number } {
     const rect = (e.currentTarget as HTMLCanvasElement).getBoundingClientRect();

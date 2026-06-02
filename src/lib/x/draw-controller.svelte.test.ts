@@ -57,4 +57,23 @@ describe("DrawController — generic-create gesture", () => {
 
     expect(c.scene.elements.length).toBe(0);
   });
+
+  it("freedraw accumulates local points along the stroke", () => {
+    const c = new DrawController();
+    c.setTool("freedraw");
+
+    c.pointerDown(100, 100); // origin → seeds point [0,0]
+    c.pointerMove(130, 110); // local [30,10]
+    c.pointerMove(170, 160); // local [70,60]
+    c.pointerUp();
+
+    expect(c.scene.elements.length).toBe(1);
+    const el = c.scene.elements[0]!;
+    expect(el.type).toBe("freedraw");
+    const points = (el as { points: readonly (readonly [number, number])[] }).points;
+    expect(points.length).toBe(3);
+    expect([...points[2]!]).toEqual([70, 60]);
+    // freedraw stroke is kept even though it has no drag-box (not discarded)
+    expect(c.activeTool).toBe("selection");
+  });
 });

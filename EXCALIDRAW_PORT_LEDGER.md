@@ -109,10 +109,20 @@ Phase 3.
 - **Evidence:** `pnpm check` 0/0 (903 files) · `pnpm test` 161 passing (104 pure + 57 runes) ·
   `pnpm build` clean · CDP draw probe PASS + screenshot.
 
-**Next (Phase 3):** the faithful 3-canvas split (`StaticCanvas`/`NewElementCanvas`/`InteractiveCanvas`)
-+ selection/resize/rotate/marquee overlay (vendor `interactiveScene`) + remaining tools
-(line/arrow via `LinearElementEditor`, freedraw, text, image) + the real editor controller (which
-also unlocks the deferred Store/History undo-redo wiring). Reuse `src/lib/canvas/{camera,geometry}`.
+- **Freedraw works (perfect-freehand)** — controller branches generic-create vs freedraw: a stroke
+  seeds a local `[0,0]` point and accumulates `pointFrom<LocalPoint>(dx,dy)` per move (dup-sample
+  skip), `simulatePressure` for mouse. **Browser-verified** (`scripts/probe-x-freedraw.mjs`): a
+  41-point wavy stroke captured + painted (4234 px); screenshot shows a smooth tapered
+  perfect-freehand pen line. 1 unit test added (5 controller tests total). Autofixer clean.
+- **Evidence:** `pnpm check` 0/0 (903 files) · `pnpm test` 162 passing (104 pure + 58 runes) ·
+  `pnpm build` clean · CDP freedraw probe PASS + screenshot.
+
+**Tools working:** selection (no-op), rectangle, ellipse, diamond (generic-create), freedraw.
+
+**Next (Phase 3 cont.):** selection + hit-test + the interactive overlay (`StaticCanvas` /
+`InteractiveCanvas` split; vendor `interactiveScene` + its `scrollbars`/`textAutoResizeHandle`
+deps; resize/rotate/marquee); then line/arrow (`LinearElementEditor`), text (textarea overlay),
+image. The real editor controller also unlocks the deferred Store/History undo-redo wiring.
 
 ---
 
