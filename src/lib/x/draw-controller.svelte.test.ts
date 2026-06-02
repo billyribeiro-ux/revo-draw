@@ -203,6 +203,51 @@ describe("DrawController — generic-create gesture", () => {
     expect(c.scene.elements[0]!.x).toBe(x0);
   });
 
+  it("style setters update defaults, apply to new elements, and restyle the selection", () => {
+    const c = new DrawController();
+
+    c.setStrokeColor("#e03131");
+    c.setStrokeWidth(4);
+    expect(c.strokeColor).toBe("#e03131");
+    expect(c.strokeWidth).toBe(4);
+
+    // a newly drawn element picks up the current style
+    c.setTool("rectangle");
+    c.pointerDown(100, 100);
+    c.pointerMove(200, 180);
+    c.pointerUp();
+    const rect = c.scene.elements[0]! as { strokeColor: string; strokeWidth: number };
+    expect(rect.strokeColor).toBe("#e03131");
+    expect(rect.strokeWidth).toBe(4);
+
+    // selecting then changing a color restyles the selected element
+    c.setTool("selection");
+    c.pointerDown(100, 140);
+    c.pointerUp();
+    c.setBackgroundColor("#a5d8ff");
+    expect((c.scene.elements[0]! as { backgroundColor: string }).backgroundColor).toBe("#a5d8ff");
+  });
+
+  it("line and arrow tools create 2-point linear elements", () => {
+    const c = new DrawController();
+
+    c.setTool("line");
+    c.pointerDown(100, 100);
+    c.pointerMove(250, 180);
+    c.pointerUp();
+    const line = c.scene.elements[0]! as { type: string; points: readonly unknown[] };
+    expect(line.type).toBe("line");
+    expect(line.points.length).toBe(2);
+
+    c.setTool("arrow");
+    c.pointerDown(300, 100);
+    c.pointerMove(450, 200);
+    c.pointerUp();
+    const arrow = c.scene.elements[1]! as { type: string; endArrowhead: string | null };
+    expect(arrow.type).toBe("arrow");
+    expect(arrow.endArrowhead).toBe("arrow");
+  });
+
   it("freedraw accumulates local points along the stroke", () => {
     const c = new DrawController();
     c.setTool("freedraw");

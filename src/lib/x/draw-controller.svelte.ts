@@ -7,11 +7,15 @@ import {
   duplicateElement,
   getCommonBounds,
   hitElementItself,
+  isTextElement,
   mutateElement,
   newElement,
   newElementWith,
   newFreeDrawElement,
+  newLinearElement,
+  newTextElement,
   orderByFractionalIndex,
+  redrawTextBoundingBox,
   resizeTest,
   Store,
   syncInvalidIndices,
@@ -29,6 +33,8 @@ import type { TransformHandleType } from "@excalidraw/element";
 import type {
   ExcalidrawElement,
   ExcalidrawFreeDrawElement,
+  ExcalidrawLinearElement,
+  ExcalidrawTextElement,
   NonDeletedExcalidrawElement,
   OrderedExcalidrawElement,
   SceneElementsMap,
@@ -39,6 +45,10 @@ import type { App, AppState } from "@excalidraw/excalidraw/types";
 
 import { EditorAppState } from "$lib/state/app-state.svelte.ts";
 import { EditorScene } from "$lib/scene/editor-scene.svelte.ts";
+import {
+  restoreFromLocalStorage,
+  saveToLocalStorage,
+} from "$lib/x/persistence/web-storage.ts";
 
 // Editor-interface shape used by resizeTest (handle sizing). Desktop/mouse defaults.
 const EDITOR_INTERFACE: EditorInterface = {
@@ -51,15 +61,17 @@ const EDITOR_INTERFACE: EditorInterface = {
 };
 
 export type ShapeTool = "rectangle" | "ellipse" | "diamond";
-export type Tool = "selection" | ShapeTool | "freedraw";
+export type LinearTool = "line" | "arrow";
+export type Tool = "selection" | ShapeTool | "freedraw" | LinearTool | "text";
 
-type CreateMode = "generic" | "freedraw";
+type CreateMode = "generic" | "freedraw" | "linear";
 
 export class DrawController {
   readonly scene = new EditorScene();
   readonly appState = new EditorAppState();
   activeTool = $state<Tool>("rectangle");
   selectedId = $state<string | null>(null);
+  editingTextId = $state<string | null>(null);
 
   #elements: ExcalidrawElement[] = [];
   #creating: ExcalidrawElement | null = null;
@@ -100,7 +112,16 @@ export class DrawController {
       this.#history.record(increment.delta);
       this.#syncHistoryFlags();
     });
-    // capture the initial (empty) snapshot as the undo baseline
+
+    // restore any prior drawing from localStorage before establishing the baseline
+    const restored = restoreFromLocalStorage();
+    if (restored && restored.elements.length > 0) {
+      this.#elements = syncInvalidIndices(restored.elements);
+      this.scene.replaceAllElements(this.#elements);
+      this.appState.setState(restored.appState);
+    }
+
+    // capture the initial snapshot (empty or restored) as the undo baseline
     this.#commit();
   }
 
@@ -114,6 +135,11 @@ export class DrawController {
     this.#store.scheduleCapture();
     this.#store.commit(
       this.scene.scene.getElementsMapIncludingDeleted() as SceneElementsMap,
+      this.appState.current,
+    );
+    // persist to localStorage so the drawing survives reload
+    saveToLocalStorage(
+      this.scene.scene.getElementsIncludingDeleted(),
       this.appState.current,
     );
   }
@@ -153,6 +179,120 @@ export class DrawController {
 
   setTool(tool: Tool): void {
     this.activeTool = tool;
+  }
+
+  // --- current style (drives new elements; mirrors Excalidraw's appState.currentItem*) ---
+  get strokeColor(): string {
+    return this.appState.current.currentItemStrokeColor;
+  }
+  get backgroundColor(): string {
+    return this.appState.current.currentItemBackgroundColor;
+  }
+  get strokeWidth(): number {
+    return this.appState.current.currentItemStrokeWidth;
+  }
+
+  setStrokeColor(color: string): void {
+    this.#applyStyle({ strokeColor: color }, { currentItemStrokeColor: color });
+  }
+  setBackgroundColor(color: string): void {
+    this.#applyStyle({ backgroundColor: color }, { currentItemBackgroundColor: color });
+  }
+  setStrokeWidth(width: number): void {
+    this.#applyStyle({ strokeWidth: width }, { currentItemStrokeWidth: width });
+  }
+
+  get theme(): AppState["theme"] {
+    return this.appState.current.theme;
+  }
+
+  /** Toggle light/dark theme and persist it. */
+  toggleTheme(): void {
+    const next: AppState["theme"] = this.appState.current.theme === "dark" ? "light" : "dark";
+    this.appState.setState({ theme: next });
+    saveToLocalStorage(this.scene.scene.getElementsIncludingDeleted(), this.appState.current);
+  }
+
+  #applyStyle(
+    elementPatch: { strokeColor?: string; backgroundColor?: string; strokeWidth?: number },
+    appStatePatch: Partial<AppState>,
+  ): void {
+    this.appState.setState(appStatePatch);
+    const id = this.selectedId;
+    if (!id) {
+      return;
+    }
+    const map = this.scene.scene.getNonDeletedElementsMap();
+    const el = map.get(id);
+    if (el) {
+      mutateElement(el, map, elementPatch);
+      this.scene.scene.triggerUpdate();
+      this.#commit();
+    }
+  }
+
+  /** Style props applied to newly-created elements, from the current item defaults. */
+  #createStyle(): {
+    strokeColor: string;
+    backgroundColor: string;
+    fillStyle: AppState["currentItemFillStyle"];
+    strokeWidth: number;
+    strokeStyle: AppState["currentItemStrokeStyle"];
+    roughness: number;
+    opacity: number;
+  } {
+    const a = this.appState.current;
+    return {
+      strokeColor: a.currentItemStrokeColor,
+      backgroundColor: a.currentItemBackgroundColor,
+      fillStyle: a.currentItemFillStyle,
+      strokeWidth: a.currentItemStrokeWidth,
+      strokeStyle: a.currentItemStrokeStyle,
+      roughness: a.currentItemRoughness,
+      opacity: a.currentItemOpacity,
+    };
+  }
+
+  /** The text element currently being edited (drives the textarea overlay), if any. */
+  get editingText(): ExcalidrawTextElement | null {
+    const id = this.editingTextId;
+    if (!id) {
+      return null;
+    }
+    const el = this.scene.scene.getNonDeletedElementsMap().get(id);
+    return el && isTextElement(el) ? el : null;
+  }
+
+  /** Live-update the editing text element's content + bounding box. */
+  setEditingText(value: string): void {
+    const el = this.editingText;
+    if (!el) {
+      return;
+    }
+    mutateElement(el, this.scene.scene.getNonDeletedElementsMap(), {
+      text: value,
+      originalText: value,
+    });
+    redrawTextBoundingBox(el, null, this.scene.scene);
+    this.scene.scene.triggerUpdate();
+  }
+
+  /** Finish text editing: delete if empty, else keep; record one history entry. */
+  commitText(): void {
+    const id = this.editingTextId;
+    this.editingTextId = null;
+    if (!id) {
+      return;
+    }
+    const el = this.scene.scene.getNonDeletedElementsMap().get(id);
+    if (el && isTextElement(el) && el.text.trim() === "") {
+      this.#elements = this.#elements.filter((e) => e.id !== id);
+      this.#select(null);
+      syncInvalidIndices(this.#elements);
+      this.scene.replaceAllElements(this.#elements);
+    }
+    this.#commit();
+    this.activeTool = "selection";
   }
 
   /** Clear the current selection. */
@@ -304,6 +444,18 @@ export class DrawController {
       return;
     }
 
+    // text tool: click to place an empty text element and start editing it
+    if (this.activeTool === "text") {
+      this.#select(null);
+      const el = newTextElement({ text: "", x, y, ...this.#createStyle() });
+      this.#elements.push(el);
+      syncInvalidIndices(this.#elements);
+      this.scene.replaceAllElements(this.#elements);
+      this.#select(el.id);
+      this.editingTextId = el.id;
+      return;
+    }
+
     // starting a new shape clears any current selection
     this.#select(null);
     this.#originX = x;
@@ -317,10 +469,31 @@ export class DrawController {
         points: [pointFrom<LocalPoint>(0, 0)],
         pressures: [],
         simulatePressure: true,
+        ...this.#createStyle(),
       });
       this.#mode = "freedraw";
+    } else if (this.activeTool === "line" || this.activeTool === "arrow") {
+      let linear = newLinearElement({
+        type: this.activeTool,
+        x,
+        y,
+        points: [pointFrom<LocalPoint>(0, 0), pointFrom<LocalPoint>(0, 0)],
+        ...this.#createStyle(),
+      });
+      if (this.activeTool === "arrow") {
+        linear = newElementWith(linear, { endArrowhead: "arrow" });
+      }
+      this.#creating = linear;
+      this.#mode = "linear";
     } else {
-      this.#creating = newElement({ type: this.activeTool, x, y, width: 0, height: 0 });
+      this.#creating = newElement({
+        type: this.activeTool,
+        x,
+        y,
+        width: 0,
+        height: 0,
+        ...this.#createStyle(),
+      });
       this.#mode = "generic";
     }
 
@@ -381,6 +554,15 @@ export class DrawController {
         return; // skip duplicate sample
       }
       mutateElement(el, map, { points: [...el.points, pointFrom<LocalPoint>(dx, dy)] });
+    } else if (this.#mode === "linear") {
+      // 2-point linear element: second point tracks the pointer (local coords)
+      const el = this.#creating as ExcalidrawLinearElement;
+      mutateElement(el, map, {
+        points: [
+          pointFrom<LocalPoint>(0, 0),
+          pointFrom<LocalPoint>(x - this.#originX, y - this.#originY),
+        ],
+      });
     } else {
       // negative-direction aware: position at the min corner, size is the abs delta
       mutateElement(this.#creating, map, {
@@ -419,8 +601,12 @@ export class DrawController {
     this.#creating = null;
     this.#mode = null;
 
-    // discard an accidental click for shapes (no drag → zero size)
-    if (mode === "generic" && creating.width < 1 && creating.height < 1) {
+    // discard an accidental click (no drag → zero size) for shapes and linear elements
+    if (
+      (mode === "generic" || mode === "linear") &&
+      creating.width < 1 &&
+      creating.height < 1
+    ) {
       this.#elements = this.#elements.filter((e) => e !== creating);
       syncInvalidIndices(this.#elements);
       this.scene.replaceAllElements(this.#elements);

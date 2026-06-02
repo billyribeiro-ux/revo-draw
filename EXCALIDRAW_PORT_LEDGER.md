@@ -177,12 +177,65 @@ Phase 3.
 - **Evidence:** `pnpm check` 0/0 (907 files) · `pnpm test` 169 passing (104 pure + 65 runes) ·
   `pnpm build` clean · CDP undo/redo probe PASS.
 
-**Interactions working:** draw (rectangle/ellipse/diamond/freedraw), select, move, resize, rotate,
-delete, duplicate, deselect, **undo/redo**.
+- **Line + arrow tools** — drag-create 2-point linear elements via `newLinearElement`; the second
+  point tracks the pointer (local coords), `mutateElement` auto-computes the bbox
+  (`getSizeFromPoints`); arrows get `endArrowhead: "arrow"`. **Browser-verified**
+  (`scripts/probe-x-linear.mjs`): line (2 pts) + arrow (2 pts, arrowhead) drawn + painted;
+  screenshot shows a plain line and an arrow with a rendered arrowhead. +1 controller test (13
+  total). (Multi-point/segment editing via `LinearElementEditor` is a later refinement.)
+- **Evidence:** `pnpm check` 0/0 (907 files) · `pnpm test` 170 passing (104 pure + 66 runes) ·
+  `pnpm build` clean · CDP line/arrow probe PASS.
 
-**Next (Phase 3 cont.):** marquee multi-select + modifier keys (shift = aspect/discrete-angle, alt =
-from-center). Then line/arrow (`LinearElementEditor`), text (textarea overlay), image. Then the full
-UI shell (Phase 5, `src/lib/x/`), dark mode + localStorage (Phase 6), Tauri (Phase 8).
+- **Text tool (textarea overlay)** — text tool click places an empty text element and opens a
+  `<textarea>` overlay (Svelte 5 `{@attach}` auto-focus) positioned/fonted to match; `oninput` →
+  `setEditingText` live-updates the element + recomputes the bbox (`redrawTextBoundingBox`); blur/
+  Escape commits (`commitText`: deletes if empty, else keeps; one history entry). The global
+  keydown handler now ignores events while typing in the textarea. **Also fixed a latent bug**:
+  `setPointerCapture` was unguarded and could throw on non-active pointer ids and abort a gesture —
+  now wrapped in try/catch. **Browser-verified** (`scripts/probe-x-text.mjs`): textarea focuses,
+  live typing flows through `oninput`, commit persists "Hello revo" + paints it (screenshot
+  confirms). (Text creation needs a canvas (`measureText`), so it's verified in-browser, not via a
+  node unit test.)
+- **Evidence:** `pnpm check` 0/0 (907 files) · `pnpm test` 170 passing · `pnpm build` clean ·
+  CDP text probe PASS.
+
+- **Properties panel (Phase 5 start) — stroke/background color + stroke width**. Controller gained
+  a current-style layer (`strokeColor`/`backgroundColor`/`strokeWidth` over `appState.currentItem*`)
+  applied to every newly-created element (`#createStyle()` spread into all factories) and to the
+  selected element on change (`#applyStyle` → mutate + commit). `EditorPreview` gained an Excalidraw-
+  island-styled left panel: stroke swatches, background swatches, S/M/L width. **Browser-verified**
+  (`scripts/probe-x-style.mjs`): set red stroke + blue bg + width 4 → drew a rectangle with exactly
+  those; screenshot shows the panel (active states) + the colored shape. +1 controller test (14 total).
+- **Evidence:** `pnpm check` 0/0 (907 files) · `pnpm test` 171 passing · `pnpm build` clean ·
+  CDP style probe PASS.
+
+**Tools:** rectangle, ellipse, diamond, line, arrow, text, freedraw, selection.
+**Interactions:** draw, select, move, resize, rotate, delete, duplicate, undo/redo.
+**Styling:** stroke color, background color, stroke width (new + selected elements).
+
+- **Parallel workflow (4 agents) + Phase 6 integration — dark mode & localStorage.** A Workflow
+  fan-out produced 4 disjoint, self-verified assets under `src/lib/x/`: `css/theme.css` (faithful
+  port of Excalidraw's light/dark CSS variables + `--theme-filter`), `persistence/web-storage.ts`
+  (localStorage save/restore of elements + filtered appState + theme), `icons.ts` (18 real
+  Excalidraw SVG tool/action icons), `ColorPicker.svelte` (swatch + hex picker). Then integrated
+  the two highest-value ones:
+  - **localStorage persistence** — controller restores on construct (before the undo baseline) and
+    `saveToLocalStorage` on every `#commit()`. **Browser-verified**: drew a shape → reload → restored.
+  - **Dark mode** — `EditorPreview` wraps the UI in `.excalidraw` + `class:theme--dark`, imports
+    `theme.css`, applies `--theme-filter` to the canvases, dark chrome, and a sun/moon toggle
+    (`controller.toggleTheme`, persisted). **Browser-verified**: `theme--dark` applied, canvas filter
+    `invert(0.93) hue-rotate(180deg)` computed, chrome renders dark.
+  `icons.ts` + `ColorPicker.svelte` are ready-to-wire assets for the next UI pass.
+- **Evidence:** `pnpm check` 0/0 (910 files) · `pnpm test` 171 passing · `pnpm build` clean ·
+  CDP persistence+dark-mode probe PASS.
+
+**Done:** model/scene/store/history; 7 tools; select/move/resize/rotate/delete/duplicate/undo-redo;
+stroke/background/width styling; **localStorage persistence**; **dark mode**.
+
+**Remaining for full parity (tracked):** wire `icons.ts`/`ColorPicker.svelte` into the chrome; image
+tool; marquee multi-select + modifier keys; multi-point linear editor; the rest of the UI shell
+(opacity/fill-style/sloppiness/edges/font controls, menus, dialogs, stats, context menu); binding +
+snapping (Phase 7); Tauri (Phase 8).
 
 ---
 

@@ -4,6 +4,8 @@
   // select it and the interactive overlay paints Excalidraw's selection box + transform handles.
   import rough from 'roughjs/bin/rough';
 
+  import '$lib/x/css/theme.css';
+
   import { renderStaticScene } from '@excalidraw/excalidraw/renderer/staticScene';
   import { renderInteractiveScene } from '@excalidraw/excalidraw/renderer/interactiveScene';
 
@@ -33,7 +35,16 @@
   let staticCanvas = $state<HTMLCanvasElement>();
   let interactiveCanvas = $state<HTMLCanvasElement>();
 
-  const tools: Tool[] = ['selection', 'rectangle', 'ellipse', 'diamond', 'freedraw'];
+  const tools: Tool[] = ['selection', 'rectangle', 'ellipse', 'diamond', 'line', 'arrow', 'text', 'freedraw'];
+
+  // Excalidraw's default palettes
+  const strokeColors = ['#1e1e1e', '#e03131', '#2f9e44', '#1971c2', '#f08c00'];
+  const bgColors = ['transparent', '#ffc9c9', '#b2f2bb', '#a5d8ff', '#ffec99'];
+  const widths = [
+    { label: 'S', w: 1 },
+    { label: 'M', w: 2 },
+    { label: 'L', w: 4 }
+  ];
 
   const editorInterface: EditorInterface = {
     formFactor: 'desktop',
@@ -50,7 +61,13 @@
   }
 
   function onpointerdown(e: PointerEvent): void {
-    (e.currentTarget as HTMLCanvasElement).setPointerCapture(e.pointerId);
+    // pointer capture keeps move/up events flowing if the pointer leaves the canvas; guard it
+    // because it can throw for non-active pointer ids (and must not block the gesture).
+    try {
+      (e.currentTarget as HTMLCanvasElement).setPointerCapture(e.pointerId);
+    } catch {
+      // ignore — capture is a best-effort optimization
+    }
     const { x, y } = relative(e);
     controller.pointerDown(x, y);
   }
@@ -65,6 +82,10 @@
   }
 
   function onkeydown(e: KeyboardEvent): void {
+    // while typing in the text-editor overlay, let the textarea handle keys natively
+    if (e.target instanceof HTMLTextAreaElement) {
+      return;
+    }
     if (e.key === 'Backspace' || e.key === 'Delete') {
       controller.deleteSelected();
       e.preventDefault();
@@ -185,16 +206,72 @@
 
 <svelte:window {onkeydown} />
 
-<div class="toolbar">
-  {#each tools as tool (tool)}
+<div class="excalidraw" class:theme--dark={controller.theme === 'dark'}>
+  <div class="toolbar">
+    {#each tools as tool (tool)}
+      <button
+        type="button"
+        class:active={controller.activeTool === tool}
+        onclick={() => controller.setTool(tool)}
+      >
+        {tool}
+      </button>
+    {/each}
     <button
       type="button"
-      class:active={controller.activeTool === tool}
-      onclick={() => controller.setTool(tool)}
+      class="theme-toggle"
+      aria-label="toggle theme"
+      onclick={() => controller.toggleTheme()}
     >
-      {tool}
+      {controller.theme === 'dark' ? '☀' : '☾'}
     </button>
-  {/each}
+  </div>
+
+<div class="properties">
+  <div class="prop-group">
+    <span class="prop-label">Stroke</span>
+    <div class="swatches">
+      {#each strokeColors as c (c)}
+        <button
+          type="button"
+          class="swatch"
+          class:active={controller.strokeColor === c}
+          style="background:{c}"
+          aria-label="stroke {c}"
+          onclick={() => controller.setStrokeColor(c)}
+        ></button>
+      {/each}
+    </div>
+  </div>
+  <div class="prop-group">
+    <span class="prop-label">Background</span>
+    <div class="swatches">
+      {#each bgColors as c (c)}
+        <button
+          type="button"
+          class="swatch"
+          class:active={controller.backgroundColor === c}
+          style="background:{c === 'transparent' ? '#fff' : c}"
+          aria-label="background {c}"
+          onclick={() => controller.setBackgroundColor(c)}
+        ></button>
+      {/each}
+    </div>
+  </div>
+  <div class="prop-group">
+    <span class="prop-label">Stroke width</span>
+    <div class="widths">
+      {#each widths as ww (ww.w)}
+        <button
+          type="button"
+          class:active={controller.strokeWidth === ww.w}
+          onclick={() => controller.setStrokeWidth(ww.w)}
+        >
+          {ww.label}
+        </button>
+      {/each}
+    </div>
+  </div>
 </div>
 
 <div class="canvas-wrap">
@@ -206,9 +283,65 @@
     {onpointermove}
     {onpointerup}
   ></canvas>
+
+  {#if controller.editingText}
+    {@const t = controller.editingText}
+    <textarea
+      class="text-editor"
+      style="left:{t.x}px; top:{t.y}px; font-size:{t.fontSize}px; line-height:{t.lineHeight};"
+      value={t.text}
+      oninput={(e) => controller.setEditingText(e.currentTarget.value)}
+      onblur={() => controller.commitText()}
+      onkeydown={(e) => {
+        if (e.key === 'Escape') {
+          e.currentTarget.blur();
+        }
+      }}
+      {@attach (node: HTMLTextAreaElement) => {
+        node.focus();
+      }}
+    ></textarea>
+  {/if}
+  </div>
 </div>
 
 <style>
+  /* dark mode: invert the canvas (Excalidraw's filter approach) + dark chrome */
+  .excalidraw.theme--dark .layer {
+    filter: var(--theme-filter, invert(93%) hue-rotate(180deg));
+  }
+
+  .theme-toggle {
+    padding: 6px 10px;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    background: transparent;
+    cursor: pointer;
+    font-size: 14px;
+  }
+
+  .excalidraw.theme--dark .toolbar,
+  .excalidraw.theme--dark .properties {
+    background: #232329;
+    border-color: #31313a;
+    color: #ced4da;
+  }
+
+  .excalidraw.theme--dark .toolbar button,
+  .excalidraw.theme--dark .widths button {
+    color: #ced4da;
+  }
+
+  .excalidraw.theme--dark .toolbar button.active,
+  .excalidraw.theme--dark .widths button.active {
+    background: #2d2d38;
+    border-color: #4263eb;
+  }
+
+  .excalidraw.theme--dark .prop-label {
+    color: #909296;
+  }
+
   .canvas-wrap {
     position: relative;
     width: 100vw;
@@ -222,6 +355,22 @@
     width: 100%;
     height: 100%;
     touch-action: none;
+  }
+
+  .text-editor {
+    position: absolute;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    outline: 0;
+    resize: none;
+    overflow: hidden;
+    background: transparent;
+    white-space: pre;
+    min-width: 1em;
+    font-family:
+      'Excalifont', 'Virgil', 'Segoe UI Emoji', sans-serif;
+    color: #1e1e1e;
   }
 
   .toolbar {
@@ -250,6 +399,71 @@
   }
 
   .toolbar button.active {
+    background: #e7f5ff;
+    border-color: #a5d8ff;
+  }
+
+  .properties {
+    position: fixed;
+    top: 70px;
+    left: 12px;
+    z-index: 10;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    width: 180px;
+    padding: 12px;
+    background: #fff;
+    border: 1px solid #e0e0e0;
+    border-radius: 12px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    font-size: 12px;
+  }
+
+  .prop-group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .prop-label {
+    color: #495057;
+  }
+
+  .swatches {
+    display: flex;
+    gap: 6px;
+  }
+
+  .swatch {
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    border: 1px solid rgba(0, 0, 0, 0.15);
+    border-radius: 6px;
+    cursor: pointer;
+  }
+
+  .swatch.active {
+    outline: 2px solid #4263eb;
+    outline-offset: 1px;
+  }
+
+  .widths {
+    display: flex;
+    gap: 6px;
+  }
+
+  .widths button {
+    flex: 1;
+    padding: 6px 0;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    background: #f1f3f5;
+    cursor: pointer;
+  }
+
+  .widths button.active {
     background: #e7f5ff;
     border-color: #a5d8ff;
   }
