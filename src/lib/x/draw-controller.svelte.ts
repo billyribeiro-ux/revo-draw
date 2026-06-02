@@ -4,10 +4,12 @@
 // Mutations go through the vendored model so fractional indices + ShapeCache stay correct.
 import {
   deepCopyElement,
+  duplicateElement,
   getCommonBounds,
   hitElementItself,
   mutateElement,
   newElement,
+  newElementWith,
   newFreeDrawElement,
   resizeTest,
   syncInvalidIndices,
@@ -72,6 +74,39 @@ export class DrawController {
 
   setTool(tool: Tool): void {
     this.activeTool = tool;
+  }
+
+  /** Clear the current selection. */
+  deselect(): void {
+    this.#select(null);
+  }
+
+  /** Delete the selected element(s). */
+  deleteSelected(): void {
+    const id = this.selectedId;
+    if (!id) {
+      return;
+    }
+    this.#elements = this.#elements.filter((e) => e.id !== id);
+    this.#select(null);
+    syncInvalidIndices(this.#elements);
+    this.scene.replaceAllElements(this.#elements);
+  }
+
+  /** Duplicate the selected element offset by (10,10) and select the copy. */
+  duplicateSelected(): void {
+    const orig = this.selectedElements[0];
+    if (!orig) {
+      return;
+    }
+    const copy = newElementWith(duplicateElement(null, new Map(), orig, true), {
+      x: orig.x + 10,
+      y: orig.y + 10,
+    });
+    this.#elements.push(copy);
+    syncInvalidIndices(this.#elements);
+    this.scene.replaceAllElements(this.#elements);
+    this.#select(copy.id);
   }
 
   #toScene(clientX: number, clientY: number): { x: number; y: number } {

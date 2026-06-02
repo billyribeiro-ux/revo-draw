@@ -64,6 +64,18 @@
     controller.pointerUp();
   }
 
+  function onkeydown(e: KeyboardEvent): void {
+    if (e.key === 'Backspace' || e.key === 'Delete') {
+      controller.deleteSelected();
+      e.preventDefault();
+    } else if (e.key === 'Escape') {
+      controller.deselect();
+    } else if ((e.metaKey || e.ctrlKey) && (e.key === 'd' || e.key === 'D')) {
+      controller.duplicateSelected();
+      e.preventDefault();
+    }
+  }
+
   function sizeCanvas(el: HTMLCanvasElement, scale: number): { width: number; height: number } {
     const width = el.clientWidth;
     const height = el.clientHeight;
@@ -163,6 +175,8 @@
     );
   });
 </script>
+
+<svelte:window {onkeydown} />
 
 <div class="toolbar">
   {#each tools as tool (tool)}

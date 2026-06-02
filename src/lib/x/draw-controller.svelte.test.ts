@@ -131,6 +131,41 @@ describe("DrawController — generic-create gesture", () => {
     expect(el.height).toBeGreaterThan(h0 + 40);
   });
 
+  it("deletes the selected element", () => {
+    const c = new DrawController();
+    c.setTool("rectangle");
+    c.pointerDown(100, 100);
+    c.pointerMove(200, 180);
+    c.pointerUp();
+    c.setTool("selection");
+    c.pointerDown(100, 140);
+    c.pointerUp();
+    expect(c.scene.elements.length).toBe(1);
+
+    c.deleteSelected();
+    expect(c.scene.elements.length).toBe(0);
+    expect(c.selectedId).toBeNull();
+  });
+
+  it("duplicates the selected element (new id, +10 offset, copy selected)", () => {
+    const c = new DrawController();
+    c.setTool("rectangle");
+    c.pointerDown(100, 100);
+    c.pointerMove(200, 180);
+    c.pointerUp();
+    c.setTool("selection");
+    c.pointerDown(100, 140);
+    c.pointerUp();
+    const orig = c.scene.elements[0]!;
+
+    c.duplicateSelected();
+    expect(c.scene.elements.length).toBe(2);
+    const copy = c.scene.elements.find((e) => e.id !== orig.id)!;
+    expect(copy.id).not.toBe(orig.id);
+    expect(copy.x).toBe(orig.x + 10);
+    expect(c.selectedId).toBe(copy.id);
+  });
+
   it("freedraw accumulates local points along the stroke", () => {
     const c = new DrawController();
     c.setTool("freedraw");

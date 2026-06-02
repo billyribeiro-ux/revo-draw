@@ -158,7 +158,16 @@ Phase 3.
 - **Evidence:** `pnpm check` 0/0 (907 files) · `pnpm test` 165 passing (104 pure + 61 runes) ·
   `pnpm build` clean · CDP resize/rotate probe PASS + screenshot.
 
-**Interactions working:** draw (rectangle/ellipse/diamond/freedraw), select, move, resize, rotate.
+- **Keyboard: delete / duplicate / escape** — `EditorPreview` wires `<svelte:window onkeydown>`:
+  Delete/Backspace → `deleteSelected`, ⌘/Ctrl+D → `duplicateSelected` (via `duplicateElement` →
+  fresh id + (10,10) offset, copy selected), Escape → `deselect`. **Browser-verified**
+  (`scripts/probe-x-keys.mjs`): select→1, ⌘D→2 (copy selected), Delete→1, Escape→deselected.
+  +2 controller tests (10 total).
+- **Evidence:** `pnpm check` 0/0 (907 files) · `pnpm test` 167 passing (104 pure + 63 runes) ·
+  `pnpm build` clean · CDP keyboard probe PASS.
+
+**Interactions working:** draw (rectangle/ellipse/diamond/freedraw), select, move, resize, rotate,
+delete, duplicate, deselect.
 
 **Next (Phase 3 cont.):** marquee multi-select + multi-element move/resize; modifier keys (shift =
 aspect/discrete-angle, alt = from-center). Then line/arrow (`LinearElementEditor`), text (textarea
