@@ -186,12 +186,25 @@ Phase 3.
 - **Evidence:** `pnpm check` 0/0 (907 files) · `pnpm test` 170 passing (104 pure + 66 runes) ·
   `pnpm build` clean · CDP line/arrow probe PASS.
 
-**Tools working:** rectangle, ellipse, diamond, line, arrow, freedraw, selection.
+- **Text tool (textarea overlay)** — text tool click places an empty text element and opens a
+  `<textarea>` overlay (Svelte 5 `{@attach}` auto-focus) positioned/fonted to match; `oninput` →
+  `setEditingText` live-updates the element + recomputes the bbox (`redrawTextBoundingBox`); blur/
+  Escape commits (`commitText`: deletes if empty, else keeps; one history entry). The global
+  keydown handler now ignores events while typing in the textarea. **Also fixed a latent bug**:
+  `setPointerCapture` was unguarded and could throw on non-active pointer ids and abort a gesture —
+  now wrapped in try/catch. **Browser-verified** (`scripts/probe-x-text.mjs`): textarea focuses,
+  live typing flows through `oninput`, commit persists "Hello revo" + paints it (screenshot
+  confirms). (Text creation needs a canvas (`measureText`), so it's verified in-browser, not via a
+  node unit test.)
+- **Evidence:** `pnpm check` 0/0 (907 files) · `pnpm test` 170 passing · `pnpm build` clean ·
+  CDP text probe PASS.
+
+**Tools working:** rectangle, ellipse, diamond, line, arrow, **text**, freedraw, selection.
 **Interactions working:** draw, select, move, resize, rotate, delete, duplicate, deselect, undo/redo.
 
-**Next:** text (textarea overlay) + image; marquee multi-select + modifier keys; multi-point linear
-editor. Then the full UI shell (Phase 5, `src/lib/x/` — real toolbar/properties-panel/color-pickers/
-menus/dialogs), dark mode + localStorage (Phase 6), Phase 7 fidelity (binding, snapping), Tauri (8).
+**Next:** image tool; marquee multi-select + modifier keys; multi-point linear editor. Then the full
+UI shell (Phase 5, `src/lib/x/` — real toolbar/properties-panel/color-pickers/menus/dialogs), dark
+mode + localStorage (Phase 6), Phase 7 fidelity (binding, snapping), Tauri (Phase 8).
 
 ---
 

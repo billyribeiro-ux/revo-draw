@@ -33,7 +33,7 @@
   let staticCanvas = $state<HTMLCanvasElement>();
   let interactiveCanvas = $state<HTMLCanvasElement>();
 
-  const tools: Tool[] = ['selection', 'rectangle', 'ellipse', 'diamond', 'line', 'arrow', 'freedraw'];
+  const tools: Tool[] = ['selection', 'rectangle', 'ellipse', 'diamond', 'line', 'arrow', 'text', 'freedraw'];
 
   const editorInterface: EditorInterface = {
     formFactor: 'desktop',
@@ -50,7 +50,13 @@
   }
 
   function onpointerdown(e: PointerEvent): void {
-    (e.currentTarget as HTMLCanvasElement).setPointerCapture(e.pointerId);
+    // pointer capture keeps move/up events flowing if the pointer leaves the canvas; guard it
+    // because it can throw for non-active pointer ids (and must not block the gesture).
+    try {
+      (e.currentTarget as HTMLCanvasElement).setPointerCapture(e.pointerId);
+    } catch {
+      // ignore — capture is a best-effort optimization
+    }
     const { x, y } = relative(e);
     controller.pointerDown(x, y);
   }
@@ -65,6 +71,10 @@
   }
 
   function onkeydown(e: KeyboardEvent): void {
+    // while typing in the text-editor overlay, let the textarea handle keys natively
+    if (e.target instanceof HTMLTextAreaElement) {
+      return;
+    }
     if (e.key === 'Backspace' || e.key === 'Delete') {
       controller.deleteSelected();
       e.preventDefault();
@@ -206,6 +216,25 @@
     {onpointermove}
     {onpointerup}
   ></canvas>
+
+  {#if controller.editingText}
+    {@const t = controller.editingText}
+    <textarea
+      class="text-editor"
+      style="left:{t.x}px; top:{t.y}px; font-size:{t.fontSize}px; line-height:{t.lineHeight};"
+      value={t.text}
+      oninput={(e) => controller.setEditingText(e.currentTarget.value)}
+      onblur={() => controller.commitText()}
+      onkeydown={(e) => {
+        if (e.key === 'Escape') {
+          e.currentTarget.blur();
+        }
+      }}
+      {@attach (node: HTMLTextAreaElement) => {
+        node.focus();
+      }}
+    ></textarea>
+  {/if}
 </div>
 
 <style>
@@ -222,6 +251,22 @@
     width: 100%;
     height: 100%;
     touch-action: none;
+  }
+
+  .text-editor {
+    position: absolute;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    outline: 0;
+    resize: none;
+    overflow: hidden;
+    background: transparent;
+    white-space: pre;
+    min-width: 1em;
+    font-family:
+      'Excalifont', 'Virgil', 'Segoe UI Emoji', sans-serif;
+    color: #1e1e1e;
   }
 
   .toolbar {

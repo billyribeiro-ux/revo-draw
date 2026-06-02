@@ -7,12 +7,15 @@ import {
   duplicateElement,
   getCommonBounds,
   hitElementItself,
+  isTextElement,
   mutateElement,
   newElement,
   newElementWith,
   newFreeDrawElement,
   newLinearElement,
+  newTextElement,
   orderByFractionalIndex,
+  redrawTextBoundingBox,
   resizeTest,
   Store,
   syncInvalidIndices,
@@ -31,6 +34,7 @@ import type {
   ExcalidrawElement,
   ExcalidrawFreeDrawElement,
   ExcalidrawLinearElement,
+  ExcalidrawTextElement,
   NonDeletedExcalidrawElement,
   OrderedExcalidrawElement,
   SceneElementsMap,
@@ -54,7 +58,7 @@ const EDITOR_INTERFACE: EditorInterface = {
 
 export type ShapeTool = "rectangle" | "ellipse" | "diamond";
 export type LinearTool = "line" | "arrow";
-export type Tool = "selection" | ShapeTool | "freedraw" | LinearTool;
+export type Tool = "selection" | ShapeTool | "freedraw" | LinearTool | "text";
 
 type CreateMode = "generic" | "freedraw" | "linear";
 
@@ -63,6 +67,7 @@ export class DrawController {
   readonly appState = new EditorAppState();
   activeTool = $state<Tool>("rectangle");
   selectedId = $state<string | null>(null);
+  editingTextId = $state<string | null>(null);
 
   #elements: ExcalidrawElement[] = [];
   #creating: ExcalidrawElement | null = null;
@@ -156,6 +161,48 @@ export class DrawController {
 
   setTool(tool: Tool): void {
     this.activeTool = tool;
+  }
+
+  /** The text element currently being edited (drives the textarea overlay), if any. */
+  get editingText(): ExcalidrawTextElement | null {
+    const id = this.editingTextId;
+    if (!id) {
+      return null;
+    }
+    const el = this.scene.scene.getNonDeletedElementsMap().get(id);
+    return el && isTextElement(el) ? el : null;
+  }
+
+  /** Live-update the editing text element's content + bounding box. */
+  setEditingText(value: string): void {
+    const el = this.editingText;
+    if (!el) {
+      return;
+    }
+    mutateElement(el, this.scene.scene.getNonDeletedElementsMap(), {
+      text: value,
+      originalText: value,
+    });
+    redrawTextBoundingBox(el, null, this.scene.scene);
+    this.scene.scene.triggerUpdate();
+  }
+
+  /** Finish text editing: delete if empty, else keep; record one history entry. */
+  commitText(): void {
+    const id = this.editingTextId;
+    this.editingTextId = null;
+    if (!id) {
+      return;
+    }
+    const el = this.scene.scene.getNonDeletedElementsMap().get(id);
+    if (el && isTextElement(el) && el.text.trim() === "") {
+      this.#elements = this.#elements.filter((e) => e.id !== id);
+      this.#select(null);
+      syncInvalidIndices(this.#elements);
+      this.scene.replaceAllElements(this.#elements);
+    }
+    this.#commit();
+    this.activeTool = "selection";
   }
 
   /** Clear the current selection. */
@@ -304,6 +351,18 @@ export class DrawController {
       } else {
         this.#select(null);
       }
+      return;
+    }
+
+    // text tool: click to place an empty text element and start editing it
+    if (this.activeTool === "text") {
+      this.#select(null);
+      const el = newTextElement({ text: "", x, y });
+      this.#elements.push(el);
+      syncInvalidIndices(this.#elements);
+      this.scene.replaceAllElements(this.#elements);
+      this.#select(el.id);
+      this.editingTextId = el.id;
       return;
     }
 
