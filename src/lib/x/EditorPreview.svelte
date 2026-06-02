@@ -73,6 +73,13 @@
     } else if ((e.metaKey || e.ctrlKey) && (e.key === 'd' || e.key === 'D')) {
       controller.duplicateSelected();
       e.preventDefault();
+    } else if ((e.metaKey || e.ctrlKey) && (e.key === 'z' || e.key === 'Z')) {
+      if (e.shiftKey) {
+        controller.redo();
+      } else {
+        controller.undo();
+      }
+      e.preventDefault();
     }
   }
 

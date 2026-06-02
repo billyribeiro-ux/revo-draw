@@ -166,12 +166,23 @@ Phase 3.
 - **Evidence:** `pnpm check` 0/0 (907 files) · `pnpm test` 167 passing (104 pure + 63 runes) ·
   `pnpm build` clean · CDP keyboard probe PASS.
 
-**Interactions working:** draw (rectangle/ellipse/diamond/freedraw), select, move, resize, rotate,
-delete, duplicate, deselect.
+- **🎉 UNDO/REDO works (Store + History wired) — the deferred Phase-1 piece**. The controller now
+  builds `new Store(app)` + `new History(store)` (app = `{scene, get state}`, the documented
+  runtime boundary), subscribes `onDurableIncrementEmitter → history.record`, and `#commit()`s one
+  durable snapshot per completed gesture (create/move/resize/rotate/delete/duplicate). `undo()`/
+  `redo()` apply the returned `[elementsMap, appState]` back (`orderByFractionalIndex` →
+  `replaceAllElements`, restore appState + selection). ⌘Z / ⌘⇧Z wired. **Browser-verified**
+  (`scripts/probe-x-undo.mjs`): drew 2 → ⌘Z→1 → ⌘Z→0 → ⌘⇧Z→1. +2 controller tests (12 total) incl.
+  do→undo→redo round-trip + position-restore-after-move.
+- **Evidence:** `pnpm check` 0/0 (907 files) · `pnpm test` 169 passing (104 pure + 65 runes) ·
+  `pnpm build` clean · CDP undo/redo probe PASS.
 
-**Next (Phase 3 cont.):** marquee multi-select + multi-element move/resize; modifier keys (shift =
-aspect/discrete-angle, alt = from-center). Then line/arrow (`LinearElementEditor`), text (textarea
-overlay), image. The real editor controller also unlocks the deferred Store/History undo-redo wiring.
+**Interactions working:** draw (rectangle/ellipse/diamond/freedraw), select, move, resize, rotate,
+delete, duplicate, deselect, **undo/redo**.
+
+**Next (Phase 3 cont.):** marquee multi-select + modifier keys (shift = aspect/discrete-angle, alt =
+from-center). Then line/arrow (`LinearElementEditor`), text (textarea overlay), image. Then the full
+UI shell (Phase 5, `src/lib/x/`), dark mode + localStorage (Phase 6), Tauri (Phase 8).
 
 ---
 

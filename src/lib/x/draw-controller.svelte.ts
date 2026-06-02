@@ -11,7 +11,9 @@ import {
   newElement,
   newElementWith,
   newFreeDrawElement,
+  orderByFractionalIndex,
   resizeTest,
+  Store,
   syncInvalidIndices,
   transformElements,
 } from "@excalidraw/element";
@@ -20,15 +22,20 @@ import { viewportCoordsToSceneCoords } from "@excalidraw/common";
 
 import { pointFrom } from "@excalidraw/math";
 
+import { History } from "@excalidraw/excalidraw/history";
+
 import type { TransformHandleType } from "@excalidraw/element";
 
 import type {
   ExcalidrawElement,
   ExcalidrawFreeDrawElement,
   NonDeletedExcalidrawElement,
+  OrderedExcalidrawElement,
+  SceneElementsMap,
 } from "@excalidraw/element/types";
 import type { GlobalPoint, LocalPoint } from "@excalidraw/math";
 import type { EditorInterface } from "@excalidraw/common";
+import type { App, AppState } from "@excalidraw/excalidraw/types";
 
 import { EditorAppState } from "$lib/state/app-state.svelte.ts";
 import { EditorScene } from "$lib/scene/editor-scene.svelte.ts";
@@ -72,6 +79,78 @@ export class DrawController {
   #resizeCenterX = 0;
   #resizeCenterY = 0;
 
+  // undo/redo (Store captures snapshots → durable increments → History stacks)
+  #store: Store;
+  #history: History;
+  canUndo = $state(false);
+  canRedo = $state(false);
+
+  constructor() {
+    const self = this;
+    // Store/History only read app.scene + app.state at runtime (one documented boundary cast).
+    const app = {
+      scene: this.scene.scene,
+      get state(): AppState {
+        return self.appState.current;
+      },
+    } as unknown as App;
+    this.#store = new Store(app);
+    this.#history = new History(this.#store);
+    this.#store.onDurableIncrementEmitter.on((increment) => {
+      this.#history.record(increment.delta);
+      this.#syncHistoryFlags();
+    });
+    // capture the initial (empty) snapshot as the undo baseline
+    this.#commit();
+  }
+
+  #syncHistoryFlags(): void {
+    this.canUndo = !this.#history.isUndoStackEmpty;
+    this.canRedo = !this.#history.isRedoStackEmpty;
+  }
+
+  /** Snapshot the current scene+appState into one durable history entry (call after a gesture). */
+  #commit(): void {
+    this.#store.scheduleCapture();
+    this.#store.commit(
+      this.scene.scene.getElementsMapIncludingDeleted() as SceneElementsMap,
+      this.appState.current,
+    );
+  }
+
+  #applyHistory(result: [SceneElementsMap, AppState]): void {
+    const [elementsMap, appState] = result;
+    const ordered = orderByFractionalIndex(
+      Array.from(elementsMap.values()) as OrderedExcalidrawElement[],
+    );
+    this.#elements = ordered;
+    this.scene.replaceAllElements(ordered);
+    this.appState.current = appState;
+    const selected = Object.keys(appState.selectedElementIds);
+    this.selectedId = selected.length ? selected[0]! : null;
+    this.#syncHistoryFlags();
+  }
+
+  undo(): void {
+    const result = this.#history.undo(
+      this.scene.scene.getElementsMapIncludingDeleted() as SceneElementsMap,
+      this.appState.current,
+    );
+    if (result) {
+      this.#applyHistory(result);
+    }
+  }
+
+  redo(): void {
+    const result = this.#history.redo(
+      this.scene.scene.getElementsMapIncludingDeleted() as SceneElementsMap,
+      this.appState.current,
+    );
+    if (result) {
+      this.#applyHistory(result);
+    }
+  }
+
   setTool(tool: Tool): void {
     this.activeTool = tool;
   }
@@ -91,6 +170,7 @@ export class DrawController {
     this.#select(null);
     syncInvalidIndices(this.#elements);
     this.scene.replaceAllElements(this.#elements);
+    this.#commit();
   }
 
   /** Duplicate the selected element offset by (10,10) and select the copy. */
@@ -107,6 +187,7 @@ export class DrawController {
     syncInvalidIndices(this.#elements);
     this.scene.replaceAllElements(this.#elements);
     this.#select(copy.id);
+    this.#commit();
   }
 
   #toScene(clientX: number, clientY: number): { x: number; y: number } {
@@ -318,6 +399,7 @@ export class DrawController {
     if (this.#resizeHandle) {
       this.#resizeHandle = null;
       this.#resizeOriginals.clear();
+      this.#commit();
       return;
     }
 
@@ -325,6 +407,7 @@ export class DrawController {
     if (this.#dragging) {
       this.#dragging = false;
       this.#dragOrigins.clear();
+      this.#commit();
       return;
     }
 
@@ -342,6 +425,9 @@ export class DrawController {
       syncInvalidIndices(this.#elements);
       this.scene.replaceAllElements(this.#elements);
     }
+
+    // one durable history entry per completed gesture (no-op if nothing changed)
+    this.#commit();
 
     // Excalidraw default: revert to selection after drawing one element
     this.activeTool = "selection";

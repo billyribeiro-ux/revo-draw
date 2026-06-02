@@ -166,6 +166,43 @@ describe("DrawController — generic-create gesture", () => {
     expect(c.selectedId).toBe(copy.id);
   });
 
+  it("undo/redo round-trips a draw", () => {
+    const c = new DrawController();
+    expect(c.scene.elements.length).toBe(0);
+    expect(c.canUndo).toBe(false);
+
+    c.setTool("rectangle");
+    c.pointerDown(100, 100);
+    c.pointerMove(200, 180);
+    c.pointerUp();
+    expect(c.scene.elements.length).toBe(1);
+    expect(c.canUndo).toBe(true);
+
+    c.undo();
+    expect(c.scene.elements.length).toBe(0); // tombstoned → not visible
+
+    c.redo();
+    expect(c.scene.elements.length).toBe(1);
+  });
+
+  it("undo restores an element's position after a move", () => {
+    const c = new DrawController();
+    c.setTool("rectangle");
+    c.pointerDown(100, 100);
+    c.pointerMove(200, 180);
+    c.pointerUp();
+    const x0 = c.scene.elements[0]!.x;
+
+    c.setTool("selection");
+    c.pointerDown(100, 140); // select via outline + begin drag
+    c.pointerMove(150, 170); // dx=50
+    c.pointerUp();
+    expect(c.scene.elements[0]!.x).toBe(x0 + 50);
+
+    c.undo();
+    expect(c.scene.elements[0]!.x).toBe(x0);
+  });
+
   it("freedraw accumulates local points along the stroke", () => {
     const c = new DrawController();
     c.setTool("freedraw");
