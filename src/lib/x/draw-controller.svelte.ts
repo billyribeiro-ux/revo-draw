@@ -163,6 +163,67 @@ export class DrawController {
     this.activeTool = tool;
   }
 
+  // --- current style (drives new elements; mirrors Excalidraw's appState.currentItem*) ---
+  get strokeColor(): string {
+    return this.appState.current.currentItemStrokeColor;
+  }
+  get backgroundColor(): string {
+    return this.appState.current.currentItemBackgroundColor;
+  }
+  get strokeWidth(): number {
+    return this.appState.current.currentItemStrokeWidth;
+  }
+
+  setStrokeColor(color: string): void {
+    this.#applyStyle({ strokeColor: color }, { currentItemStrokeColor: color });
+  }
+  setBackgroundColor(color: string): void {
+    this.#applyStyle({ backgroundColor: color }, { currentItemBackgroundColor: color });
+  }
+  setStrokeWidth(width: number): void {
+    this.#applyStyle({ strokeWidth: width }, { currentItemStrokeWidth: width });
+  }
+
+  #applyStyle(
+    elementPatch: { strokeColor?: string; backgroundColor?: string; strokeWidth?: number },
+    appStatePatch: Partial<AppState>,
+  ): void {
+    this.appState.setState(appStatePatch);
+    const id = this.selectedId;
+    if (!id) {
+      return;
+    }
+    const map = this.scene.scene.getNonDeletedElementsMap();
+    const el = map.get(id);
+    if (el) {
+      mutateElement(el, map, elementPatch);
+      this.scene.scene.triggerUpdate();
+      this.#commit();
+    }
+  }
+
+  /** Style props applied to newly-created elements, from the current item defaults. */
+  #createStyle(): {
+    strokeColor: string;
+    backgroundColor: string;
+    fillStyle: AppState["currentItemFillStyle"];
+    strokeWidth: number;
+    strokeStyle: AppState["currentItemStrokeStyle"];
+    roughness: number;
+    opacity: number;
+  } {
+    const a = this.appState.current;
+    return {
+      strokeColor: a.currentItemStrokeColor,
+      backgroundColor: a.currentItemBackgroundColor,
+      fillStyle: a.currentItemFillStyle,
+      strokeWidth: a.currentItemStrokeWidth,
+      strokeStyle: a.currentItemStrokeStyle,
+      roughness: a.currentItemRoughness,
+      opacity: a.currentItemOpacity,
+    };
+  }
+
   /** The text element currently being edited (drives the textarea overlay), if any. */
   get editingText(): ExcalidrawTextElement | null {
     const id = this.editingTextId;
@@ -357,7 +418,7 @@ export class DrawController {
     // text tool: click to place an empty text element and start editing it
     if (this.activeTool === "text") {
       this.#select(null);
-      const el = newTextElement({ text: "", x, y });
+      const el = newTextElement({ text: "", x, y, ...this.#createStyle() });
       this.#elements.push(el);
       syncInvalidIndices(this.#elements);
       this.scene.replaceAllElements(this.#elements);
@@ -379,6 +440,7 @@ export class DrawController {
         points: [pointFrom<LocalPoint>(0, 0)],
         pressures: [],
         simulatePressure: true,
+        ...this.#createStyle(),
       });
       this.#mode = "freedraw";
     } else if (this.activeTool === "line" || this.activeTool === "arrow") {
@@ -387,6 +449,7 @@ export class DrawController {
         x,
         y,
         points: [pointFrom<LocalPoint>(0, 0), pointFrom<LocalPoint>(0, 0)],
+        ...this.#createStyle(),
       });
       if (this.activeTool === "arrow") {
         linear = newElementWith(linear, { endArrowhead: "arrow" });
@@ -394,7 +457,14 @@ export class DrawController {
       this.#creating = linear;
       this.#mode = "linear";
     } else {
-      this.#creating = newElement({ type: this.activeTool, x, y, width: 0, height: 0 });
+      this.#creating = newElement({
+        type: this.activeTool,
+        x,
+        y,
+        width: 0,
+        height: 0,
+        ...this.#createStyle(),
+      });
       this.#mode = "generic";
     }
 

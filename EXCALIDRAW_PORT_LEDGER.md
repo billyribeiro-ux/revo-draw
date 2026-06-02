@@ -199,12 +199,24 @@ Phase 3.
 - **Evidence:** `pnpm check` 0/0 (907 files) · `pnpm test` 170 passing · `pnpm build` clean ·
   CDP text probe PASS.
 
-**Tools working:** rectangle, ellipse, diamond, line, arrow, **text**, freedraw, selection.
-**Interactions working:** draw, select, move, resize, rotate, delete, duplicate, deselect, undo/redo.
+- **Properties panel (Phase 5 start) — stroke/background color + stroke width**. Controller gained
+  a current-style layer (`strokeColor`/`backgroundColor`/`strokeWidth` over `appState.currentItem*`)
+  applied to every newly-created element (`#createStyle()` spread into all factories) and to the
+  selected element on change (`#applyStyle` → mutate + commit). `EditorPreview` gained an Excalidraw-
+  island-styled left panel: stroke swatches, background swatches, S/M/L width. **Browser-verified**
+  (`scripts/probe-x-style.mjs`): set red stroke + blue bg + width 4 → drew a rectangle with exactly
+  those; screenshot shows the panel (active states) + the colored shape. +1 controller test (14 total).
+- **Evidence:** `pnpm check` 0/0 (907 files) · `pnpm test` 171 passing · `pnpm build` clean ·
+  CDP style probe PASS.
 
-**Next:** image tool; marquee multi-select + modifier keys; multi-point linear editor. Then the full
-UI shell (Phase 5, `src/lib/x/` — real toolbar/properties-panel/color-pickers/menus/dialogs), dark
-mode + localStorage (Phase 6), Phase 7 fidelity (binding, snapping), Tauri (Phase 8).
+**Tools:** rectangle, ellipse, diamond, line, arrow, text, freedraw, selection.
+**Interactions:** draw, select, move, resize, rotate, delete, duplicate, undo/redo.
+**Styling:** stroke color, background color, stroke width (new + selected elements).
+
+**Remaining for full parity (tracked, multi-session):** image tool; marquee multi-select + modifier
+keys; multi-point linear editor; the rest of the UI shell (Phase 5 — full toolbar chrome, opacity/
+fill-style/sloppiness/edges/font controls, color *pickers*, menus, dialogs, stats, context menu);
+dark mode + localStorage (Phase 6); binding + snapping (Phase 7); Tauri (Phase 8).
 
 ---
 

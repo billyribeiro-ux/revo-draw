@@ -203,6 +203,31 @@ describe("DrawController — generic-create gesture", () => {
     expect(c.scene.elements[0]!.x).toBe(x0);
   });
 
+  it("style setters update defaults, apply to new elements, and restyle the selection", () => {
+    const c = new DrawController();
+
+    c.setStrokeColor("#e03131");
+    c.setStrokeWidth(4);
+    expect(c.strokeColor).toBe("#e03131");
+    expect(c.strokeWidth).toBe(4);
+
+    // a newly drawn element picks up the current style
+    c.setTool("rectangle");
+    c.pointerDown(100, 100);
+    c.pointerMove(200, 180);
+    c.pointerUp();
+    const rect = c.scene.elements[0]! as { strokeColor: string; strokeWidth: number };
+    expect(rect.strokeColor).toBe("#e03131");
+    expect(rect.strokeWidth).toBe(4);
+
+    // selecting then changing a color restyles the selected element
+    c.setTool("selection");
+    c.pointerDown(100, 140);
+    c.pointerUp();
+    c.setBackgroundColor("#a5d8ff");
+    expect((c.scene.elements[0]! as { backgroundColor: string }).backgroundColor).toBe("#a5d8ff");
+  });
+
   it("line and arrow tools create 2-point linear elements", () => {
     const c = new DrawController();
 

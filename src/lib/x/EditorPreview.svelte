@@ -35,6 +35,15 @@
 
   const tools: Tool[] = ['selection', 'rectangle', 'ellipse', 'diamond', 'line', 'arrow', 'text', 'freedraw'];
 
+  // Excalidraw's default palettes
+  const strokeColors = ['#1e1e1e', '#e03131', '#2f9e44', '#1971c2', '#f08c00'];
+  const bgColors = ['transparent', '#ffc9c9', '#b2f2bb', '#a5d8ff', '#ffec99'];
+  const widths = [
+    { label: 'S', w: 1 },
+    { label: 'M', w: 2 },
+    { label: 'L', w: 4 }
+  ];
+
   const editorInterface: EditorInterface = {
     formFactor: 'desktop',
     desktopUIMode: 'full',
@@ -207,6 +216,53 @@
   {/each}
 </div>
 
+<div class="properties">
+  <div class="prop-group">
+    <span class="prop-label">Stroke</span>
+    <div class="swatches">
+      {#each strokeColors as c (c)}
+        <button
+          type="button"
+          class="swatch"
+          class:active={controller.strokeColor === c}
+          style="background:{c}"
+          aria-label="stroke {c}"
+          onclick={() => controller.setStrokeColor(c)}
+        ></button>
+      {/each}
+    </div>
+  </div>
+  <div class="prop-group">
+    <span class="prop-label">Background</span>
+    <div class="swatches">
+      {#each bgColors as c (c)}
+        <button
+          type="button"
+          class="swatch"
+          class:active={controller.backgroundColor === c}
+          style="background:{c === 'transparent' ? '#fff' : c}"
+          aria-label="background {c}"
+          onclick={() => controller.setBackgroundColor(c)}
+        ></button>
+      {/each}
+    </div>
+  </div>
+  <div class="prop-group">
+    <span class="prop-label">Stroke width</span>
+    <div class="widths">
+      {#each widths as ww (ww.w)}
+        <button
+          type="button"
+          class:active={controller.strokeWidth === ww.w}
+          onclick={() => controller.setStrokeWidth(ww.w)}
+        >
+          {ww.label}
+        </button>
+      {/each}
+    </div>
+  </div>
+</div>
+
 <div class="canvas-wrap">
   <canvas bind:this={staticCanvas} class="layer"></canvas>
   <canvas
@@ -295,6 +351,71 @@
   }
 
   .toolbar button.active {
+    background: #e7f5ff;
+    border-color: #a5d8ff;
+  }
+
+  .properties {
+    position: fixed;
+    top: 70px;
+    left: 12px;
+    z-index: 10;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    width: 180px;
+    padding: 12px;
+    background: #fff;
+    border: 1px solid #e0e0e0;
+    border-radius: 12px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    font-size: 12px;
+  }
+
+  .prop-group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .prop-label {
+    color: #495057;
+  }
+
+  .swatches {
+    display: flex;
+    gap: 6px;
+  }
+
+  .swatch {
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    border: 1px solid rgba(0, 0, 0, 0.15);
+    border-radius: 6px;
+    cursor: pointer;
+  }
+
+  .swatch.active {
+    outline: 2px solid #4263eb;
+    outline-offset: 1px;
+  }
+
+  .widths {
+    display: flex;
+    gap: 6px;
+  }
+
+  .widths button {
+    flex: 1;
+    padding: 6px 0;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    background: #f1f3f5;
+    cursor: pointer;
+  }
+
+  .widths button.active {
     background: #e7f5ff;
     border-color: #a5d8ff;
   }
