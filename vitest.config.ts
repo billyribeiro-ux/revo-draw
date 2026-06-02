@@ -12,6 +12,7 @@ export default defineConfig({
 		// `.svelte.test.ts` files need the Svelte compiler (runes) — they run under
 		// vitest-svelte.config.ts instead. Exclude them here so node doesn't choke on `$state`.
 		exclude: ['src/**/*.svelte.{test,spec}.ts', 'node_modules/**'],
-		environment: 'node'
+		environment: 'node',
+		setupFiles: ['./vitest.setup.ts']
 	}
 });

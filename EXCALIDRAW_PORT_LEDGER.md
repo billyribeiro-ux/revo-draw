@@ -43,9 +43,25 @@ alongside the still-running LayoutForge app. Done:
 - **Evidence:** `pnpm check` 0/0 (887 files) · `pnpm test` 145 passing (98 pure + 47 runes) ·
   `pnpm build` clean.
 
-**Next (Phase 1 cont.):** runes `AppState` (`src/lib/state/app-state.svelte.ts` from
-`getDefaultAppState`); a reactive scene wrapper over the vendored `Scene`; wire `Store` +
-`CaptureUpdateAction` + `History` for undo/redo with a do→undo→redo round-trip test.
+- **Runes `AppState` done** (`src/lib/state/app-state.svelte.ts`): single `$state<AppState>`
+  initialized from `getDefaultAppState()` (+ the 4 omitted viewport fields), React-`setState`-style
+  immutable `setState(patch)` + `reset()`. Svelte autofixer clean; 3 rune tests
+  (`app-state.svelte.test.ts`). Added `vitest.setup.ts` (DPR=1 polyfill for headless module-load).
+- **Evidence:** `pnpm check` 0/0 (889 files) · `pnpm test` 148 passing (98 pure + 50 runes) ·
+  `pnpm build` clean.
+
+- **Reactive `EditorScene` done** (`src/lib/scene/editor-scene.svelte.ts`): wraps the vendored
+  `Scene` (sole owner of element data + fractional ordering + caches) and bridges its `onUpdate`
+  callback to one `$state` version counter, so reactive getters (`elements`, `allElements`,
+  `version`) re-run on mutation without deep-proxying `Scene` (which would defeat its
+  identity-based caches). Seeds `Scene` with `[]` (never `null` — that skips init). Documented the
+  contract that `replaceAllElements` callers pass **already-synced** elements (Scene validates +
+  throws in dev/test before syncing). Autofixer clean; 3 rune tests.
+- **Evidence:** `pnpm check` 0/0 (891 files) · `pnpm test` 151 passing (98 pure + 53 runes) ·
+  `pnpm build` clean.
+
+**Next (Phase 1 cont.):** wire `Store` + `CaptureUpdateAction` + `History` for undo/redo with a
+do→undo→redo round-trip test; then Phase 2 (3-canvas rendering + rough.js).
 
 ---
 
