@@ -389,6 +389,55 @@ full style controls; localStorage persistence; dark mode; real icon toolbar; sta
 - **Evidence:** `pnpm check` 0/0 (923 files) · `pnpm test` 172 passing · `pnpm build` clean ·
   CDP z-order probe PASS · **all 21 probes green**.
 
+- **🎉 GRID MODE (G) + OBJECT SNAPPING (F, part 1).**
+  - **Grid:** controller `toggleGrid()`/`gridMode`; the static renderer's `renderGrid` now follows
+    `appState.gridModeEnabled` (grid size/step from appState). Menu item "Show/Hide grid" + `⌘'`.
+  - **Snapping:** wired the vendored `snapping.ts` into the move gesture — `PointerMods` extended with
+    `ctrlKey`/`metaKey`; on drag we prime `SnapCache` (`getReferenceSnapPoints`/`getVisibleGaps`, lazily,
+    exactly like App.tsx's `maybeCache*`), call `snapDraggedElements` for the `{snapOffset, snapLines}`,
+    nudge the drag by `snapOffset` and publish `snapLines` (the interactive renderer draws the guides);
+    `SnapCache.destroy()` + clear `snapLines` on pointer-up. Enabled by **⌘/Ctrl while dragging**
+    (or the snap/grid toggle), per `isSnappingEnabled`. **Also fixed:** `appState.width/height` were 0,
+    so the snap visibility filter saw no reference elements — added `setViewport(w,h)` (the view keeps
+    the live canvas size on appState).
+  - **Browser-verified** (`scripts/probe-x-snap.mjs`): grid toggle flips `gridModeEnabled` and adds
+    80k grid pixels; a free drag lands at the raw offset (x=303, no guides) while a ⌘-drag snaps the
+    element's edge to the neighbour (x=300) with 3 snap lines, cleared on release. Screenshot shows the
+    red alignment guide.
+- **Evidence:** `pnpm check` 0/0 (923 files) · `pnpm test` 172 passing · `pnpm build` clean ·
+  CDP grid+snap probe PASS + screenshot · **all 22 probes green**.
+
+- **🎉 ARROW BINDING (F, part 2) — F COMPLETE.** Wired the vendored `binding.ts`:
+  - **On arrow create:** `#bindArrowEndpoints` resolves the bindable shape under each endpoint
+    (`getHoveredElementForBinding`) and binds via `bindBindingElement(arrow, shape, mode, "start"/"end",
+    scene)` (mode = `appState.bindMode ?? "orbit"`) — sets the arrow's `startBinding`/`endBinding` and
+    the shapes' `boundElements`. (`bindOrUnbindBindingElements` only acts on *dragged* endpoints, so a
+    fresh arrow needs the direct two-endpoint bind.)
+  - **On shape move:** the drag loop now calls `updateBoundElements(el, scene, {simultaneouslyUpdated})`
+    for each moved element, re-routing any bound arrows live.
+  - **Browser-verified** (`scripts/probe-x-binding.mjs`): arrow drawn from inside shape A to inside B →
+    `startBinding`→A, `endBinding`→B, both `boundElements` set; moving B down 120 re-routed the arrow's
+    end (250→361). Screenshot shows the arrow following B with proper binding gaps.
+- **Evidence:** `pnpm check` 0/0 (923 files) · `pnpm test` 172 passing · `pnpm build` clean ·
+  CDP binding probe PASS + screenshot · **all 24 probes green**.
+
+- **🎉 FRAME TOOL (G) + ColorPicker hex fix — G COMPLETE.**
+  - **Frame:** `frame` tool drag-creates a `newFrameElement`; on finalize `getElementsInNewFrame` +
+    `addElementsToFrame` adopt the enclosed elements (they get `frameId` and clip to the frame via the
+    static renderer's `frameClip`). `#beginDrag` now also captures a dragged frame's children
+    (`getFrameChildren`) and the move loop iterates the full captured set, so **moving a frame moves its
+    contents**. Toolbar gets a frame icon.
+  - **ColorPicker hex:** fixed the double-`#` / validation bug — the input now holds digits only and
+    `commitHex` prepends `#`, so typing `00aa00` applies `#00aa00` to the current style + selection.
+  - **Browser-verified:** `probe-x-frame.mjs` — frame adopts the enclosed rect (`frameId` set), moving
+    the frame +100,+50 moves both frame and child; `probe-x-colorpicker.mjs` — `00aa00` → `#00aa00` on
+    style + element. Screenshots confirm.
+- **Evidence:** `pnpm check` 0/0 (923 files) · `pnpm test` 172 passing · `pnpm build` clean ·
+  CDP frame + colorpicker probes PASS + screenshots · **all 26 probes green**.
+
+  *Note: full frame parity (auto-membership while dragging elements into/out of a frame, the frame
+  name label/edit) is deferred — the create + clip + drag-with-contents core is done.*
+
 - **Verification-harness hardening (found while verifying C):** the older CDP probes didn't `clear()`
   localStorage first (so a restored element from a prior run leaked in as `elements[0]`) and lacked the
   cold-pointer warmup move; several also drew at x≈150 — *under the fixed left properties panel* — so
@@ -407,10 +456,10 @@ transform mechanics themselves are correct (probes read the real element state).
 probes (`probe-x-resize`/`-undo`) don't `clear()` first, so they can flake on restored localStorage
 from a prior run with the same user-data-dir; new probes call `clear()` at start.
 
-**Remaining for full parity (tracked, see `prompt.md` for the handoff):** binding + snapping
-(Phase 7); Tauri (Phase 8); misc polish (frame tool, z-order, copy/paste, grid). Done: marquee
-multi-select, transform modifiers, multi-point linear editing, PNG/SVG export, laser pointer
-(arrow binding/elbow deferred to Phase 7; SVG font inlining skipped — system-font fallback).
+**Remaining for full parity:** **Tauri (Phase 8)** only. Done (this stream): marquee multi-select,
+transform modifiers, multi-point linear editing, PNG/SVG export, laser pointer, z-order, grid,
+**object snapping (F)**, copy/paste, **arrow binding (F)**, ColorPicker hex, **frame tool (G)**.
+Deferred fidelity (noted): elbow arrows, frame name label + drag-in/out membership, SVG font inlining.
 
 ---
 

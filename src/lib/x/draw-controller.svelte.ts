@@ -6,9 +6,16 @@ import {
   deepCopyElement,
   duplicateElement,
   getCommonBounds,
+  addElementsToFrame,
+  bindBindingElement,
+  getElementsInNewFrame,
   getElementsWithinSelection,
+  getFrameChildren,
+  getHoveredElementForBinding,
   getTransformHandleTypeFromCoords,
   hitElementItself,
+  isArrowElement,
+  isFrameLikeElement,
   isLinearElement,
   isTextElement,
   LinearElementEditor,
@@ -19,6 +26,7 @@ import {
   mutateElement,
   newElement,
   newElementWith,
+  newFrameElement,
   newFreeDrawElement,
   newLinearElement,
   newTextElement,
@@ -28,9 +36,20 @@ import {
   Store,
   syncInvalidIndices,
   transformElements,
+  updateBoundElements,
 } from "@excalidraw/element";
 
+import type { ExcalidrawArrowElement } from "@excalidraw/element/types";
+
 import { ROUNDNESS, viewportCoordsToSceneCoords } from "@excalidraw/common";
+
+import {
+  getReferenceSnapPoints,
+  getVisibleGaps,
+  isSnappingEnabled,
+  SnapCache,
+  snapDraggedElements,
+} from "@excalidraw/excalidraw/snapping";
 
 import { pointFrom } from "@excalidraw/math";
 
@@ -97,13 +116,25 @@ export type Tool =
   | "text"
   | "image"
   | "eraser"
-  | "laser";
+  | "laser"
+  | "frame";
 
 type CreateMode = "generic" | "freedraw" | "linear";
 
-/** Live modifier-key state for a gesture (shift = aspect/snap, alt = from-center). */
-export type PointerMods = { shiftKey: boolean; altKey: boolean };
-const NO_MODS: PointerMods = { shiftKey: false, altKey: false };
+/** Live modifier-key state for a gesture (shift = aspect/snap, alt = from-center,
+ *  ctrl/meta = toggle object-snapping while dragging). */
+export type PointerMods = {
+  shiftKey: boolean;
+  altKey: boolean;
+  ctrlKey: boolean;
+  metaKey: boolean;
+};
+const NO_MODS: PointerMods = {
+  shiftKey: false,
+  altKey: false,
+  ctrlKey: false,
+  metaKey: false,
+};
 
 export class DrawController {
   readonly scene = new EditorScene();
@@ -155,6 +186,9 @@ export class DrawController {
 
   // laser pointer — an ephemeral rAF-driven SVG trail (NOT in #elements/history)
   #laser: LaserTrails | null = null;
+
+  // in-memory clipboard for copy / cut / paste (deep-copied element snapshots)
+  #clipboard: ExcalidrawElement[] = [];
 
   // image cache (fileId → loaded image) passed to renderConfig.imageCache
   readonly imageCache = makeImageCache();
@@ -282,6 +316,24 @@ export class DrawController {
       scrollX: (viewportX - a.offsetLeft) / nz - sceneX,
       scrollY: (viewportY - a.offsetTop) / nz - sceneY,
     });
+  }
+
+  /** Keep the live viewport size on appState (snapping/visibility checks read width/height). */
+  setViewport(width: number, height: number): void {
+    const a = this.appState.current;
+    if (a.width !== width || a.height !== height) {
+      this.appState.setState({ width, height });
+    }
+  }
+
+  get gridMode(): boolean {
+    return this.appState.current.gridModeEnabled;
+  }
+
+  /** Toggle the background grid (snapping-to-grid follows gridModeEnabled). */
+  toggleGrid(): void {
+    this.appState.setState({ gridModeEnabled: !this.appState.current.gridModeEnabled });
+    this.scene.scene.triggerUpdate();
   }
 
   resetView(): void {
@@ -693,6 +745,53 @@ export class DrawController {
     );
   }
 
+  // --- clipboard (copy / cut / paste) ---
+
+  get canPaste(): boolean {
+    return this.#clipboard.length > 0;
+  }
+
+  /** Copy the selected element(s) into the in-memory clipboard. */
+  copySelected(): void {
+    this.#clipboard = this.selectedElements.map((e) => deepCopyElement(e));
+  }
+
+  /** Copy then delete the selection. */
+  cutSelected(): void {
+    if (!this.selectedIds.size) {
+      return;
+    }
+    this.copySelected();
+    this.deleteSelected();
+  }
+
+  /** Paste the clipboard centered at a viewport point (or offset by +10,+10). */
+  paste(clientX?: number, clientY?: number): void {
+    if (!this.#clipboard.length) {
+      return;
+    }
+    const [x1, y1, x2, y2] = getCommonBounds(this.#clipboard);
+    let dx = 10;
+    let dy = 10;
+    if (clientX != null && clientY != null) {
+      const { x, y } = this.#toScene(clientX, clientY);
+      dx = x - (x1 + x2) / 2;
+      dy = y - (y1 + y2) / 2;
+    }
+    const copies = this.#clipboard.map((orig) =>
+      newElementWith(duplicateElement(null, new Map(), orig, true), {
+        x: orig.x + dx,
+        y: orig.y + dy,
+      }),
+    );
+    this.#elements.push(...copies);
+    syncInvalidIndices(this.#elements);
+    this.scene.replaceAllElements(this.#elements);
+    this.#setSelection(copies.map((c) => c.id));
+    this.activeTool = "selection";
+    this.#commit();
+  }
+
   /** Duplicate the selected element(s) offset by (10,10) and select the copies. */
   duplicateSelected(): void {
     const originals = this.selectedElements;
@@ -788,9 +887,19 @@ export class DrawController {
     this.#dragging = true;
     this.#dragStartX = x;
     this.#dragStartY = y;
-    this.#dragOrigins = new Map(
-      this.selectedElements.map((e) => [e.id, { x: e.x, y: e.y }]),
-    );
+    // capture origins for the selection — plus, for any selected frame, its children
+    // (dragging a frame drags its contents)
+    const origins = new Map<string, { x: number; y: number }>();
+    const all = this.scene.scene.getNonDeletedElements();
+    for (const e of this.selectedElements) {
+      origins.set(e.id, { x: e.x, y: e.y });
+      if (isFrameLikeElement(e)) {
+        for (const child of getFrameChildren(all, e.id)) {
+          origins.set(child.id, { x: child.x, y: child.y });
+        }
+      }
+    }
+    this.#dragOrigins = origins;
   }
 
   /** Which transform handle (corner/edge/rotation) is under a scene point, if the selection is hit. */
@@ -880,7 +989,8 @@ export class DrawController {
     return this.appState.current.selectedLinearElement?.isEditing === true;
   }
 
-  /** The `app` surface the vendored LinearElementEditor reads (scene/state/grid). */
+  /** The `app` surface the vendored LinearElementEditor + snapping read
+   *  (scene / state / grid-size / props.gridModeEnabled). */
   #linearApp(): AppClassProperties {
     const self = this;
     return {
@@ -888,7 +998,9 @@ export class DrawController {
       get state(): AppState {
         return self.appState.current;
       },
-      getEffectiveGridSize: () => null,
+      getEffectiveGridSize: () =>
+        self.appState.current.gridModeEnabled ? self.appState.current.gridSize : null,
+      props: { gridModeEnabled: undefined },
     } as unknown as AppClassProperties;
   }
 
@@ -1149,6 +1261,9 @@ export class DrawController {
       }
       this.#creating = linear;
       this.#mode = "linear";
+    } else if (this.activeTool === "frame") {
+      this.#creating = newFrameElement({ x, y, width: 0, height: 0 });
+      this.#mode = "generic";
     } else {
       this.#creating = newElement({
         type: this.activeTool,
@@ -1220,14 +1335,52 @@ export class DrawController {
     // moving the current selection (origin-based, so no floating drift)
     if (this.#dragging) {
       const { x, y } = this.#toScene(clientX, clientY);
-      const dx = x - this.#dragStartX;
-      const dy = y - this.#dragStartY;
       const map = this.scene.scene.getNonDeletedElementsMap();
-      for (const el of this.selectedElements) {
-        const origin = this.#dragOrigins.get(el.id);
-        if (origin) {
-          mutateElement(el, map, { x: origin.x + dx, y: origin.y + dy });
+      // object snapping: ⌘/Ctrl while dragging (or the grid/snap toggle) aligns to nearby
+      // edges/centers/gaps and shows guide lines; the returned snapOffset nudges the drag.
+      const dragOffset = { x: x - this.#dragStartX, y: y - this.#dragStartY };
+      const app = this.#linearApp();
+      const event = {
+        shiftKey: mods.shiftKey,
+        altKey: mods.altKey,
+        ctrlKey: mods.ctrlKey,
+        metaKey: mods.metaKey,
+      };
+      const selectedEls = [...this.selectedElements];
+      // prime the reference-points / gaps cache once per drag (App.tsx does the same lazily)
+      if (isSnappingEnabled({ event, app, selectedElements: selectedEls })) {
+        const all = [...this.scene.scene.getNonDeletedElements()];
+        if (!SnapCache.getReferenceSnapPoints()) {
+          SnapCache.setReferenceSnapPoints(
+            getReferenceSnapPoints(all, selectedEls, app.state, map),
+          );
         }
+        if (!SnapCache.getVisibleGaps()) {
+          SnapCache.setVisibleGaps(getVisibleGaps(all, selectedEls, app.state, map));
+        }
+      }
+      const { snapOffset, snapLines } = snapDraggedElements(
+        this.scene.scene.getElementsIncludingDeleted() as ExcalidrawElement[],
+        dragOffset,
+        app,
+        event,
+        map,
+      );
+      this.appState.setState({ snapLines });
+      const ox = dragOffset.x + snapOffset.x;
+      const oy = dragOffset.y + snapOffset.y;
+      // move every captured element (selection + any dragged frame's children)
+      const moved: NonDeletedExcalidrawElement[] = [];
+      for (const [id, origin] of this.#dragOrigins) {
+        const el = map.get(id);
+        if (el) {
+          mutateElement(el, map, { x: origin.x + ox, y: origin.y + oy });
+          moved.push(el);
+        }
+      }
+      // re-route any arrows bound to the moved shapes so they follow
+      for (const el of moved) {
+        updateBoundElements(el, this.scene.scene, { simultaneouslyUpdated: moved });
       }
       this.scene.scene.triggerUpdate();
       return;
@@ -1270,6 +1423,27 @@ export class DrawController {
     this.scene.scene.triggerUpdate();
   }
 
+  /** Bind a freshly-drawn arrow's start/end points to any bindable shapes under them. */
+  #bindArrowEndpoints(arrow: ExcalidrawArrowElement): void {
+    const map = this.scene.scene.getNonDeletedElementsMap();
+    const els = this.scene.scene.getNonDeletedElements();
+    const startG = LinearElementEditor.getPointGlobalCoordinates(arrow, arrow.points[0]!, map);
+    const endG = LinearElementEditor.getPointGlobalCoordinates(
+      arrow,
+      arrow.points[arrow.points.length - 1]!,
+      map,
+    );
+    const startHit = getHoveredElementForBinding(startG, els, map);
+    const endHit = getHoveredElementForBinding(endG, els, map);
+    const mode = this.appState.current.bindMode ?? "orbit";
+    if (startHit) {
+      bindBindingElement(arrow, startHit, mode, "start", this.scene.scene);
+    }
+    if (endHit && endHit.id !== startHit?.id) {
+      bindBindingElement(arrow, endHit, mode, "end", this.scene.scene);
+    }
+  }
+
   pointerUp(): void {
     // end a laser stroke (stays the active tool — laser is sticky)
     if (this.activeTool === "laser") {
@@ -1310,6 +1484,10 @@ export class DrawController {
     if (this.#dragging) {
       this.#dragging = false;
       this.#dragOrigins.clear();
+      SnapCache.destroy(); // drop the per-drag reference-points/gaps cache
+      if (this.appState.current.snapLines.length) {
+        this.appState.setState({ snapLines: [] });
+      }
       this.#commit();
       return;
     }
@@ -1323,12 +1501,24 @@ export class DrawController {
     this.#mode = null;
 
     // discard an accidental click (no drag → zero size) for shapes and linear elements
-    if (
+    const discarded =
       (mode === "generic" || mode === "linear") &&
       creating.width < 1 &&
-      creating.height < 1
-    ) {
+      creating.height < 1;
+    if (discarded) {
       this.#elements = this.#elements.filter((e) => e !== creating);
+      syncInvalidIndices(this.#elements);
+      this.scene.replaceAllElements(this.#elements);
+    } else if (mode === "linear" && isArrowElement(creating)) {
+      this.#bindArrowEndpoints(creating as ExcalidrawArrowElement);
+    } else if (isFrameLikeElement(creating)) {
+      // a freshly-drawn frame adopts the elements enclosed within it (they then clip to it)
+      const inside = getElementsInNewFrame(
+        this.scene.scene.getElementsIncludingDeleted(),
+        creating,
+        this.scene.scene.getNonDeletedElementsMap(),
+      );
+      this.#elements = addElementsToFrame(this.#elements, inside, creating);
       syncInvalidIndices(this.#elements);
       this.scene.replaceAllElements(this.#elements);
     }

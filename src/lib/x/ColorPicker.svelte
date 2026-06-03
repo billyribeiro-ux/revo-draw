@@ -11,9 +11,10 @@
   const { value, palette, onPick }: Props = $props();
 
   // Local mirror of the hex input so typing doesn't immediately clobber `value`.
-  // Writable $derived: resets to `value` whenever the prop changes (e.g. selection
-  // changed), yet stays locally mutable while the user types.
-  let hexDraft = $derived(value);
+  // The leading "#" is shown as a separate decoration, so the draft holds the digits
+  // WITHOUT it (the user types "ff0000", not "#ff0000"). Writable $derived: resets to
+  // `value` whenever the prop changes, yet stays locally mutable while the user types.
+  let hexDraft = $derived(value.replace(/^#/, ''));
 
   const HEX_RE = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
 
@@ -30,12 +31,13 @@
   }
 
   function commitHex(): void {
-    const candidate = hexDraft.trim();
+    // prepend the decorative "#" (and tolerate a pasted leading "#") before validating
+    const candidate = '#' + hexDraft.trim().replace(/^#/, '');
     if (HEX_RE.test(candidate)) {
       onPick(candidate);
     } else {
-      // Invalid hex: ignore and restore the last valid value.
-      hexDraft = value;
+      // Invalid hex: ignore and restore the last valid value (digits only).
+      hexDraft = value.replace(/^#/, '');
     }
   }
 
