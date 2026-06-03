@@ -142,6 +142,11 @@
   }
 
   const contextItems = [
+    { label: 'Bring to front', shortcut: '⌘⇧]', action: () => controller.bringToFront() },
+    { label: 'Bring forward', shortcut: '⌘]', action: () => controller.bringForward() },
+    { label: 'Send backward', shortcut: '⌘[', action: () => controller.sendBackward() },
+    { label: 'Send to back', shortcut: '⌘⇧[', action: () => controller.sendToBack() },
+    'separator' as const,
     { label: 'Duplicate', shortcut: '⌘D', action: () => controller.duplicateSelected() },
     { label: 'Delete', shortcut: 'Del', action: () => controller.deleteSelected() },
     'separator' as const,
@@ -170,6 +175,20 @@
       controller.deselect();
     } else if ((e.metaKey || e.ctrlKey) && (e.key === 'd' || e.key === 'D')) {
       controller.duplicateSelected();
+      e.preventDefault();
+    } else if ((e.metaKey || e.ctrlKey) && e.key === ']') {
+      if (e.shiftKey) {
+        controller.bringToFront();
+      } else {
+        controller.bringForward();
+      }
+      e.preventDefault();
+    } else if ((e.metaKey || e.ctrlKey) && e.key === '[') {
+      if (e.shiftKey) {
+        controller.sendToBack();
+      } else {
+        controller.sendBackward();
+      }
       e.preventDefault();
     } else if ((e.metaKey || e.ctrlKey) && (e.key === 'z' || e.key === 'Z')) {
       if (e.shiftKey) {

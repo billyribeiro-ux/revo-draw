@@ -379,6 +379,16 @@ full style controls; localStorage persistence; dark mode; real icon toolbar; sta
 - **Evidence:** `pnpm check` 0/0 (923 files) · `pnpm test` 172 passing (104 pure + 68 runes) ·
   `pnpm build` clean · CDP laser probe PASS + screenshot · **all 20 probes green**.
 
+- **🎉 Z-ORDER (Milestone G, part 1).** Wired the vendored `zindex.ts`: controller
+  `bringForward`/`sendBackward` (`moveOneRight`/`moveOneLeft`) + `bringToFront`/`sendToBack`
+  (`moveAllRight`/`moveAllLeft`) — they reorder the element array, `syncMovedIndices` keeps fractional
+  indices valid, then `replaceAllElements` + one `#commit()`. Shortcuts `⌘]`/`⌘[` (forward/backward)
+  and `⌘⇧]`/`⌘⇧[` (front/back); added the four ops to the right-click context menu.
+  - **Browser-verified** (`scripts/probe-x-zorder.mjs`): two overlapping rects [A,B]; select A →
+    bring-to-front → [B,A] → send-to-back → [A,B] → bring-forward → [B,A]. All orderings exact.
+- **Evidence:** `pnpm check` 0/0 (923 files) · `pnpm test` 172 passing · `pnpm build` clean ·
+  CDP z-order probe PASS · **all 21 probes green**.
+
 - **Verification-harness hardening (found while verifying C):** the older CDP probes didn't `clear()`
   localStorage first (so a restored element from a prior run leaked in as `elements[0]`) and lacked the
   cold-pointer warmup move; several also drew at x≈150 — *under the fixed left properties panel* — so

@@ -12,6 +12,10 @@ import {
   isLinearElement,
   isTextElement,
   LinearElementEditor,
+  moveAllLeft,
+  moveAllRight,
+  moveOneLeft,
+  moveOneRight,
   mutateElement,
   newElement,
   newElementWith,
@@ -633,6 +637,60 @@ export class DrawController {
     syncInvalidIndices(this.#elements);
     this.scene.replaceAllElements(this.#elements);
     this.#commit();
+  }
+
+  // --- z-order (bring forward / to front, send backward / to back) ---
+
+  #reorder(next: readonly ExcalidrawElement[]): void {
+    this.#elements = next as ExcalidrawElement[];
+    // zindex helpers already syncMovedIndices, so the array is valid for replaceAllElements
+    this.scene.replaceAllElements(next as ExcalidrawElement[]);
+    this.scene.scene.triggerUpdate();
+    this.#commit();
+  }
+
+  bringForward(): void {
+    if (!this.selectedIds.size) {
+      return;
+    }
+    this.#reorder(
+      moveOneRight(
+        this.scene.scene.getElementsIncludingDeleted(),
+        this.appState.current,
+        this.scene.scene,
+      ),
+    );
+  }
+
+  sendBackward(): void {
+    if (!this.selectedIds.size) {
+      return;
+    }
+    this.#reorder(
+      moveOneLeft(
+        this.scene.scene.getElementsIncludingDeleted(),
+        this.appState.current,
+        this.scene.scene,
+      ),
+    );
+  }
+
+  bringToFront(): void {
+    if (!this.selectedIds.size) {
+      return;
+    }
+    this.#reorder(
+      moveAllRight(this.scene.scene.getElementsIncludingDeleted(), this.appState.current),
+    );
+  }
+
+  sendToBack(): void {
+    if (!this.selectedIds.size) {
+      return;
+    }
+    this.#reorder(
+      moveAllLeft(this.scene.scene.getElementsIncludingDeleted(), this.appState.current),
+    );
   }
 
   /** Duplicate the selected element(s) offset by (10,10) and select the copies. */
