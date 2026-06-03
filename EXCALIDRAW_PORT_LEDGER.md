@@ -360,6 +360,25 @@ full style controls; localStorage persistence; dark mode; real icon toolbar; sta
 - **Evidence:** `pnpm check` 0/0 (919 files) · `pnpm test` 172 passing (104 pure + 68 runes) ·
   `pnpm build` clean · CDP export + export-dialog probes PASS + screenshot · **all 19 probes green**.
 
+- **🎉 LASER POINTER (Milestone E).** Ported the trail subsystem faithfully: added
+  `@excalidraw/laser-pointer@1.3.1` (exact pin) + vendored `renderer/animation.ts`
+  (`AnimationController`; the one `reactUtils` dep inlined as never-throttle), `animatedTrail.ts`,
+  `laserTrails.ts`. The trail is an **rAF-driven fading SVG `<path>`** rendered into a dedicated
+  `.laser-layer` `<svg>` overlay (`pointer-events: none` so the canvas keeps the gesture) — it is
+  **never added to `#elements`/history** (the whole point of a laser pointer).
+  - **Controller:** `laser` tool; `startLaserLayer(svg)` (dynamic-imports `LaserTrails` — DOM/pkg
+    only loads in the browser, keeping the node tests clean — builds the `{ get state }` app surface
+    and `.start(svg)`s it) + `stopLaserLayer()`. `pointerDown`→`startPath`, `pointerMove`→
+    `addPointToPath`, `pointerUp`→`endPath`, all in canvas-local coords; laser is **sticky** (stays
+    active after a stroke). Added a faithful laser tool icon.
+  - **View:** laser tool button + the `<svg class="laser-layer">` overlay mounted via `{@attach}`
+    (start on mount, stop on teardown).
+  - **Browser-verified** (`scripts/probe-x-laser.mjs`): laser stroke → a red SVG `<path>` with
+    1012-char path data painted, **`scene.elements` stayed 0** (nothing persisted), tool stayed
+    `laser`. Screenshot shows the smooth tapered red laser stroke (perfect-freehand smoothing).
+- **Evidence:** `pnpm check` 0/0 (923 files) · `pnpm test` 172 passing (104 pure + 68 runes) ·
+  `pnpm build` clean · CDP laser probe PASS + screenshot · **all 20 probes green**.
+
 - **Verification-harness hardening (found while verifying C):** the older CDP probes didn't `clear()`
   localStorage first (so a restored element from a prior run leaked in as `elements[0]`) and lacked the
   cold-pointer warmup move; several also drew at x≈150 — *under the fixed left properties panel* — so
@@ -378,10 +397,10 @@ transform mechanics themselves are correct (probes read the real element state).
 probes (`probe-x-resize`/`-undo`) don't `clear()` first, so they can flake on restored localStorage
 from a prior run with the same user-data-dir; new probes call `clear()` at start.
 
-**Remaining for full parity (tracked, see `prompt.md` for the handoff):** laser tool (animated trail);
-binding + snapping (Phase 7); Tauri (Phase 8); misc polish (frame tool, z-order, copy/paste, grid).
-Multi-point linear editing + PNG/SVG export done (arrow binding/elbow deferred to Phase 7; SVG font
-inlining skipped — system-font fallback).
+**Remaining for full parity (tracked, see `prompt.md` for the handoff):** binding + snapping
+(Phase 7); Tauri (Phase 8); misc polish (frame tool, z-order, copy/paste, grid). Done: marquee
+multi-select, transform modifiers, multi-point linear editing, PNG/SVG export, laser pointer
+(arrow binding/elbow deferred to Phase 7; SVG font inlining skipped — system-font fallback).
 
 ---
 

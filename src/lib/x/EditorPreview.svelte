@@ -53,7 +53,8 @@
     'text',
     'freedraw',
     'image',
-    'eraser'
+    'eraser',
+    'laser'
   ];
 
   let fileInput = $state<HTMLInputElement>();
@@ -438,6 +439,15 @@
     {oncontextmenu}
     ondblclick={() => controller.enterLineEditor()}
   ></canvas>
+  <!-- ephemeral laser-pointer trail (SVG; pointer-events:none so the canvas keeps the gesture) -->
+  <svg
+    class="layer laser-layer"
+    aria-hidden="true"
+    {@attach (node: SVGSVGElement) => {
+      controller.startLaserLayer(node);
+      return () => controller.stopLaserLayer();
+    }}
+  ></svg>
 
   {#if controller.editingText}
     {@const t = controller.editingText}
@@ -539,6 +549,11 @@
     width: 100%;
     height: 100%;
     touch-action: none;
+  }
+
+  /* laser trail sits above the canvases but never intercepts pointer events */
+  .laser-layer {
+    pointer-events: none;
   }
 
   .text-editor {

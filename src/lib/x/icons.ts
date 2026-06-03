@@ -50,6 +50,9 @@ export const ICONS: Record<string, string> = {
 	// EraserIcon — tablerIconProps, inner group strokeWidth 1.5
 	eraser: `<svg ${tabler}><g stroke-width="1.5"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M19 20h-10.5l-4.21 -4.3a1 1 0 0 1 0 -1.41l10 -10a1 1 0 0 1 1.41 0l5 5a1 1 0 0 1 0 1.41l-9.2 9.3"/><path d="M18 13.3l-6.3 -6.3"/></g></svg>`,
 
+	// laserPointerToolIcon — modifiedTablerIconProps (20x20), strokeWidth 1.25, rotated 90deg
+	laser: `<svg ${tablerSmall}><g stroke-width="1.25" transform="rotate(90 10 10)"><path d="m9.644 13.69 7.774-7.773a2.357 2.357 0 0 0-3.334-3.334l-7.773 7.774L8 12l1.643 1.69Z"/><path d="m13.25 3.417 3.333 3.333M10 10l2-2M5 15l3-3M2.156 17.894l1-1M5.453 19.029l-.144-1.407M2.377 11.887l.866 1.118M8.354 17.273l-1.194-.758M.953 14.652l1.408.13"/></g></svg>`,
+
 	// handIcon — tablerIconProps, inner group strokeWidth 1.25
 	hand: `<svg ${tabler}><g stroke-width="1.25"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M8 13v-7.5a1.5 1.5 0 0 1 3 0v6.5"/><path d="M11 5.5v-2a1.5 1.5 0 1 1 3 0v8.5"/><path d="M14 5.5a1.5 1.5 0 0 1 3 0v6.5"/><path d="M17 7.5a1.5 1.5 0 0 1 3 0v8.5a6 6 0 0 1 -6 6h-2h.208a6 6 0 0 1 -5.012 -2.7a69.74 69.74 0 0 1 -.196 -.3c-.312 -.479 -1.407 -2.388 -3.286 -5.728a1.5 1.5 0 0 1 .536 -2.022a1.867 1.867 0 0 1 2.28 .28l1.47 1.47"/></g></svg>`,
 

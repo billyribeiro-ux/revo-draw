@@ -69,6 +69,9 @@ import {
 // (dynamic import inside the export methods) so the controller stays loadable in node tests;
 // the type-only import below is erased at runtime and triggers no module load.
 import type { ExportImageCache } from "$lib/x/export-image.ts";
+// laserTrails pulls in the laser-pointer pkg + DOM-only SVG/animation code. Type-only import
+// (erased at runtime); the value side is dynamic-imported in startLaserLayer (browser-only).
+import type { LaserTrails } from "@excalidraw/excalidraw/laserTrails";
 
 // Editor-interface shape used by resizeTest (handle sizing). Desktop/mouse defaults.
 const EDITOR_INTERFACE: EditorInterface = {
@@ -89,7 +92,8 @@ export type Tool =
   | LinearTool
   | "text"
   | "image"
-  | "eraser";
+  | "eraser"
+  | "laser";
 
 type CreateMode = "generic" | "freedraw" | "linear";
 
@@ -144,6 +148,9 @@ export class DrawController {
   // multi-point linear (line/arrow) editing — the editor lives on
   // appState.selectedLinearElement; this flags an in-progress point drag.
   #linearPointerActive = false;
+
+  // laser pointer — an ephemeral rAF-driven SVG trail (NOT in #elements/history)
+  #laser: LaserTrails | null = null;
 
   // image cache (fileId → loaded image) passed to renderConfig.imageCache
   readonly imageCache = makeImageCache();
@@ -554,6 +561,31 @@ export class DrawController {
     }
   }
 
+  // --- laser pointer (ephemeral trail) ---
+
+  /** Mount the laser trail into an SVG overlay (called by the view once it's in the DOM). */
+  async startLaserLayer(svg: SVGSVGElement): Promise<void> {
+    if (this.#laser) {
+      return;
+    }
+    const self = this;
+    const { LaserTrails } = await import("@excalidraw/excalidraw/laserTrails");
+    // LaserTrails only reads app.state (theme/zoom for the trail colour + decay)
+    const app = {
+      get state(): AppState {
+        return self.appState.current;
+      },
+    } as unknown as ConstructorParameters<typeof LaserTrails>[0];
+    this.#laser = new LaserTrails(app);
+    this.#laser.start(svg);
+  }
+
+  /** Tear down the laser trail animation. */
+  stopLaserLayer(): void {
+    this.#laser?.stop();
+    this.#laser = null;
+  }
+
   #eraseAt(sceneX: number, sceneY: number): void {
     const id = this.#hitTest(sceneX, sceneY);
     if (!id) {
@@ -957,6 +989,12 @@ export class DrawController {
     this.#shiftKey = mods.shiftKey;
     this.#altKey = mods.altKey;
 
+    // laser pointer: start an ephemeral trail (canvas-local coords; not persisted)
+    if (this.activeTool === "laser") {
+      this.#laser?.startPath(clientX, clientY);
+      return;
+    }
+
     // point-editing a linear element intercepts the selection tool
     if (this.activeTool === "selection" && this.isLineEditing) {
       if (this.#linearPointerDown(x, y, mods)) {
@@ -1074,6 +1112,12 @@ export class DrawController {
     this.#shiftKey = mods.shiftKey;
     this.#altKey = mods.altKey;
 
+    // laser pointer: extend the trail (no-ops unless a stroke is active)
+    if (this.activeTool === "laser") {
+      this.#laser?.addPointToPath(clientX, clientY);
+      return;
+    }
+
     // dragging a point of a linear element being edited
     if (this.#linearPointerActive) {
       const { x, y } = this.#toScene(clientX, clientY);
@@ -1169,6 +1213,12 @@ export class DrawController {
   }
 
   pointerUp(): void {
+    // end a laser stroke (stays the active tool — laser is sticky)
+    if (this.activeTool === "laser") {
+      this.#laser?.endPath();
+      return;
+    }
+
     // end a linear-element point drag
     if (this.#linearPointerActive) {
       this.#linearPointerUp();
