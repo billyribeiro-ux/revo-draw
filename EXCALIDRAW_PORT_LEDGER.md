@@ -280,9 +280,37 @@ full style controls; localStorage persistence; dark mode; real icon toolbar; sta
   (palette + hex input → `setStrokeColor`/`setBackgroundColor`). **Verified**: footer renders "100%"
   + buttons; popover opens (screenshot). 0/0 (916 files), 172 tests, build clean.
 
+- **🎉 MARQUEE MULTI-SELECT + multi-element transforms (Milestone A).** Selection went from a single
+  `selectedId` to a reactive `selectedIds: SvelteSet<string>` (the old `selectedId` is now a getter
+  returning the first id, so single-selection consumers — text editing, panels — are unchanged).
+  - **Marquee:** selection-tool drag on empty canvas creates a `selection`-type element on
+    `appState.selectionElement` (the interactive renderer already paints it), and each move computes
+    enclosed elements via the vendored `getElementsWithinSelection` ("contain" mode) → `#setSelection`.
+    PointerUp clears the marquee (selection is not a scene mutation → no history entry).
+  - **Shift:** shift-click toggles an element in/out of the selection; shift-drag on empty extends the
+    selection (marquee base = current selection). Reordered the pointer-down branch so shift-toggle
+    beats the move-grab.
+  - **Group move** iterates `selectedElements` (origin-based, relative positions preserved); **group
+    resize/rotate** hit-tests the common-bbox handles via the vendored `getTransformHandleTypeFromCoords`
+    (multi-select) while single-select keeps `resizeTest`; `getCommonBounds(selectedElements)` drives the
+    group bbox + center. `deleteSelected`/`duplicateSelected`/`#applyStyle`/`setEdges` now act on every
+    selected element.
+  - **Threaded pointer modifiers** (`{shiftKey, altKey}`) from the view into `pointerDown`/`pointerMove`
+    (stored for the gesture) — sets up Milestone B (alt/shift transforms) which can now read them.
+  - **Fixed a latent CLS bug** found while verifying: `Stats.svelte` was `position: static` (in normal
+    flow), so selecting an element grew the panel and pushed the canvas down ~139px — mis-mapping every
+    subsequent pointer gesture. Made it a fixed top-right overlay (its own comment already said
+    "top-right"); the canvas no longer shifts on selection.
+  - **Browser-verified** (`scripts/probe-x-marquee.mjs`): drew 3 rects → drag-marquee selected all 3 →
+    group-move translated all 3 by exactly (+50,+40) (relative positions kept) → shift-click an edge
+    dropped 1 → 2 remain with a group bbox; screenshot confirms. Regression probes
+    (select/move/resize/keys/undo) still PASS.
+- **Evidence:** `pnpm check` 0/0 (916 files) · `pnpm test` 172 passing (104 pure + 68 runes) ·
+  `pnpm build` clean · CDP marquee probe PASS + screenshot.
+
 **Remaining for full parity (tracked, see `prompt.md` for the handoff):** laser tool (animated trail);
-marquee multi-select + modifier keys (shift/alt); multi-point linear editor; export dialog (PNG/SVG);
-binding + snapping (Phase 7); Tauri (Phase 8).
+modifier keys for transforms (shift aspect/15°-snap, alt from-center — Milestone B, modifiers already
+threaded); multi-point linear editor; export dialog (PNG/SVG); binding + snapping (Phase 7); Tauri (Phase 8).
 
 ---
 

@@ -69,6 +69,13 @@
 
 <style>
   .exc-stats {
+    /* Floating overlay (Excalidraw places stats top-right). Must be out of normal
+       document flow — otherwise it grows when an element is selected and pushes the
+       canvas down, causing a layout shift that mis-maps every later pointer gesture. */
+    position: fixed;
+    top: 12px;
+    right: 12px;
+    z-index: 4;
     width: 184px;
     box-sizing: border-box;
     padding: 12px;

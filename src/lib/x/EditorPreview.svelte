@@ -96,7 +96,7 @@
       fileInput?.click();
       return;
     }
-    controller.pointerDown(x, y);
+    controller.pointerDown(x, y, { shiftKey: e.shiftKey, altKey: e.altKey });
   }
 
   async function onImagePicked(e: Event): Promise<void> {
@@ -111,7 +111,7 @@
 
   function onpointermove(e: PointerEvent): void {
     const { x, y } = relative(e);
-    controller.pointerMove(x, y);
+    controller.pointerMove(x, y, { shiftKey: e.shiftKey, altKey: e.altKey });
   }
 
   function onpointerup(): void {

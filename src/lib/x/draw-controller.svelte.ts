@@ -6,6 +6,8 @@ import {
   deepCopyElement,
   duplicateElement,
   getCommonBounds,
+  getElementsWithinSelection,
+  getTransformHandleTypeFromCoords,
   hitElementItself,
   isTextElement,
   mutateElement,
@@ -25,6 +27,8 @@ import {
 import { ROUNDNESS, viewportCoordsToSceneCoords } from "@excalidraw/common";
 
 import { pointFrom } from "@excalidraw/math";
+
+import { SvelteSet } from "svelte/reactivity";
 
 import { History } from "@excalidraw/excalidraw/history";
 
@@ -78,12 +82,25 @@ export type Tool =
 
 type CreateMode = "generic" | "freedraw" | "linear";
 
+/** Live modifier-key state for a gesture (shift = aspect/snap, alt = from-center). */
+export type PointerMods = { shiftKey: boolean; altKey: boolean };
+const NO_MODS: PointerMods = { shiftKey: false, altKey: false };
+
 export class DrawController {
   readonly scene = new EditorScene();
   readonly appState = new EditorAppState();
   activeTool = $state<Tool>("rectangle");
-  selectedId = $state<string | null>(null);
+  /** The set of selected element ids (reactive — drives the interactive overlay). */
+  readonly selectedIds = new SvelteSet<string>();
   editingTextId = $state<string | null>(null);
+
+  /** First selected id, for single-selection consumers (text editing, panels). */
+  get selectedId(): string | null {
+    for (const id of this.selectedIds) {
+      return id;
+    }
+    return null;
+  }
 
   #elements: ExcalidrawElement[] = [];
   #creating: ExcalidrawElement | null = null;
@@ -102,6 +119,16 @@ export class DrawController {
   #resizeOriginals = new Map<string, NonDeletedExcalidrawElement>();
   #resizeCenterX = 0;
   #resizeCenterY = 0;
+
+  // marquee (box) selection state
+  #marquee = false;
+  #marqueeOriginX = 0;
+  #marqueeOriginY = 0;
+  #marqueeBaseIds = new Set<string>();
+
+  // live modifier-key state for the active gesture (shift/alt)
+  #shiftKey = false;
+  #altKey = false;
 
   // image cache (fileId → loaded image) passed to renderConfig.imageCache
   readonly imageCache = makeImageCache();
@@ -168,8 +195,10 @@ export class DrawController {
     this.#elements = ordered;
     this.scene.replaceAllElements(ordered);
     this.appState.current = appState;
-    const selected = Object.keys(appState.selectedElementIds);
-    this.selectedId = selected.length ? selected[0]! : null;
+    this.selectedIds.clear();
+    for (const id of Object.keys(appState.selectedElementIds)) {
+      this.selectedIds.add(id);
+    }
     this.#syncHistoryFlags();
   }
 
@@ -285,19 +314,18 @@ export class DrawController {
   }
   setEdges(value: "sharp" | "round"): void {
     this.appState.setState({ currentItemRoundness: value });
-    const id = this.selectedId;
-    if (!id) {
+    const selected = this.selectedElements;
+    if (!selected.length) {
       return;
     }
     const map = this.scene.scene.getNonDeletedElementsMap();
-    const el = map.get(id);
-    if (el) {
+    for (const el of selected) {
       mutateElement(el, map, {
         roundness: value === "round" ? { type: ROUNDNESS.ADAPTIVE_RADIUS } : null,
       });
-      this.scene.scene.triggerUpdate();
-      this.#commit();
     }
+    this.scene.scene.triggerUpdate();
+    this.#commit();
   }
 
   get theme(): AppState["theme"] {
@@ -324,17 +352,16 @@ export class DrawController {
     appStatePatch: Partial<AppState>,
   ): void {
     this.appState.setState(appStatePatch);
-    const id = this.selectedId;
-    if (!id) {
+    const selected = this.selectedElements;
+    if (!selected.length) {
       return;
     }
     const map = this.scene.scene.getNonDeletedElementsMap();
-    const el = map.get(id);
-    if (el) {
+    for (const el of selected) {
       mutateElement(el, map, elementPatch);
-      this.scene.scene.triggerUpdate();
-      this.#commit();
     }
+    this.scene.scene.triggerUpdate();
+    this.#commit();
   }
 
   /** Style props applied to newly-created elements, from the current item defaults. */
@@ -444,8 +471,8 @@ export class DrawController {
       return;
     }
     this.#elements = this.#elements.filter((e) => e.id !== id);
-    if (this.selectedId === id) {
-      this.#select(null);
+    if (this.selectedIds.has(id)) {
+      this.#setSelection([...this.selectedIds].filter((s) => s !== id));
     }
     syncInvalidIndices(this.#elements);
     this.scene.replaceAllElements(this.#elements);
@@ -453,31 +480,33 @@ export class DrawController {
 
   /** Delete the selected element(s). */
   deleteSelected(): void {
-    const id = this.selectedId;
-    if (!id) {
+    const ids = this.selectedIds;
+    if (!ids.size) {
       return;
     }
-    this.#elements = this.#elements.filter((e) => e.id !== id);
+    this.#elements = this.#elements.filter((e) => !ids.has(e.id));
     this.#select(null);
     syncInvalidIndices(this.#elements);
     this.scene.replaceAllElements(this.#elements);
     this.#commit();
   }
 
-  /** Duplicate the selected element offset by (10,10) and select the copy. */
+  /** Duplicate the selected element(s) offset by (10,10) and select the copies. */
   duplicateSelected(): void {
-    const orig = this.selectedElements[0];
-    if (!orig) {
+    const originals = this.selectedElements;
+    if (!originals.length) {
       return;
     }
-    const copy = newElementWith(duplicateElement(null, new Map(), orig, true), {
-      x: orig.x + 10,
-      y: orig.y + 10,
-    });
-    this.#elements.push(copy);
+    const copies = originals.map((orig) =>
+      newElementWith(duplicateElement(null, new Map(), orig, true), {
+        x: orig.x + 10,
+        y: orig.y + 10,
+      }),
+    );
+    this.#elements.push(...copies);
     syncInvalidIndices(this.#elements);
     this.scene.replaceAllElements(this.#elements);
-    this.#select(copy.id);
+    this.#setSelection(copies.map((c) => c.id));
     this.#commit();
   }
 
@@ -497,8 +526,9 @@ export class DrawController {
 
   /** Selected elements, for the interactive overlay renderer. */
   get selectedElements(): readonly NonDeletedExcalidrawElement[] {
-    const id = this.selectedId;
-    return id ? this.scene.elements.filter((e) => e.id === id) : [];
+    return this.selectedIds.size
+      ? this.scene.elements.filter((e) => this.selectedIds.has(e.id))
+      : [];
   }
 
   #hitTest(sceneX: number, sceneY: number): string | null {
@@ -517,8 +547,29 @@ export class DrawController {
   }
 
   #select(id: string | null): void {
-    this.selectedId = id;
-    this.appState.setState({ selectedElementIds: id ? { [id]: true } : {} });
+    this.#setSelection(id ? [id] : []);
+  }
+
+  /** Replace the selection with exactly `ids` (keeps appState.selectedElementIds in sync). */
+  #setSelection(ids: readonly string[]): void {
+    this.selectedIds.clear();
+    for (const id of ids) {
+      this.selectedIds.add(id);
+    }
+    this.appState.setState({
+      selectedElementIds: Object.fromEntries(ids.map((id) => [id, true])),
+    });
+  }
+
+  /** Toggle a single element in/out of the current selection (shift-click). */
+  #toggleSelected(id: string): void {
+    const next = new Set(this.selectedIds);
+    if (next.has(id)) {
+      next.delete(id);
+    } else {
+      next.add(id);
+    }
+    this.#setSelection([...next]);
   }
 
   /** True if a scene point falls within the current selection's bounding box. */
@@ -540,16 +591,29 @@ export class DrawController {
     );
   }
 
-  /** Which transform handle (corner/edge/rotation) is under a scene point, if the element is selected. */
+  /** Which transform handle (corner/edge/rotation) is under a scene point, if the selection is hit. */
   #handleAt(x: number, y: number): TransformHandleType | null {
-    const sel = this.selectedElements[0];
-    if (!sel) {
+    const selected = this.selectedElements;
+    if (!selected.length) {
       return null;
     }
-    const handle = resizeTest(
-      sel,
-      this.scene.scene.getNonDeletedElementsMap(),
-      this.appState.current,
+    // single element: handles follow the element's own rotation/box
+    if (selected.length === 1) {
+      const handle = resizeTest(
+        selected[0]!,
+        this.scene.scene.getNonDeletedElementsMap(),
+        this.appState.current,
+        x,
+        y,
+        this.appState.current.zoom,
+        "mouse",
+        EDITOR_INTERFACE,
+      );
+      return handle || null;
+    }
+    // multi-select: handles wrap the (unrotated) common bounding box
+    const handle = getTransformHandleTypeFromCoords(
+      getCommonBounds(selected),
       x,
       y,
       this.appState.current.zoom,
@@ -557,6 +621,44 @@ export class DrawController {
       EDITOR_INTERFACE,
     );
     return handle || null;
+  }
+
+  /** Begin a marquee (box) selection from an empty-canvas drag. */
+  #beginMarquee(x: number, y: number): void {
+    this.#marquee = true;
+    this.#marqueeOriginX = x;
+    this.#marqueeOriginY = y;
+    // shift-drag extends the existing selection; plain drag replaces it
+    this.#marqueeBaseIds = this.#shiftKey ? new Set(this.selectedIds) : new Set();
+    this.appState.setState({
+      selectionElement: newElement({ type: "selection", x, y, width: 0, height: 0 }),
+    });
+  }
+
+  /** Grow the marquee to the pointer and select all enclosed elements. */
+  #updateMarquee(x: number, y: number): void {
+    const minX = Math.min(this.#marqueeOriginX, x);
+    const minY = Math.min(this.#marqueeOriginY, y);
+    const width = Math.abs(x - this.#marqueeOriginX);
+    const height = Math.abs(y - this.#marqueeOriginY);
+    const selectionElement = newElement({
+      type: "selection",
+      x: minX,
+      y: minY,
+      width,
+      height,
+    });
+    this.appState.setState({ selectionElement });
+    const enclosed = getElementsWithinSelection(
+      this.scene.elements,
+      selectionElement,
+      this.scene.scene.getNonDeletedElementsMap(),
+      false,
+    );
+    this.#setSelection([
+      ...this.#marqueeBaseIds,
+      ...enclosed.map((e) => e.id),
+    ]);
   }
 
   #beginResize(handle: TransformHandleType): void {
@@ -569,8 +671,10 @@ export class DrawController {
     this.#resizeCenterY = (y1 + y2) / 2;
   }
 
-  pointerDown(clientX: number, clientY: number): void {
+  pointerDown(clientX: number, clientY: number, mods: PointerMods = NO_MODS): void {
     const { x, y } = this.#toScene(clientX, clientY);
+    this.#shiftKey = mods.shiftKey;
+    this.#altKey = mods.altKey;
 
     if (this.activeTool === "selection") {
       // a transform handle on the current selection starts a resize/rotate...
@@ -579,19 +683,31 @@ export class DrawController {
         this.#beginResize(handle);
         return;
       }
-      // ...grabbing inside the current selection starts a move...
-      if (this.selectedId && this.#pointInSelection(x, y)) {
+      const hitId = this.#hitTest(x, y);
+      // shift toggles the hit element in/out of the selection (no move); shift on empty
+      // extends the selection via a marquee (base = current selection).
+      if (mods.shiftKey) {
+        if (hitId) {
+          this.#toggleSelected(hitId);
+        } else {
+          this.#beginMarquee(x, y);
+        }
+        return;
+      }
+      // grabbing inside the current selection (bbox or an element) starts a move...
+      if (this.selectedIds.size && this.#pointInSelection(x, y)) {
         this.#beginDrag(x, y);
         return;
       }
-      // ...otherwise hit-test for a new selection (which can then be dragged)
-      const hitId = this.#hitTest(x, y);
+      // ...hitting an element selects it and starts a drag...
       if (hitId) {
         this.#select(hitId);
         this.#beginDrag(x, y);
-      } else {
-        this.#select(null);
+        return;
       }
+      // ...empty canvas clears the selection and starts a marquee
+      this.#select(null);
+      this.#beginMarquee(x, y);
       return;
     }
 
@@ -665,7 +781,17 @@ export class DrawController {
     this.scene.replaceAllElements(this.#elements);
   }
 
-  pointerMove(clientX: number, clientY: number): void {
+  pointerMove(clientX: number, clientY: number, mods: PointerMods = NO_MODS): void {
+    this.#shiftKey = mods.shiftKey;
+    this.#altKey = mods.altKey;
+
+    // growing a marquee (box) selection
+    if (this.#marquee) {
+      const { x, y } = this.#toScene(clientX, clientY);
+      this.#updateMarquee(x, y);
+      return;
+    }
+
     // erasing along a drag
     if (this.#erasing) {
       const { x, y } = this.#toScene(clientX, clientY);
@@ -747,6 +873,14 @@ export class DrawController {
   }
 
   pointerUp(): void {
+    // end a marquee selection (selection is not a scene mutation → no history entry)
+    if (this.#marquee) {
+      this.#marquee = false;
+      this.#marqueeBaseIds = new Set();
+      this.appState.setState({ selectionElement: null });
+      return;
+    }
+
     // end an erase stroke
     if (this.#erasing) {
       this.#erasing = false;
