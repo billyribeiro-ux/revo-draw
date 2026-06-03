@@ -1,6 +1,6 @@
 {
 	"$schema": "https://schema.tauri.app/config/2",
-	"productName": "LayoutForge",
+	"productName": "revo-draw",
 	"version": "0.1.0",
 	"identifier": "com.layoutforge.app",
 	"build": {
@@ -12,7 +12,9 @@
 	"app": {
 		"windows": [
 			{
-				"title": "LayoutForge",
+				"label": "main",
+				"url": "/x",
+				"title": "revo-draw",
 				"width": 1440,
 				"height": 900,
 				"minWidth": 1024,
