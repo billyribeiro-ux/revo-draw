@@ -308,9 +308,27 @@ full style controls; localStorage persistence; dark mode; real icon toolbar; sta
 - **Evidence:** `pnpm check` 0/0 (916 files) · `pnpm test` 172 passing (104 pure + 68 runes) ·
   `pnpm build` clean · CDP marquee probe PASS + screenshot.
 
+- **🎉 MODIFIER KEYS FOR TRANSFORMS (Milestone B).** The resize/rotate gesture now threads the live
+  `shiftKey`/`altKey` (captured each `pointerMove`) into `transformElements`: **shift** →
+  `shouldMaintainAspectRatio` on resize + `shouldRotateWithDiscreteAngle` on rotate (snaps to
+  `SHIFT_LOCKING_ANGLE` = π/12 = 15°); **alt** → `shouldResizeFromCenter` (transform anchored at the
+  bbox center). The three previously-hardcoded `false`s are gone.
+  - **Browser-verified** (`scripts/probe-x-modifiers.mjs`): alt-resize kept the bbox center fixed at
+    (400,260) while growing 200×120 → 328×208; shift-resize preserved the 1.667 aspect ratio
+    (1.667 → 1.667); shift-rotate snapped to exactly 60° (4 × 15°). Screenshot confirms the rotated,
+    handle-decorated shape. Resize/rotate regression probe still PASS (no-modifier path unchanged).
+- **Evidence:** `pnpm check` 0/0 (916 files) · `pnpm test` 172 passing (104 pure + 68 runes) ·
+  `pnpm build` clean · CDP modifiers probe PASS + screenshot.
+
+**Known cosmetic gaps (out of scope for A/B):** the `Stats` panel doesn't live-update a selected
+element's geometry *during* a transform (the vendored element objects are mutated in place and aren't
+deeply reactive, so the same prop reference doesn't re-trigger child render) — display only; the
+transform mechanics themselves are correct (probes read the real element state). A couple of older
+probes (`probe-x-resize`/`-undo`) don't `clear()` first, so they can flake on restored localStorage
+from a prior run with the same user-data-dir; new probes call `clear()` at start.
+
 **Remaining for full parity (tracked, see `prompt.md` for the handoff):** laser tool (animated trail);
-modifier keys for transforms (shift aspect/15°-snap, alt from-center — Milestone B, modifiers already
-threaded); multi-point linear editor; export dialog (PNG/SVG); binding + snapping (Phase 7); Tauri (Phase 8).
+multi-point linear editor; export dialog (PNG/SVG); binding + snapping (Phase 7); Tauri (Phase 8).
 
 ---
 

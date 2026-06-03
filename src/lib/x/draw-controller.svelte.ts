@@ -807,9 +807,9 @@ export class DrawController {
         this.#resizeHandle,
         this.selectedElements,
         this.scene.scene,
-        false, // shouldRotateWithDiscreteAngle (shift)
-        false, // shouldResizeFromCenter (alt)
-        false, // shouldMaintainAspectRatio (shift)
+        this.#shiftKey, // shouldRotateWithDiscreteAngle (shift → 15° rotation snap)
+        this.#altKey, // shouldResizeFromCenter (alt → resize anchored at center)
+        this.#shiftKey, // shouldMaintainAspectRatio (shift → aspect-locked resize)
         x,
         y,
         this.#resizeCenterX,
