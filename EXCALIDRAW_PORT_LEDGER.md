@@ -421,6 +421,23 @@ full style controls; localStorage persistence; dark mode; real icon toolbar; sta
 - **Evidence:** `pnpm check` 0/0 (923 files) · `pnpm test` 172 passing · `pnpm build` clean ·
   CDP binding probe PASS + screenshot · **all 24 probes green**.
 
+- **🎉 FRAME TOOL (G) + ColorPicker hex fix — G COMPLETE.**
+  - **Frame:** `frame` tool drag-creates a `newFrameElement`; on finalize `getElementsInNewFrame` +
+    `addElementsToFrame` adopt the enclosed elements (they get `frameId` and clip to the frame via the
+    static renderer's `frameClip`). `#beginDrag` now also captures a dragged frame's children
+    (`getFrameChildren`) and the move loop iterates the full captured set, so **moving a frame moves its
+    contents**. Toolbar gets a frame icon.
+  - **ColorPicker hex:** fixed the double-`#` / validation bug — the input now holds digits only and
+    `commitHex` prepends `#`, so typing `00aa00` applies `#00aa00` to the current style + selection.
+  - **Browser-verified:** `probe-x-frame.mjs` — frame adopts the enclosed rect (`frameId` set), moving
+    the frame +100,+50 moves both frame and child; `probe-x-colorpicker.mjs` — `00aa00` → `#00aa00` on
+    style + element. Screenshots confirm.
+- **Evidence:** `pnpm check` 0/0 (923 files) · `pnpm test` 172 passing · `pnpm build` clean ·
+  CDP frame + colorpicker probes PASS + screenshots · **all 26 probes green**.
+
+  *Note: full frame parity (auto-membership while dragging elements into/out of a frame, the frame
+  name label/edit) is deferred — the create + clip + drag-with-contents core is done.*
+
 - **Verification-harness hardening (found while verifying C):** the older CDP probes didn't `clear()`
   localStorage first (so a restored element from a prior run leaked in as `elements[0]`) and lacked the
   cold-pointer warmup move; several also drew at x≈150 — *under the fixed left properties panel* — so
@@ -439,10 +456,10 @@ transform mechanics themselves are correct (probes read the real element state).
 probes (`probe-x-resize`/`-undo`) don't `clear()` first, so they can flake on restored localStorage
 from a prior run with the same user-data-dir; new probes call `clear()` at start.
 
-**Remaining for full parity (tracked, see `prompt.md` for the handoff):** binding + snapping
-(Phase 7); Tauri (Phase 8); misc polish (frame tool, z-order, copy/paste, grid). Done: marquee
-multi-select, transform modifiers, multi-point linear editing, PNG/SVG export, laser pointer
-(arrow binding/elbow deferred to Phase 7; SVG font inlining skipped — system-font fallback).
+**Remaining for full parity:** **Tauri (Phase 8)** only. Done (this stream): marquee multi-select,
+transform modifiers, multi-point linear editing, PNG/SVG export, laser pointer, z-order, grid,
+**object snapping (F)**, copy/paste, **arrow binding (F)**, ColorPicker hex, **frame tool (G)**.
+Deferred fidelity (noted): elbow arrows, frame name label + drag-in/out membership, SVG font inlining.
 
 ---
 

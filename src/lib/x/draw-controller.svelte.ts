@@ -6,12 +6,16 @@ import {
   deepCopyElement,
   duplicateElement,
   getCommonBounds,
+  addElementsToFrame,
   bindBindingElement,
+  getElementsInNewFrame,
   getElementsWithinSelection,
+  getFrameChildren,
   getHoveredElementForBinding,
   getTransformHandleTypeFromCoords,
   hitElementItself,
   isArrowElement,
+  isFrameLikeElement,
   isLinearElement,
   isTextElement,
   LinearElementEditor,
@@ -22,6 +26,7 @@ import {
   mutateElement,
   newElement,
   newElementWith,
+  newFrameElement,
   newFreeDrawElement,
   newLinearElement,
   newTextElement,
@@ -111,7 +116,8 @@ export type Tool =
   | "text"
   | "image"
   | "eraser"
-  | "laser";
+  | "laser"
+  | "frame";
 
 type CreateMode = "generic" | "freedraw" | "linear";
 
@@ -881,9 +887,19 @@ export class DrawController {
     this.#dragging = true;
     this.#dragStartX = x;
     this.#dragStartY = y;
-    this.#dragOrigins = new Map(
-      this.selectedElements.map((e) => [e.id, { x: e.x, y: e.y }]),
-    );
+    // capture origins for the selection — plus, for any selected frame, its children
+    // (dragging a frame drags its contents)
+    const origins = new Map<string, { x: number; y: number }>();
+    const all = this.scene.scene.getNonDeletedElements();
+    for (const e of this.selectedElements) {
+      origins.set(e.id, { x: e.x, y: e.y });
+      if (isFrameLikeElement(e)) {
+        for (const child of getFrameChildren(all, e.id)) {
+          origins.set(child.id, { x: child.x, y: child.y });
+        }
+      }
+    }
+    this.#dragOrigins = origins;
   }
 
   /** Which transform handle (corner/edge/rotation) is under a scene point, if the selection is hit. */
@@ -1245,6 +1261,9 @@ export class DrawController {
       }
       this.#creating = linear;
       this.#mode = "linear";
+    } else if (this.activeTool === "frame") {
+      this.#creating = newFrameElement({ x, y, width: 0, height: 0 });
+      this.#mode = "generic";
     } else {
       this.#creating = newElement({
         type: this.activeTool,
@@ -1350,11 +1369,13 @@ export class DrawController {
       this.appState.setState({ snapLines });
       const ox = dragOffset.x + snapOffset.x;
       const oy = dragOffset.y + snapOffset.y;
-      const moved = this.selectedElements;
-      for (const el of moved) {
-        const origin = this.#dragOrigins.get(el.id);
-        if (origin) {
+      // move every captured element (selection + any dragged frame's children)
+      const moved: NonDeletedExcalidrawElement[] = [];
+      for (const [id, origin] of this.#dragOrigins) {
+        const el = map.get(id);
+        if (el) {
           mutateElement(el, map, { x: origin.x + ox, y: origin.y + oy });
+          moved.push(el);
         }
       }
       // re-route any arrows bound to the moved shapes so they follow
@@ -1490,6 +1511,16 @@ export class DrawController {
       this.scene.replaceAllElements(this.#elements);
     } else if (mode === "linear" && isArrowElement(creating)) {
       this.#bindArrowEndpoints(creating as ExcalidrawArrowElement);
+    } else if (isFrameLikeElement(creating)) {
+      // a freshly-drawn frame adopts the elements enclosed within it (they then clip to it)
+      const inside = getElementsInNewFrame(
+        this.scene.scene.getElementsIncludingDeleted(),
+        creating,
+        this.scene.scene.getNonDeletedElementsMap(),
+      );
+      this.#elements = addElementsToFrame(this.#elements, inside, creating);
+      syncInvalidIndices(this.#elements);
+      this.scene.replaceAllElements(this.#elements);
     }
 
     // one durable history entry per completed gesture (no-op if nothing changed)

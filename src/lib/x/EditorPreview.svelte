@@ -54,6 +54,7 @@
     'freedraw',
     'image',
     'eraser',
+    'frame',
     'laser'
   ];
 

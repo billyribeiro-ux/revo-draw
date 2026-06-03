@@ -50,6 +50,9 @@ export const ICONS: Record<string, string> = {
 	// EraserIcon — tablerIconProps, inner group strokeWidth 1.5
 	eraser: `<svg ${tabler}><g stroke-width="1.5"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M19 20h-10.5l-4.21 -4.3a1 1 0 0 1 0 -1.41l10 -10a1 1 0 0 1 1.41 0l5 5a1 1 0 0 1 0 1.41l-9.2 9.3"/><path d="M18 13.3l-6.3 -6.3"/></g></svg>`,
 
+	// frameToolIcon — tablerIconProps (24x24), strokeWidth 1.5
+	frame: `<svg ${tabler}><g stroke-width="1.5"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M4 7l16 0"/><path d="M4 17l16 0"/><path d="M7 4l0 16"/><path d="M17 4l0 16"/></g></svg>`,
+
 	// laserPointerToolIcon — modifiedTablerIconProps (20x20), strokeWidth 1.25, rotated 90deg
 	laser: `<svg ${tablerSmall}><g stroke-width="1.25" transform="rotate(90 10 10)"><path d="m9.644 13.69 7.774-7.773a2.357 2.357 0 0 0-3.334-3.334l-7.773 7.774L8 12l1.643 1.69Z"/><path d="m13.25 3.417 3.333 3.333M10 10l2-2M5 15l3-3M2.156 17.894l1-1M5.453 19.029l-.144-1.407M2.377 11.887l.866 1.118M8.354 17.273l-1.194-.758M.953 14.652l1.408.13"/></g></svg>`,
 
