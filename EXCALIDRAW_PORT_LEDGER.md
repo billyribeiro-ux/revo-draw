@@ -261,9 +261,22 @@ Phase 3.
 full style controls; localStorage persistence; dark mode; real icon toolbar; stats; **pan/zoom**;
 **right-click context menu**; **main menu**; **help dialog (shortcuts)**.
 
-**Remaining for full parity (tracked):** wire `image-support.ts` (image tool) + `ColorPicker.svelte`
-(hex popover); eraser/laser tools; footer (zoom %); marquee multi-select + modifier keys; multi-point
-linear editor; export dialog (PNG/SVG); binding + snapping (Phase 7); Tauri (Phase 8).
+- **Image + eraser tools (wave 4 integration).** Wired `image-support.ts`: controller holds an
+  `imageCache` (passed to `renderConfig.imageCache`) + `placeImage(file,x,y)` (load → cache →
+  `createImageElement` scaled-to-fit → select); the image tool opens a hidden file `<input>` in
+  EditorPreview, then places the image at the click. Eraser: drag removes elements under the
+  pointer (`#eraseAt` hit-test, one history entry per stroke). **Browser-verified**
+  (`scripts/probe-x-imgerase.mjs`): drew 2 shapes → eraser-drag removed 1; a synthesized PNG was
+  placed + rendered (screenshot shows the image content + remaining ellipse). +1 controller test
+  (15 total).
+- **Evidence:** `pnpm check` 0/0 (916 files) · `pnpm test` 172 passing · `pnpm build` clean · CDP
+  image/eraser probe PASS.
+
+**Tools (9):** rectangle, ellipse, diamond, line, arrow, text, freedraw, **image**, **eraser**, selection.
+
+**Remaining for full parity (tracked):** `ColorPicker.svelte` hex popover; laser tool; footer (zoom %);
+marquee multi-select + modifier keys; multi-point linear editor; export dialog (PNG/SVG); binding +
+snapping (Phase 7); Tauri (Phase 8).
 
 ---
 

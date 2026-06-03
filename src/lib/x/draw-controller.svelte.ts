@@ -49,6 +49,11 @@ import {
   restoreFromLocalStorage,
   saveToLocalStorage,
 } from "$lib/x/persistence/web-storage.ts";
+import {
+  createImageElement,
+  loadImageFile,
+  makeImageCache,
+} from "$lib/x/image-support.ts";
 
 // Editor-interface shape used by resizeTest (handle sizing). Desktop/mouse defaults.
 const EDITOR_INTERFACE: EditorInterface = {
@@ -62,7 +67,14 @@ const EDITOR_INTERFACE: EditorInterface = {
 
 export type ShapeTool = "rectangle" | "ellipse" | "diamond";
 export type LinearTool = "line" | "arrow";
-export type Tool = "selection" | ShapeTool | "freedraw" | LinearTool | "text";
+export type Tool =
+  | "selection"
+  | ShapeTool
+  | "freedraw"
+  | LinearTool
+  | "text"
+  | "image"
+  | "eraser";
 
 type CreateMode = "generic" | "freedraw" | "linear";
 
@@ -90,6 +102,10 @@ export class DrawController {
   #resizeOriginals = new Map<string, NonDeletedExcalidrawElement>();
   #resizeCenterX = 0;
   #resizeCenterY = 0;
+
+  // image cache (fileId → loaded image) passed to renderConfig.imageCache
+  readonly imageCache = makeImageCache();
+  #erasing = false;
 
   // undo/redo (Store captures snapshots → durable increments → History stacks)
   #store: Store;
@@ -404,6 +420,37 @@ export class DrawController {
     this.#select(this.#hitTest(x, y));
   }
 
+  /** Load an image file and place it centered at a viewport point. */
+  async placeImage(file: File, clientX: number, clientY: number): Promise<void> {
+    const { fileId, mimeType, width, height, image } = await loadImageFile(file);
+    this.imageCache.set(fileId, { image, mimeType });
+    const { x, y } = this.#toScene(clientX, clientY);
+    const fit = Math.min(1, 400 / Math.max(width, height));
+    const w = width * fit;
+    const h = height * fit;
+    const el = createImageElement({ fileId, x: x - w / 2, y: y - h / 2, width: w, height: h });
+    this.#elements.push(el);
+    syncInvalidIndices(this.#elements);
+    this.scene.replaceAllElements(this.#elements);
+    this.#select(el.id);
+    this.activeTool = "selection";
+    this.scene.scene.triggerUpdate();
+    this.#commit();
+  }
+
+  #eraseAt(sceneX: number, sceneY: number): void {
+    const id = this.#hitTest(sceneX, sceneY);
+    if (!id) {
+      return;
+    }
+    this.#elements = this.#elements.filter((e) => e.id !== id);
+    if (this.selectedId === id) {
+      this.#select(null);
+    }
+    syncInvalidIndices(this.#elements);
+    this.scene.replaceAllElements(this.#elements);
+  }
+
   /** Delete the selected element(s). */
   deleteSelected(): void {
     const id = this.selectedId;
@@ -560,6 +607,18 @@ export class DrawController {
       return;
     }
 
+    // eraser: remove elements under the pointer (drag to erase a path)
+    if (this.activeTool === "eraser") {
+      this.#erasing = true;
+      this.#eraseAt(x, y);
+      return;
+    }
+
+    // image tool is handled by the view (it opens a file picker → placeImage)
+    if (this.activeTool === "image") {
+      return;
+    }
+
     // starting a new shape clears any current selection
     this.#select(null);
     this.#originX = x;
@@ -607,6 +666,13 @@ export class DrawController {
   }
 
   pointerMove(clientX: number, clientY: number): void {
+    // erasing along a drag
+    if (this.#erasing) {
+      const { x, y } = this.#toScene(clientX, clientY);
+      this.#eraseAt(x, y);
+      return;
+    }
+
     // resizing / rotating the current selection via a transform handle
     if (this.#resizeHandle) {
       const { x, y } = this.#toScene(clientX, clientY);
@@ -681,6 +747,13 @@ export class DrawController {
   }
 
   pointerUp(): void {
+    // end an erase stroke
+    if (this.#erasing) {
+      this.#erasing = false;
+      this.#commit();
+      return;
+    }
+
     // end a resize/rotate
     if (this.#resizeHandle) {
       this.#resizeHandle = null;

@@ -41,7 +41,21 @@
   let staticCanvas = $state<HTMLCanvasElement>();
   let interactiveCanvas = $state<HTMLCanvasElement>();
 
-  const tools: Tool[] = ['selection', 'rectangle', 'ellipse', 'diamond', 'line', 'arrow', 'text', 'freedraw'];
+  const tools: Tool[] = [
+    'selection',
+    'rectangle',
+    'ellipse',
+    'diamond',
+    'line',
+    'arrow',
+    'text',
+    'freedraw',
+    'image',
+    'eraser'
+  ];
+
+  let fileInput = $state<HTMLInputElement>();
+  let pendingImageAt: { x: number; y: number } | null = null;
 
   // Excalidraw's default palettes
   const strokeColors = ['#1e1e1e', '#e03131', '#2f9e44', '#1971c2', '#f08c00'];
@@ -75,7 +89,22 @@
       // ignore — capture is a best-effort optimization
     }
     const { x, y } = relative(e);
+    if (controller.activeTool === 'image') {
+      pendingImageAt = { x: e.clientX, y: e.clientY };
+      fileInput?.click();
+      return;
+    }
     controller.pointerDown(x, y);
+  }
+
+  async function onImagePicked(e: Event): Promise<void> {
+    const input = e.currentTarget as HTMLInputElement;
+    const file = input.files?.[0];
+    if (file && pendingImageAt) {
+      await controller.placeImage(file, pendingImageAt.x, pendingImageAt.y);
+    }
+    input.value = '';
+    pendingImageAt = null;
   }
 
   function onpointermove(e: PointerEvent): void {
@@ -174,7 +203,9 @@
 
     const renderConfig: StaticCanvasRenderConfig = {
       canvasBackgroundColor: appState.current.viewBackgroundColor,
-      imageCache: new Map(),
+      // image-support types mimeType as a plain string; the renderer wants the MIME union, and
+      // the loaded value is always a valid image MIME — only used for the SVG dark-mode case.
+      imageCache: controller.imageCache as unknown as StaticCanvasRenderConfig['imageCache'],
       renderGrid: false,
       isExporting: false,
       embedsValidationStatus: new Map(),
@@ -248,6 +279,14 @@
 </script>
 
 <svelte:window {onkeydown} />
+
+<input
+  bind:this={fileInput}
+  type="file"
+  accept="image/*"
+  style="display:none"
+  onchange={onImagePicked}
+/>
 
 <div class="excalidraw" class:theme--dark={controller.theme === 'dark'}>
   <div class="toolbar">
