@@ -32,6 +32,14 @@ import {
 
 import { ROUNDNESS, viewportCoordsToSceneCoords } from "@excalidraw/common";
 
+import {
+  getReferenceSnapPoints,
+  getVisibleGaps,
+  isSnappingEnabled,
+  SnapCache,
+  snapDraggedElements,
+} from "@excalidraw/excalidraw/snapping";
+
 import { pointFrom } from "@excalidraw/math";
 
 import { SvelteSet } from "svelte/reactivity";
@@ -101,9 +109,20 @@ export type Tool =
 
 type CreateMode = "generic" | "freedraw" | "linear";
 
-/** Live modifier-key state for a gesture (shift = aspect/snap, alt = from-center). */
-export type PointerMods = { shiftKey: boolean; altKey: boolean };
-const NO_MODS: PointerMods = { shiftKey: false, altKey: false };
+/** Live modifier-key state for a gesture (shift = aspect/snap, alt = from-center,
+ *  ctrl/meta = toggle object-snapping while dragging). */
+export type PointerMods = {
+  shiftKey: boolean;
+  altKey: boolean;
+  ctrlKey: boolean;
+  metaKey: boolean;
+};
+const NO_MODS: PointerMods = {
+  shiftKey: false,
+  altKey: false,
+  ctrlKey: false,
+  metaKey: false,
+};
 
 export class DrawController {
   readonly scene = new EditorScene();
@@ -282,6 +301,24 @@ export class DrawController {
       scrollX: (viewportX - a.offsetLeft) / nz - sceneX,
       scrollY: (viewportY - a.offsetTop) / nz - sceneY,
     });
+  }
+
+  /** Keep the live viewport size on appState (snapping/visibility checks read width/height). */
+  setViewport(width: number, height: number): void {
+    const a = this.appState.current;
+    if (a.width !== width || a.height !== height) {
+      this.appState.setState({ width, height });
+    }
+  }
+
+  get gridMode(): boolean {
+    return this.appState.current.gridModeEnabled;
+  }
+
+  /** Toggle the background grid (snapping-to-grid follows gridModeEnabled). */
+  toggleGrid(): void {
+    this.appState.setState({ gridModeEnabled: !this.appState.current.gridModeEnabled });
+    this.scene.scene.triggerUpdate();
   }
 
   resetView(): void {
@@ -880,7 +917,8 @@ export class DrawController {
     return this.appState.current.selectedLinearElement?.isEditing === true;
   }
 
-  /** The `app` surface the vendored LinearElementEditor reads (scene/state/grid). */
+  /** The `app` surface the vendored LinearElementEditor + snapping read
+   *  (scene / state / grid-size / props.gridModeEnabled). */
   #linearApp(): AppClassProperties {
     const self = this;
     return {
@@ -888,7 +926,9 @@ export class DrawController {
       get state(): AppState {
         return self.appState.current;
       },
-      getEffectiveGridSize: () => null,
+      getEffectiveGridSize: () =>
+        self.appState.current.gridModeEnabled ? self.appState.current.gridSize : null,
+      props: { gridModeEnabled: undefined },
     } as unknown as AppClassProperties;
   }
 
@@ -1220,13 +1260,44 @@ export class DrawController {
     // moving the current selection (origin-based, so no floating drift)
     if (this.#dragging) {
       const { x, y } = this.#toScene(clientX, clientY);
-      const dx = x - this.#dragStartX;
-      const dy = y - this.#dragStartY;
       const map = this.scene.scene.getNonDeletedElementsMap();
+      // object snapping: ⌘/Ctrl while dragging (or the grid/snap toggle) aligns to nearby
+      // edges/centers/gaps and shows guide lines; the returned snapOffset nudges the drag.
+      const dragOffset = { x: x - this.#dragStartX, y: y - this.#dragStartY };
+      const app = this.#linearApp();
+      const event = {
+        shiftKey: mods.shiftKey,
+        altKey: mods.altKey,
+        ctrlKey: mods.ctrlKey,
+        metaKey: mods.metaKey,
+      };
+      const selectedEls = [...this.selectedElements];
+      // prime the reference-points / gaps cache once per drag (App.tsx does the same lazily)
+      if (isSnappingEnabled({ event, app, selectedElements: selectedEls })) {
+        const all = [...this.scene.scene.getNonDeletedElements()];
+        if (!SnapCache.getReferenceSnapPoints()) {
+          SnapCache.setReferenceSnapPoints(
+            getReferenceSnapPoints(all, selectedEls, app.state, map),
+          );
+        }
+        if (!SnapCache.getVisibleGaps()) {
+          SnapCache.setVisibleGaps(getVisibleGaps(all, selectedEls, app.state, map));
+        }
+      }
+      const { snapOffset, snapLines } = snapDraggedElements(
+        this.scene.scene.getElementsIncludingDeleted() as ExcalidrawElement[],
+        dragOffset,
+        app,
+        event,
+        map,
+      );
+      this.appState.setState({ snapLines });
+      const ox = dragOffset.x + snapOffset.x;
+      const oy = dragOffset.y + snapOffset.y;
       for (const el of this.selectedElements) {
         const origin = this.#dragOrigins.get(el.id);
         if (origin) {
-          mutateElement(el, map, { x: origin.x + dx, y: origin.y + dy });
+          mutateElement(el, map, { x: origin.x + ox, y: origin.y + oy });
         }
       }
       this.scene.scene.triggerUpdate();
@@ -1310,6 +1381,10 @@ export class DrawController {
     if (this.#dragging) {
       this.#dragging = false;
       this.#dragOrigins.clear();
+      SnapCache.destroy(); // drop the per-drag reference-points/gaps cache
+      if (this.appState.current.snapLines.length) {
+        this.appState.setState({ snapLines: [] });
+      }
       this.#commit();
       return;
     }

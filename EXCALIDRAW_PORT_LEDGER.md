@@ -389,6 +389,24 @@ full style controls; localStorage persistence; dark mode; real icon toolbar; sta
 - **Evidence:** `pnpm check` 0/0 (923 files) · `pnpm test` 172 passing · `pnpm build` clean ·
   CDP z-order probe PASS · **all 21 probes green**.
 
+- **🎉 GRID MODE (G) + OBJECT SNAPPING (F, part 1).**
+  - **Grid:** controller `toggleGrid()`/`gridMode`; the static renderer's `renderGrid` now follows
+    `appState.gridModeEnabled` (grid size/step from appState). Menu item "Show/Hide grid" + `⌘'`.
+  - **Snapping:** wired the vendored `snapping.ts` into the move gesture — `PointerMods` extended with
+    `ctrlKey`/`metaKey`; on drag we prime `SnapCache` (`getReferenceSnapPoints`/`getVisibleGaps`, lazily,
+    exactly like App.tsx's `maybeCache*`), call `snapDraggedElements` for the `{snapOffset, snapLines}`,
+    nudge the drag by `snapOffset` and publish `snapLines` (the interactive renderer draws the guides);
+    `SnapCache.destroy()` + clear `snapLines` on pointer-up. Enabled by **⌘/Ctrl while dragging**
+    (or the snap/grid toggle), per `isSnappingEnabled`. **Also fixed:** `appState.width/height` were 0,
+    so the snap visibility filter saw no reference elements — added `setViewport(w,h)` (the view keeps
+    the live canvas size on appState).
+  - **Browser-verified** (`scripts/probe-x-snap.mjs`): grid toggle flips `gridModeEnabled` and adds
+    80k grid pixels; a free drag lands at the raw offset (x=303, no guides) while a ⌘-drag snaps the
+    element's edge to the neighbour (x=300) with 3 snap lines, cleared on release. Screenshot shows the
+    red alignment guide.
+- **Evidence:** `pnpm check` 0/0 (923 files) · `pnpm test` 172 passing · `pnpm build` clean ·
+  CDP grid+snap probe PASS + screenshot · **all 22 probes green**.
+
 - **Verification-harness hardening (found while verifying C):** the older CDP probes didn't `clear()`
   localStorage first (so a restored element from a prior run leaked in as `elements[0]`) and lacked the
   cold-pointer warmup move; several also drew at x≈150 — *under the fixed left properties panel* — so

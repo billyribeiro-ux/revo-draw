@@ -98,7 +98,12 @@
       fileInput?.click();
       return;
     }
-    controller.pointerDown(x, y, { shiftKey: e.shiftKey, altKey: e.altKey });
+    controller.pointerDown(x, y, {
+      shiftKey: e.shiftKey,
+      altKey: e.altKey,
+      ctrlKey: e.ctrlKey,
+      metaKey: e.metaKey
+    });
   }
 
   async function onImagePicked(e: Event): Promise<void> {
@@ -113,7 +118,12 @@
 
   function onpointermove(e: PointerEvent): void {
     const { x, y } = relative(e);
-    controller.pointerMove(x, y, { shiftKey: e.shiftKey, altKey: e.altKey });
+    controller.pointerMove(x, y, {
+      shiftKey: e.shiftKey,
+      altKey: e.altKey,
+      ctrlKey: e.ctrlKey,
+      metaKey: e.metaKey
+    });
   }
 
   function onpointerup(): void {
@@ -158,6 +168,7 @@
     { label: 'Reset view', action: () => controller.resetView() },
     'separator' as const,
     { label: 'Save as image…', action: () => (exportOpen = true) },
+    { label: controller.gridMode ? 'Hide grid' : 'Show grid', action: () => controller.toggleGrid() },
     'separator' as const,
     { label: controller.theme === 'dark' ? 'Light mode' : 'Dark mode', action: () => controller.toggleTheme() },
     { label: 'Keyboard shortcuts', action: () => (helpOpen = true) }
@@ -197,6 +208,9 @@
         controller.undo();
       }
       e.preventDefault();
+    } else if ((e.metaKey || e.ctrlKey) && e.key === "'") {
+      controller.toggleGrid();
+      e.preventDefault();
     } else if (e.key === '?') {
       helpOpen = true;
     }
@@ -224,6 +238,8 @@
     }
     const scale = window.devicePixelRatio || 1;
     const { width, height } = sizeCanvas(el, scale);
+    // keep appState's viewport size current so snapping/visibility checks work
+    controller.setViewport(width, height);
     const visibleElements = scene.elements;
     const elementsMap = scene.scene.getNonDeletedElementsMap();
 
@@ -232,7 +248,7 @@
       // image-support types mimeType as a plain string; the renderer wants the MIME union, and
       // the loaded value is always a valid image MIME — only used for the SVG dark-mode case.
       imageCache: controller.imageCache as unknown as StaticCanvasRenderConfig['imageCache'],
-      renderGrid: false,
+      renderGrid: appState.current.gridModeEnabled,
       isExporting: false,
       embedsValidationStatus: new Map(),
       elementsPendingErasure: new Set(),
