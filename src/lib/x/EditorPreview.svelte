@@ -116,8 +116,11 @@
     pendingImageAt = null;
   }
 
+  let lastPointer = { x: 0, y: 0 };
+
   function onpointermove(e: PointerEvent): void {
-    const { x, y } = relative(e);
+    lastPointer = relative(e);
+    const { x, y } = lastPointer;
     controller.pointerMove(x, y, {
       shiftKey: e.shiftKey,
       altKey: e.altKey,
@@ -157,6 +160,10 @@
     { label: 'Send backward', shortcut: '⌘[', action: () => controller.sendBackward() },
     { label: 'Send to back', shortcut: '⌘⇧[', action: () => controller.sendToBack() },
     'separator' as const,
+    { label: 'Copy', shortcut: '⌘C', action: () => controller.copySelected() },
+    { label: 'Cut', shortcut: '⌘X', action: () => controller.cutSelected() },
+    { label: 'Paste', shortcut: '⌘V', action: () => controller.paste(contextAt?.x, contextAt?.y) },
+    'separator' as const,
     { label: 'Duplicate', shortcut: '⌘D', action: () => controller.duplicateSelected() },
     { label: 'Delete', shortcut: 'Del', action: () => controller.deleteSelected() },
     'separator' as const,
@@ -186,6 +193,15 @@
       controller.deselect();
     } else if ((e.metaKey || e.ctrlKey) && (e.key === 'd' || e.key === 'D')) {
       controller.duplicateSelected();
+      e.preventDefault();
+    } else if ((e.metaKey || e.ctrlKey) && (e.key === 'c' || e.key === 'C')) {
+      controller.copySelected();
+      e.preventDefault();
+    } else if ((e.metaKey || e.ctrlKey) && (e.key === 'x' || e.key === 'X')) {
+      controller.cutSelected();
+      e.preventDefault();
+    } else if ((e.metaKey || e.ctrlKey) && (e.key === 'v' || e.key === 'V')) {
+      controller.paste(lastPointer.x, lastPointer.y);
       e.preventDefault();
     } else if ((e.metaKey || e.ctrlKey) && e.key === ']') {
       if (e.shiftKey) {

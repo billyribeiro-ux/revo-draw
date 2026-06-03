@@ -175,6 +175,9 @@ export class DrawController {
   // laser pointer — an ephemeral rAF-driven SVG trail (NOT in #elements/history)
   #laser: LaserTrails | null = null;
 
+  // in-memory clipboard for copy / cut / paste (deep-copied element snapshots)
+  #clipboard: ExcalidrawElement[] = [];
+
   // image cache (fileId → loaded image) passed to renderConfig.imageCache
   readonly imageCache = makeImageCache();
   #erasing = false;
@@ -728,6 +731,53 @@ export class DrawController {
     this.#reorder(
       moveAllLeft(this.scene.scene.getElementsIncludingDeleted(), this.appState.current),
     );
+  }
+
+  // --- clipboard (copy / cut / paste) ---
+
+  get canPaste(): boolean {
+    return this.#clipboard.length > 0;
+  }
+
+  /** Copy the selected element(s) into the in-memory clipboard. */
+  copySelected(): void {
+    this.#clipboard = this.selectedElements.map((e) => deepCopyElement(e));
+  }
+
+  /** Copy then delete the selection. */
+  cutSelected(): void {
+    if (!this.selectedIds.size) {
+      return;
+    }
+    this.copySelected();
+    this.deleteSelected();
+  }
+
+  /** Paste the clipboard centered at a viewport point (or offset by +10,+10). */
+  paste(clientX?: number, clientY?: number): void {
+    if (!this.#clipboard.length) {
+      return;
+    }
+    const [x1, y1, x2, y2] = getCommonBounds(this.#clipboard);
+    let dx = 10;
+    let dy = 10;
+    if (clientX != null && clientY != null) {
+      const { x, y } = this.#toScene(clientX, clientY);
+      dx = x - (x1 + x2) / 2;
+      dy = y - (y1 + y2) / 2;
+    }
+    const copies = this.#clipboard.map((orig) =>
+      newElementWith(duplicateElement(null, new Map(), orig, true), {
+        x: orig.x + dx,
+        y: orig.y + dy,
+      }),
+    );
+    this.#elements.push(...copies);
+    syncInvalidIndices(this.#elements);
+    this.scene.replaceAllElements(this.#elements);
+    this.#setSelection(copies.map((c) => c.id));
+    this.activeTool = "selection";
+    this.#commit();
   }
 
   /** Duplicate the selected element(s) offset by (10,10) and select the copies. */
