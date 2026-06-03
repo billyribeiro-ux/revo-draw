@@ -438,6 +438,30 @@ full style controls; localStorage persistence; dark mode; real icon toolbar; sta
   *Note: full frame parity (auto-membership while dragging elements into/out of a frame, the frame
   name label/edit) is deferred — the create + clip + drag-with-contents core is done.*
 
+- **🎉 TAURI DESKTOP (Phase 8 / milestone H).** The desktop app now **is** the Excalidraw port,
+  with web behaviour parity and the web routes untouched.
+  - **Window → port:** `tauri.conf.json` window gets `label: "main"`, `url: "/x"`, `title/productName
+    "revo-draw"` — so the desktop window loads the exact same `EditorPreview` the web serves at `/x`
+    (no new UI, no layout fork). The web routes (`/` LayoutForge, `/x` port) are **unchanged**.
+  - **Persistence parity for free:** the port persists via `localStorage`, which the Tauri webview
+    keeps in its app-data dir — identical code path, identical behaviour, no refactor.
+  - **Export — the one real platform difference:** `<a download>` doesn't write a file in a WKWebView,
+    so `downloadBlob` now branches on `isTauri` → native `plugin-dialog` `save` + `plugin-fs`
+    `writeFile` (caps already scoped to Desktop/Documents/Downloads/AppData). The web branch is
+    byte-identical (`<a download>`); the Tauri plugins are dynamic-imported so the web bundle never
+    loads them.
+  - **Verified:** `pnpm check` 0/0 · web `pnpm build` clean · **all 26 web probes green from clean
+    profiles** (web provably untouched) · `pnpm tauri build --no-bundle` produced the release binary
+    (13 MB) — the full pipeline (web build → Rust release → embedded conf with `url:"/x"`) compiles.
+    CDP can't drive the native WKWebView, so desktop *runtime* checks (window shows port, save dialog,
+    restore-on-relaunch, image picker, overlay title bar, fonts) are enumerated in
+    `NEEDS_HUMAN_TESTING.md` → "Excalidraw port — Tauri desktop".
+  - **Deferred (noted):** real file-based documents (open/save `.excalidraw` via plugin-fs/sql vs
+    localStorage) and retiring the legacy LayoutForge at `/` (left intact so web `/` is untouched; the
+    desktop window simply doesn't load it).
+- **Evidence:** `pnpm check` 0/0 (923 files) · `pnpm test` 172 passing · web `pnpm build` clean ·
+  `pnpm tauri build --no-bundle` PASS (release binary built) · all 26 web probes green.
+
 - **Verification-harness hardening (found while verifying C):** the older CDP probes didn't `clear()`
   localStorage first (so a restored element from a prior run leaked in as `elements[0]`) and lacked the
   cold-pointer warmup move; several also drew at x≈150 — *under the fixed left properties panel* — so
@@ -456,10 +480,12 @@ transform mechanics themselves are correct (probes read the real element state).
 probes (`probe-x-resize`/`-undo`) don't `clear()` first, so they can flake on restored localStorage
 from a prior run with the same user-data-dir; new probes call `clear()` at start.
 
-**Remaining for full parity:** **Tauri (Phase 8)** only. Done (this stream): marquee multi-select,
-transform modifiers, multi-point linear editing, PNG/SVG export, laser pointer, z-order, grid,
-**object snapping (F)**, copy/paste, **arrow binding (F)**, ColorPicker hex, **frame tool (G)**.
-Deferred fidelity (noted): elbow arrows, frame name label + drag-in/out membership, SVG font inlining.
+**All of `prompt.md` §4 (A–H) is now implemented & verified.** Done (this stream): marquee
+multi-select, transform modifiers, multi-point linear editing, PNG/SVG export, laser pointer,
+z-order, grid, **object snapping (F)**, copy/paste, **arrow binding (F)**, ColorPicker hex,
+**frame tool (G)**, **Tauri desktop (H)**. Deferred fidelity (noted, not blocking): elbow arrows,
+frame name label + drag-in/out membership, SVG font inlining, Tauri file-based documents +
+LayoutForge retirement. Desktop runtime is human-tested (`NEEDS_HUMAN_TESTING.md`).
 
 ---
 

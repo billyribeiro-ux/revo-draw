@@ -57,3 +57,38 @@ app with `pnpm tauri dev`.
 
 Everything else (build, type-safety, API correctness, determinism of the export, file
 round-trip logic, offline icon loading) is verified-correct in code and by the automated checks.
+
+---
+
+## Excalidraw port — Tauri desktop (Phase 8 / milestone H)
+
+The Excalidraw port (`src/lib/x/`, route `/x`) is mounted into the Tauri desktop window: the
+window now loads `/x` (`tauri.conf.json` `app.windows[0].url`), so the desktop app **is** the
+Excalidraw editor — the exact same `EditorPreview` the web serves. The web routes are unchanged
+(verified: all 26 `scripts/probe-x-*.mjs` probes green from clean profiles, `pnpm build` clean).
+
+Automated-verified for this milestone: `pnpm check` 0/0, web build clean, all web probes green,
+and the Tauri Rust shell + embedded `tauri.conf.json` compile (`cargo check` runs `tauri-build`).
+CDP cannot drive the native macOS WKWebView window, so the **desktop runtime** needs your hands —
+run `pnpm tauri dev` (or open the built app) and confirm these behave exactly like the web `/x`:
+
+1. **Window shows the port.** The desktop window opens on the Excalidraw editor (toolbar, panels,
+   canvas) — not the old LayoutForge UI. It should look pixel-identical to http://localhost:1420/x .
+2. **Persistence parity (localStorage in the webview).** Draw a few shapes → quit the app →
+   relaunch → the drawing is restored (the port uses `localStorage`, which the Tauri webview
+   persists in its app-data dir — same code path as web).
+3. **Export saves a real file (the one genuine platform difference).** Menu → "Save as image…" →
+   PNG/SVG → a **native save dialog** appears and writes the file to the chosen location.
+   (On web this is an `<a download>`; in Tauri `downloadBlob` routes through `plugin-dialog` `save`
+   + `plugin-fs` `writeFile`. fs scope already allows Desktop/Documents/Downloads/AppData.)
+4. **Image import.** Image tool → the native file picker opens → the picked image is placed.
+   (Uses the webview's `<input type=file>`; if it doesn't open a picker on your macOS/WKWebView,
+   switch it to `plugin-dialog` `open` — note it here.)
+5. **Overlay title bar.** `titleBarStyle: Overlay` + `hiddenTitle`: confirm the macOS traffic-light
+   buttons (top-left) don't obscure the left properties panel / toolbar, and the window is draggable.
+6. **Text fonts under CSP.** Text tool → typed text renders in the expected hand-drawn font (or a
+   clean fallback). The CSP allows `font-src 'self' data:` only — if Excalifont fails to load, note it.
+
+Deferred (not required for behaviour parity, tracked): real **file-based** documents (open/save
+`.excalidraw` via plugin-fs/sql instead of localStorage), and retiring the legacy LayoutForge app at
+`/` (left intact so the web `/` route is untouched; the desktop window simply doesn't load it).

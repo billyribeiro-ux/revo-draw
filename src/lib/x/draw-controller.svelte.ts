@@ -604,7 +604,7 @@ export class DrawController {
     const blob = await this.exportToPngBlob();
     if (blob) {
       const { downloadBlob } = await import("$lib/x/export-image.ts");
-      downloadBlob(blob, "drawing.png");
+      await downloadBlob(blob, "drawing.png");
     }
   }
 
@@ -613,7 +613,7 @@ export class DrawController {
     const svg = await this.exportToSvgString();
     if (svg) {
       const { downloadBlob } = await import("$lib/x/export-image.ts");
-      downloadBlob(new Blob([svg], { type: "image/svg+xml" }), "drawing.svg");
+      await downloadBlob(new Blob([svg], { type: "image/svg+xml" }), "drawing.svg");
     }
   }
 

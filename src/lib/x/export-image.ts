@@ -4,6 +4,8 @@
 // fallback) — the geometry, colours and hand-drawn strokes are identical to the on-canvas scene.
 import rough from "roughjs/bin/rough";
 
+import { isTauri } from "$lib/platform.ts";
+
 import { renderStaticScene } from "@excalidraw/excalidraw/renderer/staticScene";
 import { renderSceneToSvg } from "@excalidraw/excalidraw/renderer/staticSvgScene";
 
@@ -168,8 +170,21 @@ export function exportToSvg(
   return svgRoot;
 }
 
-/** Trigger a browser download of a blob. */
-export function downloadBlob(blob: Blob, filename: string): void {
+/**
+ * Save a blob. On the web this is a normal `<a download>` browser download. Inside the Tauri
+ * desktop webview `<a download>` doesn't write a file, so we route through the native save dialog
+ * + plugin-fs instead — same user-facing behaviour (pick a location, file is written).
+ */
+export async function downloadBlob(blob: Blob, filename: string): Promise<void> {
+  if (isTauri) {
+    const { save } = await import("@tauri-apps/plugin-dialog");
+    const { writeFile } = await import("@tauri-apps/plugin-fs");
+    const path = await save({ defaultPath: filename });
+    if (path) {
+      await writeFile(path, new Uint8Array(await blob.arrayBuffer()));
+    }
+    return;
+  }
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
