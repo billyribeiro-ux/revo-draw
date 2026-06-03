@@ -9,7 +9,9 @@ import {
   getElementsWithinSelection,
   getTransformHandleTypeFromCoords,
   hitElementItself,
+  isLinearElement,
   isTextElement,
+  LinearElementEditor,
   mutateElement,
   newElement,
   newElementWith,
@@ -45,7 +47,12 @@ import type {
 } from "@excalidraw/element/types";
 import type { GlobalPoint, LocalPoint } from "@excalidraw/math";
 import type { EditorInterface } from "@excalidraw/common";
-import type { App, AppState, NormalizedZoomValue } from "@excalidraw/excalidraw/types";
+import type {
+  App,
+  AppClassProperties,
+  AppState,
+  NormalizedZoomValue,
+} from "@excalidraw/excalidraw/types";
 
 import { EditorAppState } from "$lib/state/app-state.svelte.ts";
 import { EditorScene } from "$lib/scene/editor-scene.svelte.ts";
@@ -129,6 +136,10 @@ export class DrawController {
   // live modifier-key state for the active gesture (shift/alt)
   #shiftKey = false;
   #altKey = false;
+
+  // multi-point linear (line/arrow) editing — the editor lives on
+  // appState.selectedLinearElement; this flags an in-progress point drag.
+  #linearPointerActive = false;
 
   // image cache (fileId → loaded image) passed to renderConfig.imageCache
   readonly imageCache = makeImageCache();
@@ -223,6 +234,10 @@ export class DrawController {
   }
 
   setTool(tool: Tool): void {
+    // leaving the selection tool exits any active point-editor (its handles must vanish)
+    if (tool !== "selection" && this.appState.current.selectedLinearElement) {
+      this.appState.setState({ selectedLinearElement: null });
+    }
     this.activeTool = tool;
   }
 
@@ -428,8 +443,11 @@ export class DrawController {
     this.activeTool = "selection";
   }
 
-  /** Clear the current selection. */
+  /** Clear the current selection (and exit any point-editor). */
   deselect(): void {
+    if (this.appState.current.selectedLinearElement) {
+      this.appState.setState({ selectedLinearElement: null });
+    }
     this.#select(null);
   }
 
@@ -478,8 +496,31 @@ export class DrawController {
     this.scene.replaceAllElements(this.#elements);
   }
 
-  /** Delete the selected element(s). */
+  /** Delete the selected element(s) — or, while point-editing, the selected point(s). */
   deleteSelected(): void {
+    // point-editing: delete selected points (keep ≥2 so the element stays valid)
+    const editor = this.appState.current.selectedLinearElement;
+    if (editor?.isEditing && editor.selectedPointsIndices?.length) {
+      const el = this.scene.scene.getNonDeletedElementsMap().get(editor.elementId);
+      if (
+        el &&
+        isLinearElement(el) &&
+        el.points.length - editor.selectedPointsIndices.length >= 2
+      ) {
+        LinearElementEditor.deletePoints(
+          el,
+          this.#linearApp(),
+          editor.selectedPointsIndices,
+        );
+        this.appState.setState({
+          selectedLinearElement: { ...editor, selectedPointsIndices: null },
+        });
+        this.scene.scene.triggerUpdate();
+        this.#commit();
+      }
+      return;
+    }
+
     const ids = this.selectedIds;
     if (!ids.size) {
       return;
@@ -671,10 +712,187 @@ export class DrawController {
     this.#resizeCenterY = (y1 + y2) / 2;
   }
 
+  // --- multi-point linear (line/arrow) editor ---
+
+  /** True while a line/arrow is in point-editing mode (point handles shown). */
+  get isLineEditing(): boolean {
+    return this.appState.current.selectedLinearElement?.isEditing === true;
+  }
+
+  /** The `app` surface the vendored LinearElementEditor reads (scene/state/grid). */
+  #linearApp(): AppClassProperties {
+    const self = this;
+    return {
+      scene: this.scene.scene,
+      get state(): AppState {
+        return self.appState.current;
+      },
+      getEffectiveGridSize: () => null,
+    } as unknown as AppClassProperties;
+  }
+
+  /** A structural pointer event carrying just the modifiers the editor inspects. */
+  #linearEvent(mods: PointerMods): PointerEvent {
+    return {
+      shiftKey: mods.shiftKey,
+      altKey: mods.altKey,
+      metaKey: false,
+      ctrlKey: false,
+      pointerType: "mouse",
+    } as unknown as PointerEvent;
+  }
+
+  /** Enter point-editing for the single selected line/arrow (double-click). */
+  enterLineEditor(): void {
+    const selected = this.selectedElements;
+    if (selected.length !== 1) {
+      return;
+    }
+    const el = selected[0]!;
+    if (!isLinearElement(el)) {
+      return;
+    }
+    this.appState.setState({
+      selectedLinearElement: new LinearElementEditor(
+        el,
+        this.scene.scene.getNonDeletedElementsMap(),
+        true,
+      ),
+    });
+    this.scene.scene.triggerUpdate();
+  }
+
+  /** Leave point-editing mode. */
+  exitLineEditor(): void {
+    if (this.appState.current.selectedLinearElement) {
+      this.appState.setState({ selectedLinearElement: null });
+      this.scene.scene.triggerUpdate();
+    }
+  }
+
+  /** Pointer-down while editing a linear element. Returns true if it handled the event. */
+  #linearPointerDown(x: number, y: number, mods: PointerMods): boolean {
+    const editor = this.appState.current.selectedLinearElement;
+    if (!editor?.isEditing) {
+      return false;
+    }
+    const ret = LinearElementEditor.handlePointerDown(
+      this.#linearEvent(mods) as unknown as Parameters<
+        typeof LinearElementEditor.handlePointerDown
+      >[0],
+      this.#linearApp(),
+      this.#store,
+      { x, y },
+      editor,
+      this.scene.scene,
+    );
+    if (ret.linearElementEditor) {
+      this.appState.setState({ selectedLinearElement: ret.linearElementEditor });
+    }
+    // clicked a point / segment-midpoint (or added one) → begin a point drag
+    if (ret.hitElement || ret.didAddPoint) {
+      this.#linearPointerActive = true;
+      this.scene.scene.triggerUpdate();
+      return true;
+    }
+    // clicked the element body (no point) → keep editing, no drag
+    if (this.#hitTest(x, y) === editor.elementId) {
+      this.scene.scene.triggerUpdate();
+      return true;
+    }
+    // clicked empty space → leave the editor and let normal selection take over
+    this.exitLineEditor();
+    return false;
+  }
+
+  /** Pointer-move while dragging a point (or about to add a segment midpoint). */
+  #linearPointerMove(x: number, y: number, mods: PointerMods): void {
+    const editor = this.appState.current.selectedLinearElement;
+    if (!editor?.isEditing) {
+      return;
+    }
+    const app = this.#linearApp();
+    const elementsMap = this.scene.scene.getNonDeletedElementsMap();
+
+    if (
+      LinearElementEditor.shouldAddMidpoint(
+        editor,
+        { x, y },
+        this.appState.current,
+        elementsMap,
+      )
+    ) {
+      const ret = LinearElementEditor.addMidpoint(
+        editor,
+        { x, y },
+        app,
+        true,
+        this.scene.scene,
+      );
+      if (ret) {
+        this.appState.setState({
+          selectedLinearElement: {
+            ...editor,
+            initialState: ret.pointerDownState,
+            selectedPointsIndices: ret.selectedPointsIndices,
+            segmentMidPointHoveredCoords: null,
+          },
+        });
+      }
+      this.scene.scene.triggerUpdate();
+      return;
+    }
+    // a segment-midpoint drag below the add threshold — wait
+    if (
+      editor.initialState.segmentMidpoint.value !== null &&
+      !editor.initialState.segmentMidpoint.added
+    ) {
+      return;
+    }
+    if (editor.initialState.lastClickedPoint > -1) {
+      const newState = LinearElementEditor.handlePointDragging(
+        this.#linearEvent(mods),
+        app,
+        x,
+        y,
+        editor,
+      );
+      if (newState) {
+        this.appState.setState(newState);
+      }
+      this.scene.scene.triggerUpdate();
+    }
+  }
+
+  /** Pointer-up ending a point drag. */
+  #linearPointerUp(): void {
+    this.#linearPointerActive = false;
+    const editor = this.appState.current.selectedLinearElement;
+    if (!editor?.isEditing) {
+      return;
+    }
+    const next = LinearElementEditor.handlePointerUp(
+      this.#linearEvent(NO_MODS),
+      editor,
+      this.appState.current,
+      this.scene.scene,
+    );
+    this.appState.setState({ selectedLinearElement: next });
+    this.#commit();
+  }
+
   pointerDown(clientX: number, clientY: number, mods: PointerMods = NO_MODS): void {
     const { x, y } = this.#toScene(clientX, clientY);
     this.#shiftKey = mods.shiftKey;
     this.#altKey = mods.altKey;
+
+    // point-editing a linear element intercepts the selection tool
+    if (this.activeTool === "selection" && this.isLineEditing) {
+      if (this.#linearPointerDown(x, y, mods)) {
+        return;
+      }
+      // fell through (clicked empty + exited editor) → normal selection below
+    }
 
     if (this.activeTool === "selection") {
       // a transform handle on the current selection starts a resize/rotate...
@@ -785,6 +1003,13 @@ export class DrawController {
     this.#shiftKey = mods.shiftKey;
     this.#altKey = mods.altKey;
 
+    // dragging a point of a linear element being edited
+    if (this.#linearPointerActive) {
+      const { x, y } = this.#toScene(clientX, clientY);
+      this.#linearPointerMove(x, y, mods);
+      return;
+    }
+
     // growing a marquee (box) selection
     if (this.#marquee) {
       const { x, y } = this.#toScene(clientX, clientY);
@@ -873,6 +1098,12 @@ export class DrawController {
   }
 
   pointerUp(): void {
+    // end a linear-element point drag
+    if (this.#linearPointerActive) {
+      this.#linearPointerUp();
+      return;
+    }
+
     // end a marquee selection (selection is not a scene mutation → no history entry)
     if (this.#marquee) {
       this.#marquee = false;

@@ -21,11 +21,14 @@ const mouse = (type, x, y, buttons) => send('Input.dispatchMouseEvent', { type, 
 const drag = async (x1, y1, x2, y2) => { await mouse('mousePressed', x1, y1, 1); await sleep(25); await mouse('mouseMoved', (x1+x2)/2, (y1+y2)/2, 1); await sleep(20); await mouse('mouseMoved', x2, y2, 1); await sleep(25); await mouse('mouseReleased', x2, y2, 0); await sleep(40); };
 
 for (let i = 0; i < 80; i++) { if ((await ev('!!window.__draw')) === true) break; await sleep(250); }
+// fresh scene: clear any element restored from a prior run’s localStorage
+await ev(`window.__draw.clear()`);
+await mouse("mouseMoved", 200, 200, 0); // warm the pointer (CDP cold-pointer: first event must be a move)
 
 await ev(`window.__draw.setTool('line')`);
-await drag(150, 200, 360, 320);
+await drag(250, 200, 430, 320); // x>=250 clears the fixed left properties panel
 await ev(`window.__draw.setTool('arrow')`);
-await drag(420, 220, 640, 360);
+await drag(480, 220, 700, 360);
 
 const info = await ev(`(() => {
   const els = window.__draw.scene.elements;

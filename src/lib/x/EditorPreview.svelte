@@ -432,6 +432,7 @@
     {onpointerup}
     {onwheel}
     {oncontextmenu}
+    ondblclick={() => controller.enterLineEditor()}
   ></canvas>
 
   {#if controller.editingText}

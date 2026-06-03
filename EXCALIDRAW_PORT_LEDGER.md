@@ -320,15 +320,45 @@ full style controls; localStorage persistence; dark mode; real icon toolbar; sta
 - **Evidence:** `pnpm check` 0/0 (916 files) · `pnpm test` 172 passing (104 pure + 68 runes) ·
   `pnpm build` clean · CDP modifiers probe PASS + screenshot.
 
-**Known cosmetic gaps (out of scope for A/B):** the `Stats` panel doesn't live-update a selected
+- **🎉 MULTI-POINT LINE/ARROW EDITOR (Milestone C).** Wired the vendored `LinearElementEditor`
+  (a static-method class operating on an immutable editor value stored in `appState.selectedLinearElement`).
+  The vendored interactive renderer already paints point handles when `selectedLinearElement.isEditing`
+  matches the element, so the integration is controller-side:
+  - **Enter:** double-click a single selected line/arrow → `new LinearElementEditor(el, map, /*isEditing*/ true)`.
+  - **Pointer flow:** built the minimal `app` surface the editor reads (`{ scene, get state,
+    getEffectiveGridSize:()=>null }`) + a structural pointer event (shift/alt). `pointerDown` →
+    `LinearElementEditor.handlePointerDown` (select a point / register a segment-midpoint);
+    `pointerMove` → `shouldAddMidpoint`/`addMidpoint` then `handlePointDragging` (mutates points via
+    the Scene); `pointerUp` → `handlePointerUp` + one `#commit()`.
+  - **Delete** selected point(s) via `LinearElementEditor.deletePoints` (keeps ≥2). **Escape** /
+    tool-change / clicking off the element exits the editor (handles vanish).
+  - **Browser-verified** (`scripts/probe-x-lineedit.mjs`): draw a 2-point arrow → double-click enters
+    edit (isEditing=true, 2 endpoint handles + a purple segment-midpoint handle rendered) → drag the
+    tip (500,350 → 560,300) → drag the segment midpoint adds a 3rd point (2→3) → Delete removes it
+    (3→2) → Escape exits. Screenshot confirms Excalidraw's point-handle overlay.
+  - *Deferred (honest scope):* arrow↔shape binding, elbow arrows, alt-append-point-at-end, and
+    hover-cursor feedback (Phase 7 / later) — the core multi-point editing (add/move/delete) is done.
+- **Verification-harness hardening (found while verifying C):** the older CDP probes didn't `clear()`
+  localStorage first (so a restored element from a prior run leaked in as `elements[0]`) and lacked the
+  cold-pointer warmup move; several also drew at x≈150 — *under the fixed left properties panel* — so
+  the pointer-down hit the panel, not the canvas, and the shape was never created. Added `clear()` +
+  a warmup `mouseMoved` to the mouse-driven probes, made `probe-x-render` self-contained (draws its own
+  scene via direct controller calls), and moved colliding draw coords clear of the panel (x≥250). **The
+  full suite is now deterministic: 17/17 probes PASS from clean profiles.** (None of this was a product
+  bug — the controller code verified correct; these were test-harness gaps.)
+- **Evidence:** `pnpm check` 0/0 (916 files) · `pnpm test` 172 passing (104 pure + 68 runes) ·
+  `pnpm build` clean · CDP line-edit probe PASS + screenshot · **all 17 probes green**.
+
+**Known cosmetic gaps:** the `Stats` panel doesn't live-update a selected
 element's geometry *during* a transform (the vendored element objects are mutated in place and aren't
 deeply reactive, so the same prop reference doesn't re-trigger child render) — display only; the
 transform mechanics themselves are correct (probes read the real element state). A couple of older
 probes (`probe-x-resize`/`-undo`) don't `clear()` first, so they can flake on restored localStorage
 from a prior run with the same user-data-dir; new probes call `clear()` at start.
 
-**Remaining for full parity (tracked, see `prompt.md` for the handoff):** laser tool (animated trail);
-multi-point linear editor; export dialog (PNG/SVG); binding + snapping (Phase 7); Tauri (Phase 8).
+**Remaining for full parity (tracked, see `prompt.md` for the handoff):** export dialog (PNG/SVG);
+laser tool (animated trail); binding + snapping (Phase 7); Tauri (Phase 8); misc polish (frame tool,
+z-order, copy/paste, grid). Multi-point linear editing done (binding/elbow deferred to Phase 7).
 
 ---
 

@@ -45,6 +45,9 @@ const mouse = (type, x, y, buttons) => send('Input.dispatchMouseEvent', { type, 
 const drag = async (x1, y1, x2, y2) => { await mouse('mousePressed', x1, y1, 1); await sleep(30); await mouse('mouseMoved', x2, y2, 1); await sleep(30); await mouse('mouseReleased', x2, y2, 0); await sleep(40); };
 
 for (let i = 0; i < 80; i++) { if ((await ev('!!window.__draw')) === true) break; await sleep(250); }
+// fresh scene: clear any element restored from a prior run’s localStorage
+await ev(`window.__draw.clear()`);
+await mouse("mouseMoved", 200, 200, 0); // warm the pointer (CDP cold-pointer: first event must be a move)
 
 // draw rect 300,200 → 520,360
 await ev(`window.__draw.setTool('rectangle')`);

@@ -20,6 +20,8 @@ const ev = async (x) => { const r = await send('Runtime.evaluate', { expression:
 const click = async (x, y) => { await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y, buttons: 0 }); await sleep(20); await send('Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'left', buttons: 1, clickCount: 1 }); await sleep(30); await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button: 'left', buttons: 0, clickCount: 1 }); await sleep(60); };
 
 for (let i = 0; i < 80; i++) { if ((await ev('!!window.__draw')) === true) break; await sleep(250); }
+// fresh scene: clear any element restored from a prior run’s localStorage
+await ev(`window.__draw.clear()`);
 
 // Start text editing via the controller (the CDP mouse→pointer path for a tool that immediately
 // focuses an overlay is flaky in headless; the real on-canvas handler is exercised in dbg/synthetic

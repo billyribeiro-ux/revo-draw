@@ -72,6 +72,24 @@ const probe = `(() => {
   return { width: c.width, height: c.height, nonbg };
 })()`;
 
+// Self-contained scene: wait for the controller, clear any restored elements, then draw a
+// rectangle, ellipse and diamond via direct controller calls (no synthesized mouse needed).
+for (let i = 0; i < 80; i++) { if ((await ev('!!window.__draw')) === true) break; await sleep(250); }
+await ev(`(() => {
+  const d = window.__draw;
+  d.clear();
+  for (const [tool, x, y, x2, y2] of [
+    ['rectangle', 300, 200, 520, 360],
+    ['ellipse', 600, 220, 760, 380],
+    ['diamond', 840, 200, 1000, 360],
+  ]) {
+    d.setTool(tool);
+    d.pointerDown(x, y);
+    d.pointerMove(x2, y2);
+    d.pointerUp();
+  }
+})()`);
+
 let info = null;
 for (let i = 0; i < 80; i++) {
   info = await ev(probe);
