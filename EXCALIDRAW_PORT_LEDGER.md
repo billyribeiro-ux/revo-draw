@@ -338,6 +338,28 @@ full style controls; localStorage persistence; dark mode; real icon toolbar; sta
     (3→2) → Escape exits. Screenshot confirms Excalidraw's point-handle overlay.
   - *Deferred (honest scope):* arrow↔shape binding, elbow arrows, alt-append-point-at-end, and
     hover-cursor feedback (Phase 7 / later) — the core multi-point editing (add/move/delete) is done.
+- **🎉 EXPORT DIALOG — PNG / SVG (Milestone D).** Vendored `renderer/staticSvgScene.ts`
+  (`renderSceneToSvg`; its deps were all already vendored — no Fonts/data tree). Added
+  `src/lib/x/export-image.ts` which mirrors Excalidraw's `scene/export.ts` PNG/SVG logic but reuses
+  the already-vendored `renderStaticScene`/`renderSceneToSvg` directly — avoiding the heavy
+  `Fonts` + `data/*` dependency tree (font inlining skipped → system-font fallback; geometry,
+  colours and hand-drawn strokes are identical to the on-canvas scene). `exportToCanvas` sizes a
+  canvas to the element bounds + padding and renders with adjusted scroll/zoom (faithful to
+  `getCanvasSize`); `exportToSvg` builds the `<svg>` root (viewBox + optional background rect) and
+  calls `renderSceneToSvg`.
+  - **Controller:** `exportToPngBlob()` / `exportToSvgString()` / `downloadPng()` / `downloadSvg()`.
+    These **dynamic-import** `export-image` so the DOM-only render code (rough + SVG renderer) loads
+    only in the browser — keeping `draw-controller.svelte.test.ts` loadable in the node test env
+    (a static import broke it with `document is not defined`).
+  - **UI:** `ExportDialog.svelte` (props-driven modal, mirrors `HelpDialog`) with PNG/SVG cards; a
+    "Save as image…" item in the main menu opens it.
+  - **Browser-verified:** `probe-x-export.mjs` — 2-shape scene → PNG blob with valid magic bytes,
+    `image/png`, 800×360 (correct bounds math), 30 KB; SVG string with `<svg>`, a `viewBox`, 2 shape
+    `<path>`s, and the preserved `#e03131` stroke. `probe-x-exportdialog.mjs` — menu → "Save as image"
+    opens the dialog with PNG + SVG cards (screenshot confirms the modal).
+- **Evidence:** `pnpm check` 0/0 (919 files) · `pnpm test` 172 passing (104 pure + 68 runes) ·
+  `pnpm build` clean · CDP export + export-dialog probes PASS + screenshot · **all 19 probes green**.
+
 - **Verification-harness hardening (found while verifying C):** the older CDP probes didn't `clear()`
   localStorage first (so a restored element from a prior run leaked in as `elements[0]`) and lacked the
   cold-pointer warmup move; several also drew at x≈150 — *under the fixed left properties panel* — so
@@ -356,9 +378,10 @@ transform mechanics themselves are correct (probes read the real element state).
 probes (`probe-x-resize`/`-undo`) don't `clear()` first, so they can flake on restored localStorage
 from a prior run with the same user-data-dir; new probes call `clear()` at start.
 
-**Remaining for full parity (tracked, see `prompt.md` for the handoff):** export dialog (PNG/SVG);
-laser tool (animated trail); binding + snapping (Phase 7); Tauri (Phase 8); misc polish (frame tool,
-z-order, copy/paste, grid). Multi-point linear editing done (binding/elbow deferred to Phase 7).
+**Remaining for full parity (tracked, see `prompt.md` for the handoff):** laser tool (animated trail);
+binding + snapping (Phase 7); Tauri (Phase 8); misc polish (frame tool, z-order, copy/paste, grid).
+Multi-point linear editing + PNG/SVG export done (arrow binding/elbow deferred to Phase 7; SVG font
+inlining skipped — system-font fallback).
 
 ---
 

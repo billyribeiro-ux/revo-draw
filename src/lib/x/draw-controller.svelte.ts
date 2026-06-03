@@ -65,6 +65,10 @@ import {
   loadImageFile,
   makeImageCache,
 } from "$lib/x/image-support.ts";
+// export-image pulls in rough + the SVG renderer (DOM-only). Import the value side lazily
+// (dynamic import inside the export methods) so the controller stays loadable in node tests;
+// the type-only import below is erased at runtime and triggers no module load.
+import type { ExportImageCache } from "$lib/x/export-image.ts";
 
 // Editor-interface shape used by resizeTest (handle sizing). Desktop/mouse defaults.
 const EDITOR_INTERFACE: EditorInterface = {
@@ -481,6 +485,73 @@ export class DrawController {
     this.activeTool = "selection";
     this.scene.scene.triggerUpdate();
     this.#commit();
+  }
+
+  // --- export (PNG / SVG) ---
+
+  /** True when there's at least one element to export. */
+  get canExport(): boolean {
+    return this.scene.elements.length > 0;
+  }
+
+  #exportOpts(): {
+    exportBackground: boolean;
+    viewBackgroundColor: string;
+    theme: AppState["theme"];
+  } {
+    const a = this.appState.current;
+    return {
+      exportBackground: a.exportBackground,
+      viewBackgroundColor: a.viewBackgroundColor,
+      theme: a.theme,
+    };
+  }
+
+  /** Render the scene to a PNG blob (used by the export dialog + probes). */
+  async exportToPngBlob(scale = 2): Promise<Blob | null> {
+    const elements = this.scene.elements;
+    if (!elements.length) {
+      return null;
+    }
+    const { exportToCanvas } = await import("$lib/x/export-image.ts");
+    const canvas = exportToCanvas(
+      elements,
+      this.appState.current,
+      this.imageCache as unknown as ExportImageCache,
+      { scale, ...this.#exportOpts() },
+    );
+    return await new Promise<Blob | null>((resolve) =>
+      canvas.toBlob((blob) => resolve(blob), "image/png"),
+    );
+  }
+
+  /** Serialize the scene to an SVG string. */
+  async exportToSvgString(): Promise<string | null> {
+    const elements = this.scene.elements;
+    if (!elements.length) {
+      return null;
+    }
+    const { exportToSvg } = await import("$lib/x/export-image.ts");
+    const svg = exportToSvg(elements, this.#exportOpts());
+    return new XMLSerializer().serializeToString(svg);
+  }
+
+  /** Export + download a PNG. */
+  async downloadPng(): Promise<void> {
+    const blob = await this.exportToPngBlob();
+    if (blob) {
+      const { downloadBlob } = await import("$lib/x/export-image.ts");
+      downloadBlob(blob, "drawing.png");
+    }
+  }
+
+  /** Export + download an SVG. */
+  async downloadSvg(): Promise<void> {
+    const svg = await this.exportToSvgString();
+    if (svg) {
+      const { downloadBlob } = await import("$lib/x/export-image.ts");
+      downloadBlob(new Blob([svg], { type: "image/svg+xml" }), "drawing.svg");
+    }
   }
 
   #eraseAt(sceneX: number, sceneY: number): void {

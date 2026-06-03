@@ -33,6 +33,7 @@
   import ContextMenu from '$lib/x/ContextMenu.svelte';
   import MainMenu from '$lib/x/MainMenu.svelte';
   import HelpDialog from '$lib/x/HelpDialog.svelte';
+  import ExportDialog from '$lib/x/ExportDialog.svelte';
 
   const controller = new DrawController();
   const { scene, appState } = controller;
@@ -130,6 +131,7 @@
   // menus / dialogs / right-click
   let menuOpen = $state(false);
   let helpOpen = $state(false);
+  let exportOpen = $state(false);
   let contextAt = $state<{ x: number; y: number } | null>(null);
 
   function oncontextmenu(e: MouseEvent): void {
@@ -148,6 +150,8 @@
   const menuItems = $derived([
     { label: 'Reset the canvas', icon: ICONS.trash, action: () => controller.clear() },
     { label: 'Reset view', action: () => controller.resetView() },
+    'separator' as const,
+    { label: 'Save as image…', action: () => (exportOpen = true) },
     'separator' as const,
     { label: controller.theme === 'dark' ? 'Light mode' : 'Dark mode', action: () => controller.toggleTheme() },
     { label: 'Keyboard shortcuts', action: () => (helpOpen = true) }
@@ -477,6 +481,12 @@
 
   <MainMenu open={menuOpen} onClose={() => (menuOpen = false)} items={menuItems} />
   <HelpDialog open={helpOpen} onClose={() => (helpOpen = false)} />
+  <ExportDialog
+    open={exportOpen}
+    onClose={() => (exportOpen = false)}
+    onExportPng={() => controller.downloadPng()}
+    onExportSvg={() => controller.downloadSvg()}
+  />
 </div>
 
 <style>
