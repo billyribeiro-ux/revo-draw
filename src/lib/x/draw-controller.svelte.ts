@@ -6,9 +6,12 @@ import {
   deepCopyElement,
   duplicateElement,
   getCommonBounds,
+  bindBindingElement,
   getElementsWithinSelection,
+  getHoveredElementForBinding,
   getTransformHandleTypeFromCoords,
   hitElementItself,
+  isArrowElement,
   isLinearElement,
   isTextElement,
   LinearElementEditor,
@@ -28,7 +31,10 @@ import {
   Store,
   syncInvalidIndices,
   transformElements,
+  updateBoundElements,
 } from "@excalidraw/element";
+
+import type { ExcalidrawArrowElement } from "@excalidraw/element/types";
 
 import { ROUNDNESS, viewportCoordsToSceneCoords } from "@excalidraw/common";
 
@@ -1344,11 +1350,16 @@ export class DrawController {
       this.appState.setState({ snapLines });
       const ox = dragOffset.x + snapOffset.x;
       const oy = dragOffset.y + snapOffset.y;
-      for (const el of this.selectedElements) {
+      const moved = this.selectedElements;
+      for (const el of moved) {
         const origin = this.#dragOrigins.get(el.id);
         if (origin) {
           mutateElement(el, map, { x: origin.x + ox, y: origin.y + oy });
         }
+      }
+      // re-route any arrows bound to the moved shapes so they follow
+      for (const el of moved) {
+        updateBoundElements(el, this.scene.scene, { simultaneouslyUpdated: moved });
       }
       this.scene.scene.triggerUpdate();
       return;
@@ -1389,6 +1400,27 @@ export class DrawController {
     }
     // mutateElement invalidates ShapeCache; bump the reactive signal to repaint
     this.scene.scene.triggerUpdate();
+  }
+
+  /** Bind a freshly-drawn arrow's start/end points to any bindable shapes under them. */
+  #bindArrowEndpoints(arrow: ExcalidrawArrowElement): void {
+    const map = this.scene.scene.getNonDeletedElementsMap();
+    const els = this.scene.scene.getNonDeletedElements();
+    const startG = LinearElementEditor.getPointGlobalCoordinates(arrow, arrow.points[0]!, map);
+    const endG = LinearElementEditor.getPointGlobalCoordinates(
+      arrow,
+      arrow.points[arrow.points.length - 1]!,
+      map,
+    );
+    const startHit = getHoveredElementForBinding(startG, els, map);
+    const endHit = getHoveredElementForBinding(endG, els, map);
+    const mode = this.appState.current.bindMode ?? "orbit";
+    if (startHit) {
+      bindBindingElement(arrow, startHit, mode, "start", this.scene.scene);
+    }
+    if (endHit && endHit.id !== startHit?.id) {
+      bindBindingElement(arrow, endHit, mode, "end", this.scene.scene);
+    }
   }
 
   pointerUp(): void {
@@ -1448,14 +1480,16 @@ export class DrawController {
     this.#mode = null;
 
     // discard an accidental click (no drag → zero size) for shapes and linear elements
-    if (
+    const discarded =
       (mode === "generic" || mode === "linear") &&
       creating.width < 1 &&
-      creating.height < 1
-    ) {
+      creating.height < 1;
+    if (discarded) {
       this.#elements = this.#elements.filter((e) => e !== creating);
       syncInvalidIndices(this.#elements);
       this.scene.replaceAllElements(this.#elements);
+    } else if (mode === "linear" && isArrowElement(creating)) {
+      this.#bindArrowEndpoints(creating as ExcalidrawArrowElement);
     }
 
     // one durable history entry per completed gesture (no-op if nothing changed)

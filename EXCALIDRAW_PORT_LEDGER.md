@@ -407,6 +407,20 @@ full style controls; localStorage persistence; dark mode; real icon toolbar; sta
 - **Evidence:** `pnpm check` 0/0 (923 files) · `pnpm test` 172 passing · `pnpm build` clean ·
   CDP grid+snap probe PASS + screenshot · **all 22 probes green**.
 
+- **🎉 ARROW BINDING (F, part 2) — F COMPLETE.** Wired the vendored `binding.ts`:
+  - **On arrow create:** `#bindArrowEndpoints` resolves the bindable shape under each endpoint
+    (`getHoveredElementForBinding`) and binds via `bindBindingElement(arrow, shape, mode, "start"/"end",
+    scene)` (mode = `appState.bindMode ?? "orbit"`) — sets the arrow's `startBinding`/`endBinding` and
+    the shapes' `boundElements`. (`bindOrUnbindBindingElements` only acts on *dragged* endpoints, so a
+    fresh arrow needs the direct two-endpoint bind.)
+  - **On shape move:** the drag loop now calls `updateBoundElements(el, scene, {simultaneouslyUpdated})`
+    for each moved element, re-routing any bound arrows live.
+  - **Browser-verified** (`scripts/probe-x-binding.mjs`): arrow drawn from inside shape A to inside B →
+    `startBinding`→A, `endBinding`→B, both `boundElements` set; moving B down 120 re-routed the arrow's
+    end (250→361). Screenshot shows the arrow following B with proper binding gaps.
+- **Evidence:** `pnpm check` 0/0 (923 files) · `pnpm test` 172 passing · `pnpm build` clean ·
+  CDP binding probe PASS + screenshot · **all 24 probes green**.
+
 - **Verification-harness hardening (found while verifying C):** the older CDP probes didn't `clear()`
   localStorage first (so a restored element from a prior run leaked in as `elements[0]`) and lacked the
   cold-pointer warmup move; several also drew at x≈150 — *under the fixed left properties panel* — so
