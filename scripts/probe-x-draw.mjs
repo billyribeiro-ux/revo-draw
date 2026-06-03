@@ -53,6 +53,8 @@ const drag = async (x1, y1, x2, y2) => {
 
 // wait for the controller to be exposed
 for (let i = 0; i < 80; i++) { if ((await ev('!!window.__draw')) === true) break; await sleep(250); }
+// fresh scene: clear any element restored from a prior run’s localStorage
+await ev(`window.__draw.clear()`);
 
 const results = [];
 const shapes = [

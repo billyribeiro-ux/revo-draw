@@ -36,12 +36,15 @@ const drag = async (x1, y1, x2, y2) => { await mouse('mousePressed', x1, y1, 1);
 const key = async (k, code, modifiers = 0) => { await send('Input.dispatchKeyEvent', { type: 'keyDown', key: k, code, modifiers }); await sleep(20); await send('Input.dispatchKeyEvent', { type: 'keyUp', key: k, code, modifiers }); await sleep(50); };
 
 for (let i = 0; i < 80; i++) { if ((await ev('!!window.__draw')) === true) break; await sleep(250); }
+// fresh scene: clear any element restored from a prior run’s localStorage
+await ev(`window.__draw.clear()`);
+await mouse("mouseMoved", 200, 200, 0); // warm the pointer (CDP cold-pointer: first event must be a move)
 const count = () => ev('window.__draw.scene.elements.length');
 
 await ev(`window.__draw.setTool('rectangle')`);
-await drag(150, 150, 300, 270);
+await drag(250, 150, 400, 270); // x>=250 clears the fixed left properties panel
 await ev(`window.__draw.setTool('ellipse')`);
-await drag(380, 160, 540, 320);
+await drag(480, 160, 640, 320);
 const drew = await count();
 
 await key('z', 'KeyZ', 4); // Cmd+Z (undo ellipse)

@@ -6,8 +6,16 @@ import {
   deepCopyElement,
   duplicateElement,
   getCommonBounds,
+  getElementsWithinSelection,
+  getTransformHandleTypeFromCoords,
   hitElementItself,
+  isLinearElement,
   isTextElement,
+  LinearElementEditor,
+  moveAllLeft,
+  moveAllRight,
+  moveOneLeft,
+  moveOneRight,
   mutateElement,
   newElement,
   newElementWith,
@@ -22,9 +30,11 @@ import {
   transformElements,
 } from "@excalidraw/element";
 
-import { viewportCoordsToSceneCoords } from "@excalidraw/common";
+import { ROUNDNESS, viewportCoordsToSceneCoords } from "@excalidraw/common";
 
 import { pointFrom } from "@excalidraw/math";
+
+import { SvelteSet } from "svelte/reactivity";
 
 import { History } from "@excalidraw/excalidraw/history";
 
@@ -41,7 +51,12 @@ import type {
 } from "@excalidraw/element/types";
 import type { GlobalPoint, LocalPoint } from "@excalidraw/math";
 import type { EditorInterface } from "@excalidraw/common";
-import type { App, AppState } from "@excalidraw/excalidraw/types";
+import type {
+  App,
+  AppClassProperties,
+  AppState,
+  NormalizedZoomValue,
+} from "@excalidraw/excalidraw/types";
 
 import { EditorAppState } from "$lib/state/app-state.svelte.ts";
 import { EditorScene } from "$lib/scene/editor-scene.svelte.ts";
@@ -49,6 +64,18 @@ import {
   restoreFromLocalStorage,
   saveToLocalStorage,
 } from "$lib/x/persistence/web-storage.ts";
+import {
+  createImageElement,
+  loadImageFile,
+  makeImageCache,
+} from "$lib/x/image-support.ts";
+// export-image pulls in rough + the SVG renderer (DOM-only). Import the value side lazily
+// (dynamic import inside the export methods) so the controller stays loadable in node tests;
+// the type-only import below is erased at runtime and triggers no module load.
+import type { ExportImageCache } from "$lib/x/export-image.ts";
+// laserTrails pulls in the laser-pointer pkg + DOM-only SVG/animation code. Type-only import
+// (erased at runtime); the value side is dynamic-imported in startLaserLayer (browser-only).
+import type { LaserTrails } from "@excalidraw/excalidraw/laserTrails";
 
 // Editor-interface shape used by resizeTest (handle sizing). Desktop/mouse defaults.
 const EDITOR_INTERFACE: EditorInterface = {
@@ -62,16 +89,37 @@ const EDITOR_INTERFACE: EditorInterface = {
 
 export type ShapeTool = "rectangle" | "ellipse" | "diamond";
 export type LinearTool = "line" | "arrow";
-export type Tool = "selection" | ShapeTool | "freedraw" | LinearTool | "text";
+export type Tool =
+  | "selection"
+  | ShapeTool
+  | "freedraw"
+  | LinearTool
+  | "text"
+  | "image"
+  | "eraser"
+  | "laser";
 
 type CreateMode = "generic" | "freedraw" | "linear";
+
+/** Live modifier-key state for a gesture (shift = aspect/snap, alt = from-center). */
+export type PointerMods = { shiftKey: boolean; altKey: boolean };
+const NO_MODS: PointerMods = { shiftKey: false, altKey: false };
 
 export class DrawController {
   readonly scene = new EditorScene();
   readonly appState = new EditorAppState();
   activeTool = $state<Tool>("rectangle");
-  selectedId = $state<string | null>(null);
+  /** The set of selected element ids (reactive — drives the interactive overlay). */
+  readonly selectedIds = new SvelteSet<string>();
   editingTextId = $state<string | null>(null);
+
+  /** First selected id, for single-selection consumers (text editing, panels). */
+  get selectedId(): string | null {
+    for (const id of this.selectedIds) {
+      return id;
+    }
+    return null;
+  }
 
   #elements: ExcalidrawElement[] = [];
   #creating: ExcalidrawElement | null = null;
@@ -90,6 +138,27 @@ export class DrawController {
   #resizeOriginals = new Map<string, NonDeletedExcalidrawElement>();
   #resizeCenterX = 0;
   #resizeCenterY = 0;
+
+  // marquee (box) selection state
+  #marquee = false;
+  #marqueeOriginX = 0;
+  #marqueeOriginY = 0;
+  #marqueeBaseIds = new Set<string>();
+
+  // live modifier-key state for the active gesture (shift/alt)
+  #shiftKey = false;
+  #altKey = false;
+
+  // multi-point linear (line/arrow) editing — the editor lives on
+  // appState.selectedLinearElement; this flags an in-progress point drag.
+  #linearPointerActive = false;
+
+  // laser pointer — an ephemeral rAF-driven SVG trail (NOT in #elements/history)
+  #laser: LaserTrails | null = null;
+
+  // image cache (fileId → loaded image) passed to renderConfig.imageCache
+  readonly imageCache = makeImageCache();
+  #erasing = false;
 
   // undo/redo (Store captures snapshots → durable increments → History stacks)
   #store: Store;
@@ -152,8 +221,10 @@ export class DrawController {
     this.#elements = ordered;
     this.scene.replaceAllElements(ordered);
     this.appState.current = appState;
-    const selected = Object.keys(appState.selectedElementIds);
-    this.selectedId = selected.length ? selected[0]! : null;
+    this.selectedIds.clear();
+    for (const id of Object.keys(appState.selectedElementIds)) {
+      this.selectedIds.add(id);
+    }
     this.#syncHistoryFlags();
   }
 
@@ -178,7 +249,47 @@ export class DrawController {
   }
 
   setTool(tool: Tool): void {
+    // leaving the selection tool exits any active point-editor (its handles must vanish)
+    if (tool !== "selection" && this.appState.current.selectedLinearElement) {
+      this.appState.setState({ selectedLinearElement: null });
+    }
     this.activeTool = tool;
+  }
+
+  // --- camera (pan / zoom) ---
+  get zoom(): number {
+    return this.appState.current.zoom.value;
+  }
+
+  /** Pan by a viewport-pixel delta (wheel / space-drag). scroll is in scene units. */
+  panBy(viewportDx: number, viewportDy: number): void {
+    const a = this.appState.current;
+    this.appState.setState({
+      scrollX: a.scrollX - viewportDx / a.zoom.value,
+      scrollY: a.scrollY - viewportDy / a.zoom.value,
+    });
+  }
+
+  /** Zoom by a factor around a viewport point, keeping that scene point fixed. */
+  zoomAt(factor: number, viewportX: number, viewportY: number): void {
+    const a = this.appState.current;
+    const z = a.zoom.value;
+    const nz = Math.min(30, Math.max(0.1, z * factor));
+    const sceneX = (viewportX - a.offsetLeft) / z - a.scrollX;
+    const sceneY = (viewportY - a.offsetTop) / z - a.scrollY;
+    this.appState.setState({
+      zoom: { value: nz as NormalizedZoomValue },
+      scrollX: (viewportX - a.offsetLeft) / nz - sceneX,
+      scrollY: (viewportY - a.offsetTop) / nz - sceneY,
+    });
+  }
+
+  resetView(): void {
+    this.appState.setState({
+      zoom: { value: 1 as NormalizedZoomValue },
+      scrollX: 0,
+      scrollY: 0,
+    });
   }
 
   // --- current style (drives new elements; mirrors Excalidraw's appState.currentItem*) ---
@@ -202,6 +313,51 @@ export class DrawController {
     this.#applyStyle({ strokeWidth: width }, { currentItemStrokeWidth: width });
   }
 
+  get opacity(): number {
+    return this.appState.current.currentItemOpacity;
+  }
+  get fillStyle(): AppState["currentItemFillStyle"] {
+    return this.appState.current.currentItemFillStyle;
+  }
+  get strokeStyle(): AppState["currentItemStrokeStyle"] {
+    return this.appState.current.currentItemStrokeStyle;
+  }
+  get sloppiness(): number {
+    return this.appState.current.currentItemRoughness;
+  }
+
+  setOpacity(opacity: number): void {
+    this.#applyStyle({ opacity }, { currentItemOpacity: opacity });
+  }
+  setFillStyle(fillStyle: AppState["currentItemFillStyle"]): void {
+    this.#applyStyle({ fillStyle }, { currentItemFillStyle: fillStyle });
+  }
+  setStrokeStyle(strokeStyle: AppState["currentItemStrokeStyle"]): void {
+    this.#applyStyle({ strokeStyle }, { currentItemStrokeStyle: strokeStyle });
+  }
+  setSloppiness(roughness: number): void {
+    this.#applyStyle({ roughness }, { currentItemRoughness: roughness });
+  }
+
+  get edges(): "sharp" | "round" {
+    return this.appState.current.currentItemRoundness === "round" ? "round" : "sharp";
+  }
+  setEdges(value: "sharp" | "round"): void {
+    this.appState.setState({ currentItemRoundness: value });
+    const selected = this.selectedElements;
+    if (!selected.length) {
+      return;
+    }
+    const map = this.scene.scene.getNonDeletedElementsMap();
+    for (const el of selected) {
+      mutateElement(el, map, {
+        roundness: value === "round" ? { type: ROUNDNESS.ADAPTIVE_RADIUS } : null,
+      });
+    }
+    this.scene.scene.triggerUpdate();
+    this.#commit();
+  }
+
   get theme(): AppState["theme"] {
     return this.appState.current.theme;
   }
@@ -214,21 +370,28 @@ export class DrawController {
   }
 
   #applyStyle(
-    elementPatch: { strokeColor?: string; backgroundColor?: string; strokeWidth?: number },
+    elementPatch: {
+      strokeColor?: string;
+      backgroundColor?: string;
+      strokeWidth?: number;
+      opacity?: number;
+      fillStyle?: AppState["currentItemFillStyle"];
+      strokeStyle?: AppState["currentItemStrokeStyle"];
+      roughness?: number;
+    },
     appStatePatch: Partial<AppState>,
   ): void {
     this.appState.setState(appStatePatch);
-    const id = this.selectedId;
-    if (!id) {
+    const selected = this.selectedElements;
+    if (!selected.length) {
       return;
     }
     const map = this.scene.scene.getNonDeletedElementsMap();
-    const el = map.get(id);
-    if (el) {
+    for (const el of selected) {
       mutateElement(el, map, elementPatch);
-      this.scene.scene.triggerUpdate();
-      this.#commit();
     }
+    this.scene.scene.triggerUpdate();
+    this.#commit();
   }
 
   /** Style props applied to newly-created elements, from the current item defaults. */
@@ -295,38 +458,257 @@ export class DrawController {
     this.activeTool = "selection";
   }
 
-  /** Clear the current selection. */
+  /** Clear the current selection (and exit any point-editor). */
   deselect(): void {
+    if (this.appState.current.selectedLinearElement) {
+      this.appState.setState({ selectedLinearElement: null });
+    }
     this.#select(null);
   }
 
-  /** Delete the selected element(s). */
-  deleteSelected(): void {
-    const id = this.selectedId;
+  /** Remove all elements (reset canvas). */
+  clear(): void {
+    this.#elements = [];
+    this.#select(null);
+    this.scene.replaceAllElements([]);
+    this.#commit();
+  }
+
+  /** Select the topmost element at a viewport point (used by right-click). */
+  selectAt(clientX: number, clientY: number): void {
+    const { x, y } = this.#toScene(clientX, clientY);
+    this.#select(this.#hitTest(x, y));
+  }
+
+  /** Load an image file and place it centered at a viewport point. */
+  async placeImage(file: File, clientX: number, clientY: number): Promise<void> {
+    const { fileId, mimeType, width, height, image } = await loadImageFile(file);
+    this.imageCache.set(fileId, { image, mimeType });
+    const { x, y } = this.#toScene(clientX, clientY);
+    const fit = Math.min(1, 400 / Math.max(width, height));
+    const w = width * fit;
+    const h = height * fit;
+    const el = createImageElement({ fileId, x: x - w / 2, y: y - h / 2, width: w, height: h });
+    this.#elements.push(el);
+    syncInvalidIndices(this.#elements);
+    this.scene.replaceAllElements(this.#elements);
+    this.#select(el.id);
+    this.activeTool = "selection";
+    this.scene.scene.triggerUpdate();
+    this.#commit();
+  }
+
+  // --- export (PNG / SVG) ---
+
+  /** True when there's at least one element to export. */
+  get canExport(): boolean {
+    return this.scene.elements.length > 0;
+  }
+
+  #exportOpts(): {
+    exportBackground: boolean;
+    viewBackgroundColor: string;
+    theme: AppState["theme"];
+  } {
+    const a = this.appState.current;
+    return {
+      exportBackground: a.exportBackground,
+      viewBackgroundColor: a.viewBackgroundColor,
+      theme: a.theme,
+    };
+  }
+
+  /** Render the scene to a PNG blob (used by the export dialog + probes). */
+  async exportToPngBlob(scale = 2): Promise<Blob | null> {
+    const elements = this.scene.elements;
+    if (!elements.length) {
+      return null;
+    }
+    const { exportToCanvas } = await import("$lib/x/export-image.ts");
+    const canvas = exportToCanvas(
+      elements,
+      this.appState.current,
+      this.imageCache as unknown as ExportImageCache,
+      { scale, ...this.#exportOpts() },
+    );
+    return await new Promise<Blob | null>((resolve) =>
+      canvas.toBlob((blob) => resolve(blob), "image/png"),
+    );
+  }
+
+  /** Serialize the scene to an SVG string. */
+  async exportToSvgString(): Promise<string | null> {
+    const elements = this.scene.elements;
+    if (!elements.length) {
+      return null;
+    }
+    const { exportToSvg } = await import("$lib/x/export-image.ts");
+    const svg = exportToSvg(elements, this.#exportOpts());
+    return new XMLSerializer().serializeToString(svg);
+  }
+
+  /** Export + download a PNG. */
+  async downloadPng(): Promise<void> {
+    const blob = await this.exportToPngBlob();
+    if (blob) {
+      const { downloadBlob } = await import("$lib/x/export-image.ts");
+      downloadBlob(blob, "drawing.png");
+    }
+  }
+
+  /** Export + download an SVG. */
+  async downloadSvg(): Promise<void> {
+    const svg = await this.exportToSvgString();
+    if (svg) {
+      const { downloadBlob } = await import("$lib/x/export-image.ts");
+      downloadBlob(new Blob([svg], { type: "image/svg+xml" }), "drawing.svg");
+    }
+  }
+
+  // --- laser pointer (ephemeral trail) ---
+
+  /** Mount the laser trail into an SVG overlay (called by the view once it's in the DOM). */
+  async startLaserLayer(svg: SVGSVGElement): Promise<void> {
+    if (this.#laser) {
+      return;
+    }
+    const self = this;
+    const { LaserTrails } = await import("@excalidraw/excalidraw/laserTrails");
+    // LaserTrails only reads app.state (theme/zoom for the trail colour + decay)
+    const app = {
+      get state(): AppState {
+        return self.appState.current;
+      },
+    } as unknown as ConstructorParameters<typeof LaserTrails>[0];
+    this.#laser = new LaserTrails(app);
+    this.#laser.start(svg);
+  }
+
+  /** Tear down the laser trail animation. */
+  stopLaserLayer(): void {
+    this.#laser?.stop();
+    this.#laser = null;
+  }
+
+  #eraseAt(sceneX: number, sceneY: number): void {
+    const id = this.#hitTest(sceneX, sceneY);
     if (!id) {
       return;
     }
     this.#elements = this.#elements.filter((e) => e.id !== id);
+    if (this.selectedIds.has(id)) {
+      this.#setSelection([...this.selectedIds].filter((s) => s !== id));
+    }
+    syncInvalidIndices(this.#elements);
+    this.scene.replaceAllElements(this.#elements);
+  }
+
+  /** Delete the selected element(s) — or, while point-editing, the selected point(s). */
+  deleteSelected(): void {
+    // point-editing: delete selected points (keep ≥2 so the element stays valid)
+    const editor = this.appState.current.selectedLinearElement;
+    if (editor?.isEditing && editor.selectedPointsIndices?.length) {
+      const el = this.scene.scene.getNonDeletedElementsMap().get(editor.elementId);
+      if (
+        el &&
+        isLinearElement(el) &&
+        el.points.length - editor.selectedPointsIndices.length >= 2
+      ) {
+        LinearElementEditor.deletePoints(
+          el,
+          this.#linearApp(),
+          editor.selectedPointsIndices,
+        );
+        this.appState.setState({
+          selectedLinearElement: { ...editor, selectedPointsIndices: null },
+        });
+        this.scene.scene.triggerUpdate();
+        this.#commit();
+      }
+      return;
+    }
+
+    const ids = this.selectedIds;
+    if (!ids.size) {
+      return;
+    }
+    this.#elements = this.#elements.filter((e) => !ids.has(e.id));
     this.#select(null);
     syncInvalidIndices(this.#elements);
     this.scene.replaceAllElements(this.#elements);
     this.#commit();
   }
 
-  /** Duplicate the selected element offset by (10,10) and select the copy. */
-  duplicateSelected(): void {
-    const orig = this.selectedElements[0];
-    if (!orig) {
+  // --- z-order (bring forward / to front, send backward / to back) ---
+
+  #reorder(next: readonly ExcalidrawElement[]): void {
+    this.#elements = next as ExcalidrawElement[];
+    // zindex helpers already syncMovedIndices, so the array is valid for replaceAllElements
+    this.scene.replaceAllElements(next as ExcalidrawElement[]);
+    this.scene.scene.triggerUpdate();
+    this.#commit();
+  }
+
+  bringForward(): void {
+    if (!this.selectedIds.size) {
       return;
     }
-    const copy = newElementWith(duplicateElement(null, new Map(), orig, true), {
-      x: orig.x + 10,
-      y: orig.y + 10,
-    });
-    this.#elements.push(copy);
+    this.#reorder(
+      moveOneRight(
+        this.scene.scene.getElementsIncludingDeleted(),
+        this.appState.current,
+        this.scene.scene,
+      ),
+    );
+  }
+
+  sendBackward(): void {
+    if (!this.selectedIds.size) {
+      return;
+    }
+    this.#reorder(
+      moveOneLeft(
+        this.scene.scene.getElementsIncludingDeleted(),
+        this.appState.current,
+        this.scene.scene,
+      ),
+    );
+  }
+
+  bringToFront(): void {
+    if (!this.selectedIds.size) {
+      return;
+    }
+    this.#reorder(
+      moveAllRight(this.scene.scene.getElementsIncludingDeleted(), this.appState.current),
+    );
+  }
+
+  sendToBack(): void {
+    if (!this.selectedIds.size) {
+      return;
+    }
+    this.#reorder(
+      moveAllLeft(this.scene.scene.getElementsIncludingDeleted(), this.appState.current),
+    );
+  }
+
+  /** Duplicate the selected element(s) offset by (10,10) and select the copies. */
+  duplicateSelected(): void {
+    const originals = this.selectedElements;
+    if (!originals.length) {
+      return;
+    }
+    const copies = originals.map((orig) =>
+      newElementWith(duplicateElement(null, new Map(), orig, true), {
+        x: orig.x + 10,
+        y: orig.y + 10,
+      }),
+    );
+    this.#elements.push(...copies);
     syncInvalidIndices(this.#elements);
     this.scene.replaceAllElements(this.#elements);
-    this.#select(copy.id);
+    this.#setSelection(copies.map((c) => c.id));
     this.#commit();
   }
 
@@ -346,8 +728,9 @@ export class DrawController {
 
   /** Selected elements, for the interactive overlay renderer. */
   get selectedElements(): readonly NonDeletedExcalidrawElement[] {
-    const id = this.selectedId;
-    return id ? this.scene.elements.filter((e) => e.id === id) : [];
+    return this.selectedIds.size
+      ? this.scene.elements.filter((e) => this.selectedIds.has(e.id))
+      : [];
   }
 
   #hitTest(sceneX: number, sceneY: number): string | null {
@@ -366,8 +749,29 @@ export class DrawController {
   }
 
   #select(id: string | null): void {
-    this.selectedId = id;
-    this.appState.setState({ selectedElementIds: id ? { [id]: true } : {} });
+    this.#setSelection(id ? [id] : []);
+  }
+
+  /** Replace the selection with exactly `ids` (keeps appState.selectedElementIds in sync). */
+  #setSelection(ids: readonly string[]): void {
+    this.selectedIds.clear();
+    for (const id of ids) {
+      this.selectedIds.add(id);
+    }
+    this.appState.setState({
+      selectedElementIds: Object.fromEntries(ids.map((id) => [id, true])),
+    });
+  }
+
+  /** Toggle a single element in/out of the current selection (shift-click). */
+  #toggleSelected(id: string): void {
+    const next = new Set(this.selectedIds);
+    if (next.has(id)) {
+      next.delete(id);
+    } else {
+      next.add(id);
+    }
+    this.#setSelection([...next]);
   }
 
   /** True if a scene point falls within the current selection's bounding box. */
@@ -389,16 +793,29 @@ export class DrawController {
     );
   }
 
-  /** Which transform handle (corner/edge/rotation) is under a scene point, if the element is selected. */
+  /** Which transform handle (corner/edge/rotation) is under a scene point, if the selection is hit. */
   #handleAt(x: number, y: number): TransformHandleType | null {
-    const sel = this.selectedElements[0];
-    if (!sel) {
+    const selected = this.selectedElements;
+    if (!selected.length) {
       return null;
     }
-    const handle = resizeTest(
-      sel,
-      this.scene.scene.getNonDeletedElementsMap(),
-      this.appState.current,
+    // single element: handles follow the element's own rotation/box
+    if (selected.length === 1) {
+      const handle = resizeTest(
+        selected[0]!,
+        this.scene.scene.getNonDeletedElementsMap(),
+        this.appState.current,
+        x,
+        y,
+        this.appState.current.zoom,
+        "mouse",
+        EDITOR_INTERFACE,
+      );
+      return handle || null;
+    }
+    // multi-select: handles wrap the (unrotated) common bounding box
+    const handle = getTransformHandleTypeFromCoords(
+      getCommonBounds(selected),
       x,
       y,
       this.appState.current.zoom,
@@ -406,6 +823,44 @@ export class DrawController {
       EDITOR_INTERFACE,
     );
     return handle || null;
+  }
+
+  /** Begin a marquee (box) selection from an empty-canvas drag. */
+  #beginMarquee(x: number, y: number): void {
+    this.#marquee = true;
+    this.#marqueeOriginX = x;
+    this.#marqueeOriginY = y;
+    // shift-drag extends the existing selection; plain drag replaces it
+    this.#marqueeBaseIds = this.#shiftKey ? new Set(this.selectedIds) : new Set();
+    this.appState.setState({
+      selectionElement: newElement({ type: "selection", x, y, width: 0, height: 0 }),
+    });
+  }
+
+  /** Grow the marquee to the pointer and select all enclosed elements. */
+  #updateMarquee(x: number, y: number): void {
+    const minX = Math.min(this.#marqueeOriginX, x);
+    const minY = Math.min(this.#marqueeOriginY, y);
+    const width = Math.abs(x - this.#marqueeOriginX);
+    const height = Math.abs(y - this.#marqueeOriginY);
+    const selectionElement = newElement({
+      type: "selection",
+      x: minX,
+      y: minY,
+      width,
+      height,
+    });
+    this.appState.setState({ selectionElement });
+    const enclosed = getElementsWithinSelection(
+      this.scene.elements,
+      selectionElement,
+      this.scene.scene.getNonDeletedElementsMap(),
+      false,
+    );
+    this.#setSelection([
+      ...this.#marqueeBaseIds,
+      ...enclosed.map((e) => e.id),
+    ]);
   }
 
   #beginResize(handle: TransformHandleType): void {
@@ -418,8 +873,193 @@ export class DrawController {
     this.#resizeCenterY = (y1 + y2) / 2;
   }
 
-  pointerDown(clientX: number, clientY: number): void {
+  // --- multi-point linear (line/arrow) editor ---
+
+  /** True while a line/arrow is in point-editing mode (point handles shown). */
+  get isLineEditing(): boolean {
+    return this.appState.current.selectedLinearElement?.isEditing === true;
+  }
+
+  /** The `app` surface the vendored LinearElementEditor reads (scene/state/grid). */
+  #linearApp(): AppClassProperties {
+    const self = this;
+    return {
+      scene: this.scene.scene,
+      get state(): AppState {
+        return self.appState.current;
+      },
+      getEffectiveGridSize: () => null,
+    } as unknown as AppClassProperties;
+  }
+
+  /** A structural pointer event carrying just the modifiers the editor inspects. */
+  #linearEvent(mods: PointerMods): PointerEvent {
+    return {
+      shiftKey: mods.shiftKey,
+      altKey: mods.altKey,
+      metaKey: false,
+      ctrlKey: false,
+      pointerType: "mouse",
+    } as unknown as PointerEvent;
+  }
+
+  /** Enter point-editing for the single selected line/arrow (double-click). */
+  enterLineEditor(): void {
+    const selected = this.selectedElements;
+    if (selected.length !== 1) {
+      return;
+    }
+    const el = selected[0]!;
+    if (!isLinearElement(el)) {
+      return;
+    }
+    this.appState.setState({
+      selectedLinearElement: new LinearElementEditor(
+        el,
+        this.scene.scene.getNonDeletedElementsMap(),
+        true,
+      ),
+    });
+    this.scene.scene.triggerUpdate();
+  }
+
+  /** Leave point-editing mode. */
+  exitLineEditor(): void {
+    if (this.appState.current.selectedLinearElement) {
+      this.appState.setState({ selectedLinearElement: null });
+      this.scene.scene.triggerUpdate();
+    }
+  }
+
+  /** Pointer-down while editing a linear element. Returns true if it handled the event. */
+  #linearPointerDown(x: number, y: number, mods: PointerMods): boolean {
+    const editor = this.appState.current.selectedLinearElement;
+    if (!editor?.isEditing) {
+      return false;
+    }
+    const ret = LinearElementEditor.handlePointerDown(
+      this.#linearEvent(mods) as unknown as Parameters<
+        typeof LinearElementEditor.handlePointerDown
+      >[0],
+      this.#linearApp(),
+      this.#store,
+      { x, y },
+      editor,
+      this.scene.scene,
+    );
+    if (ret.linearElementEditor) {
+      this.appState.setState({ selectedLinearElement: ret.linearElementEditor });
+    }
+    // clicked a point / segment-midpoint (or added one) → begin a point drag
+    if (ret.hitElement || ret.didAddPoint) {
+      this.#linearPointerActive = true;
+      this.scene.scene.triggerUpdate();
+      return true;
+    }
+    // clicked the element body (no point) → keep editing, no drag
+    if (this.#hitTest(x, y) === editor.elementId) {
+      this.scene.scene.triggerUpdate();
+      return true;
+    }
+    // clicked empty space → leave the editor and let normal selection take over
+    this.exitLineEditor();
+    return false;
+  }
+
+  /** Pointer-move while dragging a point (or about to add a segment midpoint). */
+  #linearPointerMove(x: number, y: number, mods: PointerMods): void {
+    const editor = this.appState.current.selectedLinearElement;
+    if (!editor?.isEditing) {
+      return;
+    }
+    const app = this.#linearApp();
+    const elementsMap = this.scene.scene.getNonDeletedElementsMap();
+
+    if (
+      LinearElementEditor.shouldAddMidpoint(
+        editor,
+        { x, y },
+        this.appState.current,
+        elementsMap,
+      )
+    ) {
+      const ret = LinearElementEditor.addMidpoint(
+        editor,
+        { x, y },
+        app,
+        true,
+        this.scene.scene,
+      );
+      if (ret) {
+        this.appState.setState({
+          selectedLinearElement: {
+            ...editor,
+            initialState: ret.pointerDownState,
+            selectedPointsIndices: ret.selectedPointsIndices,
+            segmentMidPointHoveredCoords: null,
+          },
+        });
+      }
+      this.scene.scene.triggerUpdate();
+      return;
+    }
+    // a segment-midpoint drag below the add threshold — wait
+    if (
+      editor.initialState.segmentMidpoint.value !== null &&
+      !editor.initialState.segmentMidpoint.added
+    ) {
+      return;
+    }
+    if (editor.initialState.lastClickedPoint > -1) {
+      const newState = LinearElementEditor.handlePointDragging(
+        this.#linearEvent(mods),
+        app,
+        x,
+        y,
+        editor,
+      );
+      if (newState) {
+        this.appState.setState(newState);
+      }
+      this.scene.scene.triggerUpdate();
+    }
+  }
+
+  /** Pointer-up ending a point drag. */
+  #linearPointerUp(): void {
+    this.#linearPointerActive = false;
+    const editor = this.appState.current.selectedLinearElement;
+    if (!editor?.isEditing) {
+      return;
+    }
+    const next = LinearElementEditor.handlePointerUp(
+      this.#linearEvent(NO_MODS),
+      editor,
+      this.appState.current,
+      this.scene.scene,
+    );
+    this.appState.setState({ selectedLinearElement: next });
+    this.#commit();
+  }
+
+  pointerDown(clientX: number, clientY: number, mods: PointerMods = NO_MODS): void {
     const { x, y } = this.#toScene(clientX, clientY);
+    this.#shiftKey = mods.shiftKey;
+    this.#altKey = mods.altKey;
+
+    // laser pointer: start an ephemeral trail (canvas-local coords; not persisted)
+    if (this.activeTool === "laser") {
+      this.#laser?.startPath(clientX, clientY);
+      return;
+    }
+
+    // point-editing a linear element intercepts the selection tool
+    if (this.activeTool === "selection" && this.isLineEditing) {
+      if (this.#linearPointerDown(x, y, mods)) {
+        return;
+      }
+      // fell through (clicked empty + exited editor) → normal selection below
+    }
 
     if (this.activeTool === "selection") {
       // a transform handle on the current selection starts a resize/rotate...
@@ -428,19 +1068,31 @@ export class DrawController {
         this.#beginResize(handle);
         return;
       }
-      // ...grabbing inside the current selection starts a move...
-      if (this.selectedId && this.#pointInSelection(x, y)) {
+      const hitId = this.#hitTest(x, y);
+      // shift toggles the hit element in/out of the selection (no move); shift on empty
+      // extends the selection via a marquee (base = current selection).
+      if (mods.shiftKey) {
+        if (hitId) {
+          this.#toggleSelected(hitId);
+        } else {
+          this.#beginMarquee(x, y);
+        }
+        return;
+      }
+      // grabbing inside the current selection (bbox or an element) starts a move...
+      if (this.selectedIds.size && this.#pointInSelection(x, y)) {
         this.#beginDrag(x, y);
         return;
       }
-      // ...otherwise hit-test for a new selection (which can then be dragged)
-      const hitId = this.#hitTest(x, y);
+      // ...hitting an element selects it and starts a drag...
       if (hitId) {
         this.#select(hitId);
         this.#beginDrag(x, y);
-      } else {
-        this.#select(null);
+        return;
       }
+      // ...empty canvas clears the selection and starts a marquee
+      this.#select(null);
+      this.#beginMarquee(x, y);
       return;
     }
 
@@ -453,6 +1105,18 @@ export class DrawController {
       this.scene.replaceAllElements(this.#elements);
       this.#select(el.id);
       this.editingTextId = el.id;
+      return;
+    }
+
+    // eraser: remove elements under the pointer (drag to erase a path)
+    if (this.activeTool === "eraser") {
+      this.#erasing = true;
+      this.#eraseAt(x, y);
+      return;
+    }
+
+    // image tool is handled by the view (it opens a file picker → placeImage)
+    if (this.activeTool === "image") {
       return;
     }
 
@@ -502,7 +1166,37 @@ export class DrawController {
     this.scene.replaceAllElements(this.#elements);
   }
 
-  pointerMove(clientX: number, clientY: number): void {
+  pointerMove(clientX: number, clientY: number, mods: PointerMods = NO_MODS): void {
+    this.#shiftKey = mods.shiftKey;
+    this.#altKey = mods.altKey;
+
+    // laser pointer: extend the trail (no-ops unless a stroke is active)
+    if (this.activeTool === "laser") {
+      this.#laser?.addPointToPath(clientX, clientY);
+      return;
+    }
+
+    // dragging a point of a linear element being edited
+    if (this.#linearPointerActive) {
+      const { x, y } = this.#toScene(clientX, clientY);
+      this.#linearPointerMove(x, y, mods);
+      return;
+    }
+
+    // growing a marquee (box) selection
+    if (this.#marquee) {
+      const { x, y } = this.#toScene(clientX, clientY);
+      this.#updateMarquee(x, y);
+      return;
+    }
+
+    // erasing along a drag
+    if (this.#erasing) {
+      const { x, y } = this.#toScene(clientX, clientY);
+      this.#eraseAt(x, y);
+      return;
+    }
+
     // resizing / rotating the current selection via a transform handle
     if (this.#resizeHandle) {
       const { x, y } = this.#toScene(clientX, clientY);
@@ -511,9 +1205,9 @@ export class DrawController {
         this.#resizeHandle,
         this.selectedElements,
         this.scene.scene,
-        false, // shouldRotateWithDiscreteAngle (shift)
-        false, // shouldResizeFromCenter (alt)
-        false, // shouldMaintainAspectRatio (shift)
+        this.#shiftKey, // shouldRotateWithDiscreteAngle (shift → 15° rotation snap)
+        this.#altKey, // shouldResizeFromCenter (alt → resize anchored at center)
+        this.#shiftKey, // shouldMaintainAspectRatio (shift → aspect-locked resize)
         x,
         y,
         this.#resizeCenterX,
@@ -577,6 +1271,33 @@ export class DrawController {
   }
 
   pointerUp(): void {
+    // end a laser stroke (stays the active tool — laser is sticky)
+    if (this.activeTool === "laser") {
+      this.#laser?.endPath();
+      return;
+    }
+
+    // end a linear-element point drag
+    if (this.#linearPointerActive) {
+      this.#linearPointerUp();
+      return;
+    }
+
+    // end a marquee selection (selection is not a scene mutation → no history entry)
+    if (this.#marquee) {
+      this.#marquee = false;
+      this.#marqueeBaseIds = new Set();
+      this.appState.setState({ selectionElement: null });
+      return;
+    }
+
+    // end an erase stroke
+    if (this.#erasing) {
+      this.#erasing = false;
+      this.#commit();
+      return;
+    }
+
     // end a resize/rotate
     if (this.#resizeHandle) {
       this.#resizeHandle = null;

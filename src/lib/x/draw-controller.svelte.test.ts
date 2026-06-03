@@ -131,6 +131,25 @@ describe("DrawController — generic-create gesture", () => {
     expect(el.height).toBeGreaterThan(h0 + 40);
   });
 
+  it("eraser removes the element under the pointer", () => {
+    const c = new DrawController();
+    c.setTool("rectangle");
+    c.pointerDown(100, 100);
+    c.pointerMove(200, 180);
+    c.pointerUp();
+    c.setTool("rectangle");
+    c.pointerDown(300, 100);
+    c.pointerMove(400, 180);
+    c.pointerUp();
+    expect(c.scene.elements.length).toBe(2);
+
+    c.setTool("eraser");
+    c.pointerDown(100, 140); // left outline of the first rectangle
+    c.pointerUp();
+
+    expect(c.scene.elements.length).toBe(1);
+  });
+
   it("deletes the selected element", () => {
     const c = new DrawController();
     c.setTool("rectangle");

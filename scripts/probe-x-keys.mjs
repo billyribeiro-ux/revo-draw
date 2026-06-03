@@ -45,6 +45,9 @@ const click = async (x, y) => { await mouse('mousePressed', x, y, 1); await slee
 const key = async (k, code, modifiers = 0) => { await send('Input.dispatchKeyEvent', { type: 'keyDown', key: k, code, modifiers }); await sleep(20); await send('Input.dispatchKeyEvent', { type: 'keyUp', key: k, code, modifiers }); await sleep(40); };
 
 for (let i = 0; i < 80; i++) { if ((await ev('!!window.__draw')) === true) break; await sleep(250); }
+// fresh scene: clear any element restored from a prior run’s localStorage
+await ev(`window.__draw.clear()`);
+await mouse("mouseMoved", 200, 200, 0); // warm the pointer (CDP cold-pointer: first event must be a move)
 
 const count = () => ev('window.__draw.scene.elements.length');
 const selected = () => ev('window.__draw.selectedId');

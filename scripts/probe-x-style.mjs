@@ -20,6 +20,8 @@ const m2 = (type, x, y, b) => send('Input.dispatchMouseEvent', { type, x, y, but
 const drag = async (x1, y1, x2, y2) => { await m2('mouseMoved', x1, y1, 0); await sleep(15); await m2('mousePressed', x1, y1, 1); await sleep(25); await m2('mouseMoved', x2, y2, 1); await sleep(25); await m2('mouseReleased', x2, y2, 0); await sleep(40); };
 
 for (let i = 0; i < 80; i++) { if ((await ev('!!window.__draw')) === true) break; await sleep(250); }
+// fresh scene: clear any element restored from a prior run’s localStorage
+await ev(`window.__draw.clear()`);
 
 await ev(`window.__draw.setStrokeColor('#e03131'); window.__draw.setBackgroundColor('#a5d8ff'); window.__draw.setStrokeWidth(4);`);
 await ev(`window.__draw.setTool('rectangle')`);

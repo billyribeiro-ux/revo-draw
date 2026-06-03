@@ -229,13 +229,188 @@ Phase 3.
 - **Evidence:** `pnpm check` 0/0 (910 files) · `pnpm test` 171 passing · `pnpm build` clean ·
   CDP persistence+dark-mode probe PASS.
 
-**Done:** model/scene/store/history; 7 tools; select/move/resize/rotate/delete/duplicate/undo-redo;
-stroke/background/width styling; **localStorage persistence**; **dark mode**.
+- **Wave 2 (3 parallel agents) + real Excalidraw chrome integrated.** Workflow produced disjoint
+  props-driven components: `StyleControls.svelte` (fill/stroke-style/sloppiness/edges/opacity),
+  `ContextMenu.svelte`, `Stats.svelte`. Integrated:
+  - **Toolbar now uses the real Excalidraw SVG icons** (`icons.ts`) — pointer/shapes/line/arrow/
+    text/pencil/moon — replacing text labels.
+  - **Full properties panel**: added controller setters `setOpacity/setFillStyle/setStrokeStyle/
+    setSloppiness/setEdges` (over `appState.currentItem*` + applied to the selection), wired into
+    `StyleControls` (Fill, Stroke style, Sloppiness, Edges, Opacity with the purple active highlight).
+  - **Stats panel** (top-left) showing the selected element's X/Y/W/H/angle + scene count.
+  - `ContextMenu.svelte` lands as a ready-to-wire asset (right-click menu).
+  - **Browser-verified**: screenshot shows the editor now reads as Excalidraw — icon toolbar, the full
+    property controls, stats, a styled selected shape.
+- **Evidence:** `pnpm check` 0/0 (913 files) · `pnpm test` 171 passing · `pnpm build` clean · CDP
+  chrome probe (8 tool icons rendered, opacity range + stats present).
 
-**Remaining for full parity (tracked):** wire `icons.ts`/`ColorPicker.svelte` into the chrome; image
-tool; marquee multi-select + modifier keys; multi-point linear editor; the rest of the UI shell
-(opacity/fill-style/sloppiness/edges/font controls, menus, dialogs, stats, context menu); binding +
-snapping (Phase 7); Tauri (Phase 8).
+- **Wave 3 (3 parallel agents) + navigation/menus integrated.** Workflow produced `image-support.ts`
+  (image element + cache helpers), `HelpDialog.svelte`, `MainMenu.svelte`. Integrated:
+  - **Pan / zoom** — controller `panBy` (wheel) + `zoomAt` (ctrl+wheel, zoom-around-cursor) + `resetView`;
+    the render reads `appState.scroll*/zoom` so it all flows through. EditorPreview `onwheel` handler.
+  - **Right-click context menu** — wired wave-2's `ContextMenu` (Duplicate/Delete/Select-none); right-click
+    selects under cursor (`controller.selectAt`) then opens the menu.
+  - **Main menu** (hamburger ☰): Reset canvas (`controller.clear`), Reset view, Light/Dark mode, Shortcuts.
+  - **Help dialog** (`?` key + menu) — full Tools/Editor keyboard-shortcut reference with `<kbd>` chips.
+  - `image-support.ts` lands as a ready-to-wire asset (image tool).
+  - **Browser-verified** (`scripts/probe-x-nav.mjs`): ctrl+wheel zoom 1→~1.3/tick, right-click menu,
+    hamburger menu, `?` help dialog all work; screenshot shows the full Excalidraw-faithful editor.
+- **Evidence:** `pnpm check` 0/0 (916 files) · `pnpm test` 171 passing · `pnpm build` clean · CDP nav probe PASS.
+
+**Done:** model/scene/store/history; 7 tools; select/move/resize/rotate/delete/duplicate/undo-redo;
+full style controls; localStorage persistence; dark mode; real icon toolbar; stats; **pan/zoom**;
+**right-click context menu**; **main menu**; **help dialog (shortcuts)**.
+
+- **Image + eraser tools (wave 4 integration).** Wired `image-support.ts`: controller holds an
+  `imageCache` (passed to `renderConfig.imageCache`) + `placeImage(file,x,y)` (load → cache →
+  `createImageElement` scaled-to-fit → select); the image tool opens a hidden file `<input>` in
+  EditorPreview, then places the image at the click. Eraser: drag removes elements under the
+  pointer (`#eraseAt` hit-test, one history entry per stroke). **Browser-verified**
+  (`scripts/probe-x-imgerase.mjs`): drew 2 shapes → eraser-drag removed 1; a synthesized PNG was
+  placed + rendered (screenshot shows the image content + remaining ellipse). +1 controller test
+  (15 total).
+- **Evidence:** `pnpm check` 0/0 (916 files) · `pnpm test` 172 passing · `pnpm build` clean · CDP
+  image/eraser probe PASS.
+
+**Tools (9):** rectangle, ellipse, diamond, line, arrow, text, freedraw, **image**, **eraser**, selection.
+
+- **Footer + ColorPicker hex popover.** Footer (bottom-left island): zoom out / zoom % (reset on
+  click) / zoom in, separator, undo / redo icon buttons (disabled when stacks empty), dark-themed.
+  Stroke + Background groups gained a custom-color swatch that opens the `ColorPicker.svelte` popover
+  (palette + hex input → `setStrokeColor`/`setBackgroundColor`). **Verified**: footer renders "100%"
+  + buttons; popover opens (screenshot). 0/0 (916 files), 172 tests, build clean.
+
+- **🎉 MARQUEE MULTI-SELECT + multi-element transforms (Milestone A).** Selection went from a single
+  `selectedId` to a reactive `selectedIds: SvelteSet<string>` (the old `selectedId` is now a getter
+  returning the first id, so single-selection consumers — text editing, panels — are unchanged).
+  - **Marquee:** selection-tool drag on empty canvas creates a `selection`-type element on
+    `appState.selectionElement` (the interactive renderer already paints it), and each move computes
+    enclosed elements via the vendored `getElementsWithinSelection` ("contain" mode) → `#setSelection`.
+    PointerUp clears the marquee (selection is not a scene mutation → no history entry).
+  - **Shift:** shift-click toggles an element in/out of the selection; shift-drag on empty extends the
+    selection (marquee base = current selection). Reordered the pointer-down branch so shift-toggle
+    beats the move-grab.
+  - **Group move** iterates `selectedElements` (origin-based, relative positions preserved); **group
+    resize/rotate** hit-tests the common-bbox handles via the vendored `getTransformHandleTypeFromCoords`
+    (multi-select) while single-select keeps `resizeTest`; `getCommonBounds(selectedElements)` drives the
+    group bbox + center. `deleteSelected`/`duplicateSelected`/`#applyStyle`/`setEdges` now act on every
+    selected element.
+  - **Threaded pointer modifiers** (`{shiftKey, altKey}`) from the view into `pointerDown`/`pointerMove`
+    (stored for the gesture) — sets up Milestone B (alt/shift transforms) which can now read them.
+  - **Fixed a latent CLS bug** found while verifying: `Stats.svelte` was `position: static` (in normal
+    flow), so selecting an element grew the panel and pushed the canvas down ~139px — mis-mapping every
+    subsequent pointer gesture. Made it a fixed top-right overlay (its own comment already said
+    "top-right"); the canvas no longer shifts on selection.
+  - **Browser-verified** (`scripts/probe-x-marquee.mjs`): drew 3 rects → drag-marquee selected all 3 →
+    group-move translated all 3 by exactly (+50,+40) (relative positions kept) → shift-click an edge
+    dropped 1 → 2 remain with a group bbox; screenshot confirms. Regression probes
+    (select/move/resize/keys/undo) still PASS.
+- **Evidence:** `pnpm check` 0/0 (916 files) · `pnpm test` 172 passing (104 pure + 68 runes) ·
+  `pnpm build` clean · CDP marquee probe PASS + screenshot.
+
+- **🎉 MODIFIER KEYS FOR TRANSFORMS (Milestone B).** The resize/rotate gesture now threads the live
+  `shiftKey`/`altKey` (captured each `pointerMove`) into `transformElements`: **shift** →
+  `shouldMaintainAspectRatio` on resize + `shouldRotateWithDiscreteAngle` on rotate (snaps to
+  `SHIFT_LOCKING_ANGLE` = π/12 = 15°); **alt** → `shouldResizeFromCenter` (transform anchored at the
+  bbox center). The three previously-hardcoded `false`s are gone.
+  - **Browser-verified** (`scripts/probe-x-modifiers.mjs`): alt-resize kept the bbox center fixed at
+    (400,260) while growing 200×120 → 328×208; shift-resize preserved the 1.667 aspect ratio
+    (1.667 → 1.667); shift-rotate snapped to exactly 60° (4 × 15°). Screenshot confirms the rotated,
+    handle-decorated shape. Resize/rotate regression probe still PASS (no-modifier path unchanged).
+- **Evidence:** `pnpm check` 0/0 (916 files) · `pnpm test` 172 passing (104 pure + 68 runes) ·
+  `pnpm build` clean · CDP modifiers probe PASS + screenshot.
+
+- **🎉 MULTI-POINT LINE/ARROW EDITOR (Milestone C).** Wired the vendored `LinearElementEditor`
+  (a static-method class operating on an immutable editor value stored in `appState.selectedLinearElement`).
+  The vendored interactive renderer already paints point handles when `selectedLinearElement.isEditing`
+  matches the element, so the integration is controller-side:
+  - **Enter:** double-click a single selected line/arrow → `new LinearElementEditor(el, map, /*isEditing*/ true)`.
+  - **Pointer flow:** built the minimal `app` surface the editor reads (`{ scene, get state,
+    getEffectiveGridSize:()=>null }`) + a structural pointer event (shift/alt). `pointerDown` →
+    `LinearElementEditor.handlePointerDown` (select a point / register a segment-midpoint);
+    `pointerMove` → `shouldAddMidpoint`/`addMidpoint` then `handlePointDragging` (mutates points via
+    the Scene); `pointerUp` → `handlePointerUp` + one `#commit()`.
+  - **Delete** selected point(s) via `LinearElementEditor.deletePoints` (keeps ≥2). **Escape** /
+    tool-change / clicking off the element exits the editor (handles vanish).
+  - **Browser-verified** (`scripts/probe-x-lineedit.mjs`): draw a 2-point arrow → double-click enters
+    edit (isEditing=true, 2 endpoint handles + a purple segment-midpoint handle rendered) → drag the
+    tip (500,350 → 560,300) → drag the segment midpoint adds a 3rd point (2→3) → Delete removes it
+    (3→2) → Escape exits. Screenshot confirms Excalidraw's point-handle overlay.
+  - *Deferred (honest scope):* arrow↔shape binding, elbow arrows, alt-append-point-at-end, and
+    hover-cursor feedback (Phase 7 / later) — the core multi-point editing (add/move/delete) is done.
+- **🎉 EXPORT DIALOG — PNG / SVG (Milestone D).** Vendored `renderer/staticSvgScene.ts`
+  (`renderSceneToSvg`; its deps were all already vendored — no Fonts/data tree). Added
+  `src/lib/x/export-image.ts` which mirrors Excalidraw's `scene/export.ts` PNG/SVG logic but reuses
+  the already-vendored `renderStaticScene`/`renderSceneToSvg` directly — avoiding the heavy
+  `Fonts` + `data/*` dependency tree (font inlining skipped → system-font fallback; geometry,
+  colours and hand-drawn strokes are identical to the on-canvas scene). `exportToCanvas` sizes a
+  canvas to the element bounds + padding and renders with adjusted scroll/zoom (faithful to
+  `getCanvasSize`); `exportToSvg` builds the `<svg>` root (viewBox + optional background rect) and
+  calls `renderSceneToSvg`.
+  - **Controller:** `exportToPngBlob()` / `exportToSvgString()` / `downloadPng()` / `downloadSvg()`.
+    These **dynamic-import** `export-image` so the DOM-only render code (rough + SVG renderer) loads
+    only in the browser — keeping `draw-controller.svelte.test.ts` loadable in the node test env
+    (a static import broke it with `document is not defined`).
+  - **UI:** `ExportDialog.svelte` (props-driven modal, mirrors `HelpDialog`) with PNG/SVG cards; a
+    "Save as image…" item in the main menu opens it.
+  - **Browser-verified:** `probe-x-export.mjs` — 2-shape scene → PNG blob with valid magic bytes,
+    `image/png`, 800×360 (correct bounds math), 30 KB; SVG string with `<svg>`, a `viewBox`, 2 shape
+    `<path>`s, and the preserved `#e03131` stroke. `probe-x-exportdialog.mjs` — menu → "Save as image"
+    opens the dialog with PNG + SVG cards (screenshot confirms the modal).
+- **Evidence:** `pnpm check` 0/0 (919 files) · `pnpm test` 172 passing (104 pure + 68 runes) ·
+  `pnpm build` clean · CDP export + export-dialog probes PASS + screenshot · **all 19 probes green**.
+
+- **🎉 LASER POINTER (Milestone E).** Ported the trail subsystem faithfully: added
+  `@excalidraw/laser-pointer@1.3.1` (exact pin) + vendored `renderer/animation.ts`
+  (`AnimationController`; the one `reactUtils` dep inlined as never-throttle), `animatedTrail.ts`,
+  `laserTrails.ts`. The trail is an **rAF-driven fading SVG `<path>`** rendered into a dedicated
+  `.laser-layer` `<svg>` overlay (`pointer-events: none` so the canvas keeps the gesture) — it is
+  **never added to `#elements`/history** (the whole point of a laser pointer).
+  - **Controller:** `laser` tool; `startLaserLayer(svg)` (dynamic-imports `LaserTrails` — DOM/pkg
+    only loads in the browser, keeping the node tests clean — builds the `{ get state }` app surface
+    and `.start(svg)`s it) + `stopLaserLayer()`. `pointerDown`→`startPath`, `pointerMove`→
+    `addPointToPath`, `pointerUp`→`endPath`, all in canvas-local coords; laser is **sticky** (stays
+    active after a stroke). Added a faithful laser tool icon.
+  - **View:** laser tool button + the `<svg class="laser-layer">` overlay mounted via `{@attach}`
+    (start on mount, stop on teardown).
+  - **Browser-verified** (`scripts/probe-x-laser.mjs`): laser stroke → a red SVG `<path>` with
+    1012-char path data painted, **`scene.elements` stayed 0** (nothing persisted), tool stayed
+    `laser`. Screenshot shows the smooth tapered red laser stroke (perfect-freehand smoothing).
+- **Evidence:** `pnpm check` 0/0 (923 files) · `pnpm test` 172 passing (104 pure + 68 runes) ·
+  `pnpm build` clean · CDP laser probe PASS + screenshot · **all 20 probes green**.
+
+- **🎉 Z-ORDER (Milestone G, part 1).** Wired the vendored `zindex.ts`: controller
+  `bringForward`/`sendBackward` (`moveOneRight`/`moveOneLeft`) + `bringToFront`/`sendToBack`
+  (`moveAllRight`/`moveAllLeft`) — they reorder the element array, `syncMovedIndices` keeps fractional
+  indices valid, then `replaceAllElements` + one `#commit()`. Shortcuts `⌘]`/`⌘[` (forward/backward)
+  and `⌘⇧]`/`⌘⇧[` (front/back); added the four ops to the right-click context menu.
+  - **Browser-verified** (`scripts/probe-x-zorder.mjs`): two overlapping rects [A,B]; select A →
+    bring-to-front → [B,A] → send-to-back → [A,B] → bring-forward → [B,A]. All orderings exact.
+- **Evidence:** `pnpm check` 0/0 (923 files) · `pnpm test` 172 passing · `pnpm build` clean ·
+  CDP z-order probe PASS · **all 21 probes green**.
+
+- **Verification-harness hardening (found while verifying C):** the older CDP probes didn't `clear()`
+  localStorage first (so a restored element from a prior run leaked in as `elements[0]`) and lacked the
+  cold-pointer warmup move; several also drew at x≈150 — *under the fixed left properties panel* — so
+  the pointer-down hit the panel, not the canvas, and the shape was never created. Added `clear()` +
+  a warmup `mouseMoved` to the mouse-driven probes, made `probe-x-render` self-contained (draws its own
+  scene via direct controller calls), and moved colliding draw coords clear of the panel (x≥250). **The
+  full suite is now deterministic: 17/17 probes PASS from clean profiles.** (None of this was a product
+  bug — the controller code verified correct; these were test-harness gaps.)
+- **Evidence:** `pnpm check` 0/0 (916 files) · `pnpm test` 172 passing (104 pure + 68 runes) ·
+  `pnpm build` clean · CDP line-edit probe PASS + screenshot · **all 17 probes green**.
+
+**Known cosmetic gaps:** the `Stats` panel doesn't live-update a selected
+element's geometry *during* a transform (the vendored element objects are mutated in place and aren't
+deeply reactive, so the same prop reference doesn't re-trigger child render) — display only; the
+transform mechanics themselves are correct (probes read the real element state). A couple of older
+probes (`probe-x-resize`/`-undo`) don't `clear()` first, so they can flake on restored localStorage
+from a prior run with the same user-data-dir; new probes call `clear()` at start.
+
+**Remaining for full parity (tracked, see `prompt.md` for the handoff):** binding + snapping
+(Phase 7); Tauri (Phase 8); misc polish (frame tool, z-order, copy/paste, grid). Done: marquee
+multi-select, transform modifiers, multi-point linear editing, PNG/SVG export, laser pointer
+(arrow binding/elbow deferred to Phase 7; SVG font inlining skipped — system-font fallback).
 
 ---
 

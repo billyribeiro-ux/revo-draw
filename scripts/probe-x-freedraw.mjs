@@ -43,6 +43,8 @@ const ev = async (x) => {
 };
 
 for (let i = 0; i < 80; i++) { if ((await ev('!!window.__draw')) === true) break; await sleep(250); }
+// fresh scene: clear any element restored from a prior run’s localStorage
+await ev(`window.__draw.clear()`);
 
 await ev(`window.__draw.setTool('freedraw')`);
 

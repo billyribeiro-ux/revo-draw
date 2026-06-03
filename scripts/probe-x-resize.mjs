@@ -54,6 +54,9 @@ const handle = (which) => ev(`(async () => {
 })()`);
 
 for (let i = 0; i < 80; i++) { if ((await ev('!!window.__draw')) === true) break; await sleep(250); }
+// fresh scene: clear any element restored from a prior run’s localStorage
+await ev(`window.__draw.clear()`);
+await mouse("mouseMoved", 200, 200, 0); // warm the pointer (CDP cold-pointer: first event must be a move)
 
 // draw + select
 await ev(`window.__draw.setTool('rectangle')`);
