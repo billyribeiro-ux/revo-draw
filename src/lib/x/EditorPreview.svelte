@@ -29,6 +29,7 @@
   import { ICONS } from '$lib/x/icons.ts';
   import StyleControls from '$lib/x/StyleControls.svelte';
   import Stats from '$lib/x/Stats.svelte';
+  import ColorPicker from '$lib/x/ColorPicker.svelte';
   import ContextMenu from '$lib/x/ContextMenu.svelte';
   import MainMenu from '$lib/x/MainMenu.svelte';
   import HelpDialog from '$lib/x/HelpDialog.svelte';
@@ -56,6 +57,7 @@
 
   let fileInput = $state<HTMLInputElement>();
   let pendingImageAt: { x: number; y: number } | null = null;
+  let pickerOpen = $state<'stroke' | 'background' | null>(null);
 
   // Excalidraw's default palettes
   const strokeColors = ['#1e1e1e', '#e03131', '#2f9e44', '#1971c2', '#f08c00'];
@@ -335,7 +337,24 @@
           onclick={() => controller.setStrokeColor(c)}
         ></button>
       {/each}
+      <button
+        type="button"
+        class="swatch custom"
+        style="background:{controller.strokeColor}"
+        aria-label="custom stroke color"
+        onclick={() => (pickerOpen = pickerOpen === 'stroke' ? null : 'stroke')}
+      ></button>
     </div>
+    {#if pickerOpen === 'stroke'}
+      <ColorPicker
+        value={controller.strokeColor}
+        palette={strokeColors}
+        onPick={(c) => {
+          controller.setStrokeColor(c);
+          pickerOpen = null;
+        }}
+      />
+    {/if}
   </div>
   <div class="prop-group">
     <span class="prop-label">Background</span>
@@ -350,7 +369,24 @@
           onclick={() => controller.setBackgroundColor(c)}
         ></button>
       {/each}
+      <button
+        type="button"
+        class="swatch custom"
+        style="background:{controller.backgroundColor === 'transparent' ? '#fff' : controller.backgroundColor}"
+        aria-label="custom background color"
+        onclick={() => (pickerOpen = pickerOpen === 'background' ? null : 'background')}
+      ></button>
     </div>
+    {#if pickerOpen === 'background'}
+      <ColorPicker
+        value={controller.backgroundColor}
+        palette={bgColors}
+        onPick={(c) => {
+          controller.setBackgroundColor(c);
+          pickerOpen = null;
+        }}
+      />
+    {/if}
   </div>
   <div class="prop-group">
     <span class="prop-label">Stroke width</span>
@@ -416,6 +452,17 @@
       }}
     ></textarea>
   {/if}
+  </div>
+
+  <div class="footer">
+    <button type="button" aria-label="zoom out" onclick={() => controller.zoomAt(1 / 1.1, window.innerWidth / 2, window.innerHeight / 2)}>−</button>
+    <button type="button" class="zoom-label" title="reset zoom" onclick={() => controller.resetView()}>
+      {Math.round(controller.zoom * 100)}%
+    </button>
+    <button type="button" aria-label="zoom in" onclick={() => controller.zoomAt(1.1, window.innerWidth / 2, window.innerHeight / 2)}>+</button>
+    <span class="footer-sep"></span>
+    <button type="button" class="icon-btn" aria-label="undo" disabled={!controller.canUndo} onclick={() => controller.undo()}>{@html ICONS.undo}</button>
+    <button type="button" class="icon-btn" aria-label="redo" disabled={!controller.canRedo} onclick={() => controller.redo()}>{@html ICONS.redo}</button>
   </div>
 
   {#if contextAt}
@@ -537,6 +584,67 @@
     height: 32px;
   }
 
+  .footer {
+    position: fixed;
+    bottom: 12px;
+    left: 12px;
+    z-index: 10;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 6px;
+    background: #fff;
+    border: 1px solid #e0e0e0;
+    border-radius: 10px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  }
+
+  .footer button {
+    min-width: 28px;
+    height: 28px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    background: transparent;
+    cursor: pointer;
+    font-size: 14px;
+  }
+
+  .footer button:hover {
+    background: #f1f3f5;
+  }
+
+  .footer button:disabled {
+    opacity: 0.4;
+    cursor: default;
+  }
+
+  .footer .zoom-label {
+    min-width: 48px;
+    font-variant-numeric: tabular-nums;
+    font-size: 12px;
+  }
+
+  .footer .footer-sep {
+    width: 1px;
+    height: 18px;
+    background: #e0e0e0;
+    margin: 0 2px;
+  }
+
+  .footer :global(svg) {
+    width: 16px;
+    height: 16px;
+  }
+
+  .excalidraw.theme--dark .footer {
+    background: #232329;
+    border-color: #31313a;
+    color: #ced4da;
+  }
+
   .toolbar button :global(svg) {
     width: 18px;
     height: 18px;
@@ -586,6 +694,11 @@
   .swatch.active {
     outline: 2px solid #4263eb;
     outline-offset: 1px;
+  }
+
+  .swatch.custom {
+    border: 2px solid #4263eb;
+    margin-left: 4px;
   }
 
   .widths {

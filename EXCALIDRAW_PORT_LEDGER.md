@@ -274,9 +274,15 @@ full style controls; localStorage persistence; dark mode; real icon toolbar; sta
 
 **Tools (9):** rectangle, ellipse, diamond, line, arrow, text, freedraw, **image**, **eraser**, selection.
 
-**Remaining for full parity (tracked):** `ColorPicker.svelte` hex popover; laser tool; footer (zoom %);
-marquee multi-select + modifier keys; multi-point linear editor; export dialog (PNG/SVG); binding +
-snapping (Phase 7); Tauri (Phase 8).
+- **Footer + ColorPicker hex popover.** Footer (bottom-left island): zoom out / zoom % (reset on
+  click) / zoom in, separator, undo / redo icon buttons (disabled when stacks empty), dark-themed.
+  Stroke + Background groups gained a custom-color swatch that opens the `ColorPicker.svelte` popover
+  (palette + hex input → `setStrokeColor`/`setBackgroundColor`). **Verified**: footer renders "100%"
+  + buttons; popover opens (screenshot). 0/0 (916 files), 172 tests, build clean.
+
+**Remaining for full parity (tracked, see `prompt.md` for the handoff):** laser tool (animated trail);
+marquee multi-select + modifier keys (shift/alt); multi-point linear editor; export dialog (PNG/SVG);
+binding + snapping (Phase 7); Tauri (Phase 8).
 
 ---
 
