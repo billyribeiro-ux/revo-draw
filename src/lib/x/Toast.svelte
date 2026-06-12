@@ -2,7 +2,6 @@
   // Transient status toast, ported from excalidraw-master Toast.tsx. Auto-dismisses
   // after `duration` ms (default 5000; pause on hover); pass duration=Infinity to
   // keep it open. Mirrors the bottom-center island styling.
-  import { onDestroy } from 'svelte';
 
   interface Props {
     message: string;
@@ -33,15 +32,15 @@
     }
   }
 
-  // (re)schedule whenever the message changes
+  // (re)schedule whenever the message changes. The teardown (`clear`) runs before
+  // each re-run AND on unmount (per the $effect lifecycle), so no separate
+  // onDestroy is needed.
   $effect(() => {
     // reference `message` so the effect re-runs on each new toast
     void message;
     schedule();
     return clear;
   });
-
-  onDestroy(clear);
 </script>
 
 <div

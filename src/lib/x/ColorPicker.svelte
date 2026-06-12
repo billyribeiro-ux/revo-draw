@@ -1,14 +1,25 @@
 <script lang="ts">
   // Self-contained, props-driven color picker styled like an Excalidraw popover.
   // No controller imports, no external deps — purely props in / callback out.
+  import { COLOR_PALETTE } from '@excalidraw/common';
 
   interface Props {
     value: string;
     palette: string[];
     onPick: (color: string) => void;
+    /** show the full Excalidraw shade ramp (named colors × 5 shades) below the quick palette */
+    showShades?: boolean;
   }
 
-  const { value, palette, onPick }: Props = $props();
+  const { value, palette, onPick, showShades = false }: Props = $props();
+
+  // The shade ramp: each named color is a row of 5 shades (Excalidraw's COLOR_PALETTE).
+  // Filter to the array-valued entries (skip transparent/black/white scalars).
+  const shadeRows: ReadonlyArray<{ name: string; shades: readonly string[] }> = Object.entries(
+    COLOR_PALETTE
+  )
+    .filter(([, v]) => Array.isArray(v))
+    .map(([name, v]) => ({ name, shades: v as readonly string[] }));
 
   // Local mirror of the hex input so typing doesn't immediately clobber `value`.
   // The leading "#" is shown as a separate decoration, so the draft holds the digits
@@ -65,6 +76,27 @@
     {/each}
   </div>
 
+  {#if showShades}
+    <div class="shade-ramp" role="group" aria-label="Color shades">
+      {#each shadeRows as row (row.name)}
+        <div class="shade-row">
+          {#each row.shades as shade (shade)}
+            <button
+              type="button"
+              class="swatch shade"
+              class:active={isActive(shade)}
+              style:background-color={shade}
+              title={`${row.name} ${shade}`}
+              aria-label={`${row.name} ${shade}`}
+              aria-pressed={isActive(shade)}
+              onclick={() => pickSwatch(shade)}
+            ></button>
+          {/each}
+        </div>
+      {/each}
+    </div>
+  {/if}
+
   <div class="hex-row">
     <span class="hash" aria-hidden="true">#</span>
     <input
@@ -100,6 +132,26 @@
     display: grid;
     grid-template-columns: repeat(5, 1fr);
     gap: 4px;
+  }
+
+  .shade-ramp {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    padding-top: 6px;
+    border-top: 1px solid rgba(0, 0, 0, 0.08);
+  }
+
+  .shade-row {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 3px;
+  }
+
+  .swatch.shade {
+    inline-size: 18px;
+    block-size: 18px;
+    border-radius: 3px;
   }
 
   .swatch {

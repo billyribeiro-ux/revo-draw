@@ -38,6 +38,31 @@
   import ExportDialog from '$lib/x/ExportDialog.svelte';
   import Toast from '$lib/x/Toast.svelte';
   import HintViewer from '$lib/x/HintViewer.svelte';
+  import Tooltip from '$lib/x/Tooltip.svelte';
+  import WelcomeScreen from '$lib/x/WelcomeScreen.svelte';
+  import CommandPalette, { type Command } from '$lib/x/CommandPalette.svelte';
+  import LibraryPanel from '$lib/x/LibraryPanel.svelte';
+  import EmbedDialog from '$lib/x/EmbedDialog.svelte';
+  import MermaidDialog from '$lib/x/MermaidDialog.svelte';
+
+  // tool → human label + keyboard shortcut, for the styled toolbar tooltips
+  const TOOL_INFO: Record<string, { label: string; shortcut?: string }> = {
+    hand: { label: 'Hand (panning tool)', shortcut: 'H' },
+    selection: { label: 'Selection', shortcut: 'V' },
+    lasso: { label: 'Lasso' },
+    rectangle: { label: 'Rectangle', shortcut: 'R' },
+    diamond: { label: 'Diamond', shortcut: 'D' },
+    ellipse: { label: 'Ellipse', shortcut: 'O' },
+    arrow: { label: 'Arrow', shortcut: 'A' },
+    line: { label: 'Line', shortcut: 'L' },
+    freedraw: { label: 'Draw', shortcut: 'P' },
+    text: { label: 'Text', shortcut: 'T' },
+    image: { label: 'Insert image', shortcut: '9' },
+    eraser: { label: 'Eraser', shortcut: 'E' },
+    frame: { label: 'Frame', shortcut: 'F' },
+    embeddable: { label: 'Embed a link' },
+    laser: { label: 'Laser pointer', shortcut: 'K' }
+  };
 
   const controller = new DrawController();
   const { scene, appState } = controller;
@@ -61,6 +86,7 @@
     'image',
     'eraser',
     'frame',
+    'embeddable',
     'laser'
   ];
 
@@ -161,7 +187,56 @@
   let menuOpen = $state(false);
   let helpOpen = $state(false);
   let exportOpen = $state(false);
+  let cmdpOpen = $state(false);
+  let libraryOpen = $state(false);
+  let mermaidOpen = $state(false);
   let contextAt = $state<{ x: number; y: number } | null>(null);
+
+  // the command palette's action list (assembled from existing controller ops)
+  const commandsList: Command[] = [
+    { group: 'Tools', label: 'Selection', shortcut: 'V', run: () => controller.setTool('selection') },
+    { group: 'Tools', label: 'Rectangle', shortcut: 'R', run: () => controller.setTool('rectangle') },
+    { group: 'Tools', label: 'Ellipse', shortcut: 'O', run: () => controller.setTool('ellipse') },
+    { group: 'Tools', label: 'Diamond', shortcut: 'D', run: () => controller.setTool('diamond') },
+    { group: 'Tools', label: 'Arrow', shortcut: 'A', run: () => controller.setTool('arrow') },
+    { group: 'Tools', label: 'Line', shortcut: 'L', run: () => controller.setTool('line') },
+    { group: 'Tools', label: 'Draw', shortcut: 'P', run: () => controller.setTool('freedraw') },
+    { group: 'Tools', label: 'Text', shortcut: 'T', run: () => controller.setTool('text') },
+    { group: 'Tools', label: 'Frame', shortcut: 'F', run: () => controller.setTool('frame') },
+    { group: 'Tools', label: 'Laser pointer', shortcut: 'K', run: () => controller.setTool('laser') },
+    { group: 'Tools', label: 'Hand (pan)', shortcut: 'H', run: () => controller.setTool('hand') },
+    { group: 'Edit', label: 'Select all', shortcut: '⌘A', run: () => controller.selectAll() },
+    { group: 'Edit', label: 'Duplicate', shortcut: '⌘D', run: () => controller.duplicateSelected() },
+    { group: 'Edit', label: 'Delete', shortcut: 'Del', run: () => controller.deleteSelected() },
+    { group: 'Edit', label: 'Group selection', shortcut: '⌘G', run: () => controller.groupSelected() },
+    { group: 'Edit', label: 'Ungroup selection', shortcut: '⌘⇧G', run: () => controller.ungroupSelected() },
+    { group: 'Edit', label: 'Copy', shortcut: '⌘C', run: () => void controller.copySelected() },
+    { group: 'Edit', label: 'Paste', shortcut: '⌘V', run: () => void controller.paste() },
+    { group: 'Edit', label: 'Copy to clipboard as PNG', run: () => void controller.copyToClipboardAsPng() },
+    { group: 'Edit', label: 'Undo', shortcut: '⌘Z', run: () => controller.undo() },
+    { group: 'Edit', label: 'Redo', shortcut: '⌘⇧Z', run: () => controller.redo() },
+    { group: 'Align', label: 'Align left', run: () => controller.alignSelected('start', 'x') },
+    { group: 'Align', label: 'Align right', run: () => controller.alignSelected('end', 'x') },
+    { group: 'Align', label: 'Align top', run: () => controller.alignSelected('start', 'y') },
+    { group: 'Align', label: 'Align bottom', run: () => controller.alignSelected('end', 'y') },
+    { group: 'Align', label: 'Distribute horizontally', run: () => controller.distributeSelected('x') },
+    { group: 'Align', label: 'Distribute vertically', run: () => controller.distributeSelected('y') },
+    { group: 'View', label: 'Zoom to fit', run: () => controller.zoomToFit() },
+    { group: 'View', label: 'Scroll back to content', run: () => controller.scrollToContent() },
+    { group: 'View', label: 'Reset view', run: () => controller.resetView() },
+    { group: 'View', label: 'Toggle grid', shortcut: "⌘'", run: () => controller.toggleGrid() },
+    { group: 'View', label: 'Toggle theme', run: () => controller.toggleTheme() },
+    { group: 'View', label: 'View mode', run: () => controller.toggleViewMode() },
+    { group: 'View', label: 'Zen mode', run: () => controller.toggleZenMode() },
+    { group: 'File', label: 'Open…', shortcut: '⌘O', run: () => void controller.openFile() },
+    { group: 'File', label: 'Save to…', shortcut: '⌘S', run: () => void controller.saveToFile() },
+    { group: 'File', label: 'Save as image…', run: () => (exportOpen = true) },
+    { group: 'File', label: 'Reset the canvas', run: () => controller.clear() },
+    { group: 'Edit', label: 'Add to library', run: () => controller.addSelectionToLibrary() },
+    { group: 'View', label: 'Toggle library', run: () => (libraryOpen = !libraryOpen) },
+    { group: 'File', label: 'Mermaid to diagram…', run: () => (mermaidOpen = true) },
+    { group: 'Help', label: 'Keyboard shortcuts', shortcut: '?', run: () => (helpOpen = true) }
+  ];
 
   function oncontextmenu(e: MouseEvent): void {
     e.preventDefault();
@@ -205,6 +280,8 @@
     { label: 'Lock', action: () => controller.lockSelected() },
     { label: 'Unlock all', action: () => controller.unlockAll() },
     'separator' as const,
+    { label: 'Add to library', action: () => controller.addSelectionToLibrary() },
+    'separator' as const,
     { label: 'Select all', action: () => controller.selectAll() },
     { label: 'Select none', action: () => controller.deselect() }
   ];
@@ -219,7 +296,11 @@
     { label: 'Reset view', action: () => controller.resetView() },
     'separator' as const,
     { label: 'Save as image…', action: () => (exportOpen = true) },
+    { label: 'Mermaid to diagram…', action: () => (mermaidOpen = true) },
+    { label: libraryOpen ? 'Hide library' : 'Show library', action: () => (libraryOpen = !libraryOpen) },
     { label: controller.gridMode ? 'Hide grid' : 'Show grid', action: () => controller.toggleGrid() },
+    { label: controller.objectsSnapMode ? 'Disable snapping' : 'Enable snapping', action: () => controller.toggleObjectsSnapMode() },
+    { label: controller.midpointSnapping ? 'Disable midpoint snapping' : 'Enable midpoint snapping', action: () => controller.toggleMidpointSnapping() },
     { label: controller.viewMode ? 'Exit view mode' : 'View mode', action: () => controller.toggleViewMode() },
     { label: controller.zenMode ? 'Exit zen mode' : 'Zen mode', action: () => controller.toggleZenMode() },
     'separator' as const,
@@ -294,6 +375,13 @@
       } else {
         controller.undo();
       }
+      e.preventDefault();
+    } else if (
+      !e.altKey &&
+      (e.metaKey || e.ctrlKey) &&
+      (e.key === '/' || (e.shiftKey && (e.key === 'p' || e.key === 'P')))
+    ) {
+      cmdpOpen = !cmdpOpen; // ⌘/ or ⌘⇧P toggles the command palette
       e.preventDefault();
     } else if ((e.metaKey || e.ctrlKey) && (e.key === 's' || e.key === 'S')) {
       void controller.saveToFile();
@@ -470,16 +558,17 @@
       ☰
     </button>
     {#each tools as tool (tool)}
-      <button
-        type="button"
-        class="tool-btn"
-        class:active={controller.activeTool === tool}
-        title={tool}
-        aria-label={tool}
-        onclick={() => controller.setTool(tool)}
-      >
-        {#if ICONS[tool]}{@html ICONS[tool]}{:else}{tool}{/if}
-      </button>
+      <Tooltip label={TOOL_INFO[tool]?.label ?? tool} shortcut={TOOL_INFO[tool]?.shortcut}>
+        <button
+          type="button"
+          class="tool-btn"
+          class:active={controller.activeTool === tool}
+          aria-label={TOOL_INFO[tool]?.label ?? tool}
+          onclick={() => controller.setTool(tool)}
+        >
+          {#if ICONS[tool]}{@html ICONS[tool]}{:else}{tool}{/if}
+        </button>
+      </Tooltip>
     {/each}
     <button
       type="button"
@@ -517,6 +606,7 @@
       <ColorPicker
         value={controller.strokeColor}
         palette={strokeColors}
+        showShades
         onPick={(c) => {
           controller.setStrokeColor(c);
           pickerOpen = null;
@@ -549,6 +639,7 @@
       <ColorPicker
         value={controller.backgroundColor}
         palette={bgColors}
+        showShades
         onPick={(c) => {
           controller.setBackgroundColor(c);
           pickerOpen = null;
@@ -650,6 +741,42 @@
   <HintViewer hint={controller.hint} />
 {/if}
 
+{#if cmdpOpen}
+  <CommandPalette commands={commandsList} onClose={() => (cmdpOpen = false)} />
+{/if}
+
+{#if controller.pendingEmbed}
+  <EmbedDialog
+    onSubmit={(url) => controller.setEmbedLink(url)}
+    onCancel={() => controller.cancelEmbed()}
+  />
+{/if}
+
+{#if mermaidOpen}
+  <MermaidDialog
+    onInsert={(src) => controller.insertMermaid(src)}
+    onClose={() => (mermaidOpen = false)}
+  />
+{/if}
+
+{#if libraryOpen}
+  <LibraryPanel
+    items={controller.library}
+    canAdd={controller.canAddToLibrary}
+    onAdd={() => controller.addSelectionToLibrary()}
+    onInsert={(id) => controller.insertLibraryItem(id)}
+    onRemove={(id) => controller.removeLibraryItem(id)}
+    onClose={() => (libraryOpen = false)}
+  />
+{/if}
+
+{#if controller.showWelcome}
+  <WelcomeScreen
+    onOpen={() => void controller.openFile()}
+    onHelp={() => (helpOpen = true)}
+  />
+{/if}
+
 {#if controller.toastMessage !== null}
   <Toast
     message={controller.toastMessage}
@@ -684,6 +811,23 @@
       return () => controller.stopLaserLayer();
     }}
   ></svg>
+
+  <!-- live iframe overlay for embeddable elements (positioned in screen space) -->
+  {#each controller.embeddables as embed (embed.id)}
+    {@const a = controller.appState.current}
+    {@const sx = (embed.x + a.scrollX) * a.zoom.value + a.offsetLeft}
+    {@const sy = (embed.y + a.scrollY) * a.zoom.value + a.offsetTop}
+    <iframe
+      class="embed-frame"
+      title="Embedded content"
+      src={embed.link ?? ''}
+      style="left:{sx}px; top:{sy}px; width:{embed.width * a.zoom.value}px; height:{embed.height *
+        a.zoom.value}px;"
+      sandbox="allow-scripts allow-same-origin allow-popups allow-forms"
+      referrerpolicy="no-referrer"
+      allowfullscreen
+    ></iframe>
+  {/each}
 
   {#if controller.editingText}
     {@const t = controller.editingText}
@@ -796,6 +940,14 @@
   }
 
   /* laser trail sits above the canvases but never intercepts pointer events */
+  .embed-frame {
+    position: absolute;
+    z-index: 1;
+    border: 1px solid #e9ecef;
+    border-radius: 6px;
+    background: #fff;
+  }
+
   .laser-layer {
     pointer-events: none;
   }

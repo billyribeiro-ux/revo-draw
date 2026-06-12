@@ -17,11 +17,15 @@ import {
   getHoveredElementForBinding,
   getTransformHandleTypeFromCoords,
   hitElementItself,
+  embeddableURLValidator,
+  getEmbedLink,
   isArrowElement,
   isElbowArrow,
+  isEmbeddableElement,
   isFrameLikeElement,
   isLinearElement,
   isTextElement,
+  maybeParseEmbedSrc,
   LinearElementEditor,
   moveAllLeft,
   moveAllRight,
@@ -38,6 +42,7 @@ import {
   newArrowElement,
   newElement,
   newElementWith,
+  newEmbeddableElement,
   newFrameElement,
   newFreeDrawElement,
   newLinearElement,
@@ -74,6 +79,12 @@ import {
   probablySupportsClipboardBlob,
   readSystemClipboardText,
 } from "$lib/x/clipboard.ts";
+import {
+  loadLibrary,
+  makeLibraryItem,
+  saveLibrary,
+} from "$lib/x/library-store.ts";
+import type { LibraryItems } from "@excalidraw/excalidraw/types";
 
 import {
   getReferenceSnapPoints,
@@ -160,7 +171,8 @@ export type Tool =
   | "laser"
   | "frame"
   | "hand"
-  | "lasso";
+  | "lasso"
+  | "embeddable";
 
 type CreateMode = "generic" | "freedraw" | "linear";
 
@@ -192,6 +204,10 @@ export class DrawController {
   /** The set of selected element ids (reactive — drives the interactive overlay). */
   readonly selectedIds = new SvelteSet<string>();
   editingTextId = $state<string | null>(null);
+  /** An embeddable awaiting its URL (drives the embed-link dialog), if any. */
+  pendingEmbedId = $state<string | null>(null);
+  /** Persisted library items (reactive — drives the library panel). */
+  library = $state<LibraryItems>([]);
 
   /** First selected id, for single-selection consumers (text editing, panels). */
   get selectedId(): string | null {
@@ -286,6 +302,9 @@ export class DrawController {
       this.scene.replaceAllElements(this.#elements);
       this.appState.setState(restored.appState);
     }
+
+    // restore the persisted library
+    this.library = loadLibrary();
 
     // capture the initial snapshot (empty or restored) as the undo baseline
     this.#commit();
@@ -397,6 +416,30 @@ export class DrawController {
   toggleGrid(): void {
     this.appState.setState({ gridModeEnabled: !this.appState.current.gridModeEnabled });
     this.scene.scene.triggerUpdate();
+  }
+
+  /** Whether object snapping (alignment guides) is the persistent default. */
+  get objectsSnapMode(): boolean {
+    return this.appState.current.objectsSnapModeEnabled;
+  }
+
+  /** Toggle persistent object snapping (Excalidraw actionToggleObjectsSnapMode, Alt+S). */
+  toggleObjectsSnapMode(): void {
+    this.appState.setState({
+      objectsSnapModeEnabled: !this.appState.current.objectsSnapModeEnabled,
+    });
+  }
+
+  /** Whether arrows snap to shape midpoints while binding. */
+  get midpointSnapping(): boolean {
+    return this.appState.current.isMidpointSnappingEnabled;
+  }
+
+  /** Toggle arrow midpoint snapping (Excalidraw actionToggleMidpointSnapping). */
+  toggleMidpointSnapping(): void {
+    this.appState.setState({
+      isMidpointSnappingEnabled: !this.appState.current.isMidpointSnappingEnabled,
+    });
   }
 
   resetView(): void {
@@ -613,6 +656,16 @@ export class DrawController {
   /** True when the text tool is active or a text element is selected — drives the font panel. */
   get showTextProperties(): boolean {
     return this.activeTool === "text" || this.selectedElements.some(isTextElement);
+  }
+
+  /** Show the welcome screen on an empty canvas (Excalidraw WelcomeScreen). */
+  get showWelcome(): boolean {
+    return (
+      this.scene.elements.length === 0 &&
+      !this.appState.current.zenModeEnabled &&
+      !this.appState.current.viewModeEnabled &&
+      this.editingTextId === null
+    );
   }
 
   /** Current font family for the properties panel (selected text wins, else the app default). */
@@ -1472,6 +1525,150 @@ export class DrawController {
     }
   }
 
+  // --- embeddables (iframe embeds via a link; Excalidraw embeddable) ---
+
+  /** The embeddable element awaiting a URL, if any (drives the embed dialog). */
+  get pendingEmbed(): ExcalidrawElement | null {
+    if (!this.pendingEmbedId) {
+      return null;
+    }
+    return (
+      this.scene.scene.getNonDeletedElementsMap().get(this.pendingEmbedId) ?? null
+    );
+  }
+
+  /**
+   * Validate + set an embeddable's URL. Returns false if the URL is rejected
+   * (the dialog stays open). Uses getEmbedLink to normalize (YouTube etc.).
+   */
+  setEmbedLink(url: string): boolean {
+    const id = this.pendingEmbedId;
+    if (!id) {
+      return false;
+    }
+    const normalized = maybeParseEmbedSrc(url.trim());
+    if (!embeddableURLValidator(normalized, undefined)) {
+      this.showToast("That URL can't be embedded.");
+      return false;
+    }
+    const map = this.scene.scene.getNonDeletedElementsMap();
+    const el = map.get(id);
+    if (el) {
+      // normalize the URL into its embeddable form (YouTube → /embed/, etc.) and
+      // adopt the embed's natural size when known
+      const embed = getEmbedLink(normalized);
+      const embedLink = embed && "link" in embed ? embed.link : normalized;
+      const updates: { link: string; width?: number; height?: number } = {
+        link: embedLink,
+      };
+      if (embed?.intrinsicSize) {
+        updates.width = embed.intrinsicSize.w;
+        updates.height = embed.intrinsicSize.h;
+      }
+      mutateElement(el, map, updates);
+      this.scene.scene.triggerUpdate();
+      this.#commit();
+    }
+    this.pendingEmbedId = null;
+    return true;
+  }
+
+  /** Cancel the embed prompt, removing the placeholder embeddable. */
+  cancelEmbed(): void {
+    const id = this.pendingEmbedId;
+    this.pendingEmbedId = null;
+    if (!id) {
+      return;
+    }
+    this.#elements = this.#elements.filter((e) => e.id !== id);
+    syncInvalidIndices(this.#elements);
+    this.scene.replaceAllElements(this.#elements);
+    this.#commit();
+  }
+
+  /** All embeddable elements with a link, for the iframe overlay. */
+  get embeddables(): readonly ExcalidrawElement[] {
+    return this.scene.elements.filter(
+      (e) => isEmbeddableElement(e) && !!e.link,
+    );
+  }
+
+  // --- mermaid → diagram (Excalidraw TTDDialog; built-in flowchart converter) ---
+
+  /**
+   * Parse Mermaid flowchart text into elements and insert them centered in the
+   * viewport. Returns an error message on parse failure (the dialog shows it).
+   */
+  async insertMermaid(source: string): Promise<string | null> {
+    let elements: ExcalidrawElement[];
+    try {
+      const { mermaidToElements } = await import("$lib/x/mermaid.ts");
+      elements = mermaidToElements(source);
+    } catch (error) {
+      return error instanceof Error ? error.message : "Couldn't parse the diagram.";
+    }
+    if (!elements.length) {
+      return "No elements were generated.";
+    }
+    // center the generated diagram in the current viewport
+    const [x1, y1, x2, y2] = getCommonBounds(elements);
+    const a = this.appState.current;
+    const viewCx = a.width / 2 / a.zoom.value - a.scrollX;
+    const viewCy = a.height / 2 / a.zoom.value - a.scrollY;
+    const dx = viewCx - (x1 + x2) / 2;
+    const dy = viewCy - (y1 + y2) / 2;
+    const map = this.scene.scene.getNonDeletedElementsMap();
+    for (const el of elements) {
+      mutateElement(el, map, { x: el.x + dx, y: el.y + dy });
+    }
+    this.#elements.push(...elements);
+    syncInvalidIndices(this.#elements);
+    this.scene.replaceAllElements(this.#elements);
+    this.#setSelection(elements.map((e) => e.id));
+    this.activeTool = "selection";
+    this.#commit();
+    return null;
+  }
+
+  // --- library (reusable element groups; Excalidraw addToLibrary / insert) ---
+
+  /** True when there's a selection to add to the library. */
+  get canAddToLibrary(): boolean {
+    return this.selectedIds.size > 0;
+  }
+
+  /** Add the current selection to the library as one item (Excalidraw addToLibrary). */
+  addSelectionToLibrary(): void {
+    const sel = this.selectedElements;
+    if (!sel.length) {
+      return;
+    }
+    const item = makeLibraryItem(sel, randomId(), this.#nowMs());
+    this.library = [...this.library, item];
+    saveLibrary(this.library);
+    this.showToast("Added to library.");
+  }
+
+  /** Remove a library item by id. */
+  removeLibraryItem(id: string): void {
+    this.library = this.library.filter((it) => it.id !== id);
+    saveLibrary(this.library);
+  }
+
+  /** Stamp a library item onto the canvas (re-id'd, offset), selecting the copies. */
+  insertLibraryItem(id: string, clientX?: number, clientY?: number): void {
+    const item = this.library.find((it) => it.id === id);
+    if (!item || !item.elements.length) {
+      return;
+    }
+    this.#pasteElements(item.elements as ExcalidrawElement[], clientX, clientY);
+  }
+
+  /** Epoch-ms timestamp (Date.now via a single boundary; safe in the browser). */
+  #nowMs(): number {
+    return new Date().getTime();
+  }
+
   /** Duplicate the selected element(s) offset by (10,10) and select the copies. */
   duplicateSelected(): void {
     const originals = this.selectedElements;
@@ -2159,6 +2356,9 @@ export class DrawController {
     } else if (this.activeTool === "frame") {
       this.#creating = newFrameElement({ x, y, width: 0, height: 0 });
       this.#mode = "generic";
+    } else if (this.activeTool === "embeddable") {
+      this.#creating = newEmbeddableElement({ type: "embeddable", x, y });
+      this.#mode = "generic";
     } else {
       this.#creating = newElement({
         type: this.activeTool,
@@ -2504,6 +2704,21 @@ export class DrawController {
     }
     this.#creating = null;
     this.#mode = null;
+
+    // an embeddable: a zero-size click gets a default box; then prompt for its URL
+    if (isEmbeddableElement(creating)) {
+      const map = this.scene.scene.getNonDeletedElementsMap();
+      if (creating.width < 1 && creating.height < 1) {
+        mutateElement(creating, map, { width: 400, height: 300 });
+      }
+      syncInvalidIndices(this.#elements);
+      this.scene.replaceAllElements(this.#elements);
+      this.#select(creating.id);
+      this.pendingEmbedId = creating.id;
+      this.#commit();
+      this.activeTool = "selection";
+      return;
+    }
 
     // discard an accidental click (no drag → zero size) for shapes and linear elements
     const discarded =
