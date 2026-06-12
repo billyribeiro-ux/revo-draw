@@ -218,6 +218,36 @@ const NO_MODS: PointerMods = {
   button: 0,
 };
 
+function getStateForZoom(
+  {
+    viewportX,
+    viewportY,
+    nextZoom,
+  }: {
+    viewportX: number;
+    viewportY: number;
+    nextZoom: NormalizedZoomValue;
+  },
+  appState: AppState,
+): Pick<AppState, "scrollX" | "scrollY" | "zoom"> {
+  const appLayerX = viewportX - appState.offsetLeft;
+  const appLayerY = viewportY - appState.offsetTop;
+  const currentZoom = appState.zoom.value;
+
+  const baseScrollX =
+    appState.scrollX + (appLayerX - appLayerX / currentZoom);
+  const baseScrollY =
+    appState.scrollY + (appLayerY - appLayerY / currentZoom);
+  const zoomOffsetScrollX = -(appLayerX - appLayerX / nextZoom);
+  const zoomOffsetScrollY = -(appLayerY - appLayerY / nextZoom);
+
+  return {
+    scrollX: baseScrollX + zoomOffsetScrollX,
+    scrollY: baseScrollY + zoomOffsetScrollY,
+    zoom: { value: nextZoom },
+  };
+}
+
 export class DrawController {
   readonly scene = new EditorScene();
   readonly appState = new EditorAppState();
@@ -472,11 +502,17 @@ export class DrawController {
   }
 
   resetView(): void {
-    this.appState.setState({
-      zoom: { value: 1 as NormalizedZoomValue },
-      scrollX: 0,
-      scrollY: 0,
-    });
+    const a = this.appState.current;
+    this.appState.setState(
+      getStateForZoom(
+        {
+          viewportX: a.width / 2 + a.offsetLeft,
+          viewportY: a.height / 2 + a.offsetTop,
+          nextZoom: 1 as NormalizedZoomValue,
+        },
+        a,
+      ),
+    );
   }
 
   /** Center+fit the given world bounds into the viewport. */
