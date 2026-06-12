@@ -5,6 +5,23 @@ Newest first. "Done" = committed on this branch with tests green; "Pending" = no
 
 ## Done
 
+### Web-editor (`/x`) Phase 1 parity continuation — 2026-06-12 (branch `feat/excalidraw-parity-gaps`)
+
+Completed and pushed four isolated Tier 1 wiring fixes from `PARITY_REMAINING_WORK.md`, one bug per
+commit, each with a dedicated headless-Chrome differential probe:
+
+- **#32** Delete/Backspace no longer delete while Cmd/Ctrl is held (`1bb3bb3`,
+  `probe-x-fix32-delete-modifier-guard.mjs`).
+- **#44** Shift+wheel now pans horizontally with `(deltaY || deltaX) / zoom` (`156e7cd`,
+  `probe-x-fix44-shift-wheel-horizontal.mjs`).
+- **#40** reset zoom preserves the viewport center via upstream `getStateForZoom` (`1b66a2d`,
+  `probe-x-fix40-reset-zoom-center.mjs`).
+- **#41** zoom-to-fit now caps at 100% and floors to `ZOOM_STEP` instead of using the old `0.85`
+  multiplier (`95b632e`, `probe-x-fix41-zoom-to-fit.mjs`).
+
+Verification: `pnpm check` 0/0, `pnpm test` 172/172, and the full
+`for p in scripts/probe-x-fix*.mjs; do node "$p"; done` sweep passed **20/20**.
+
 ### Web-editor (`/x`) behavioral-parity fixes — 2026-06-12 (branch `feat/excalidraw-parity-gaps`)
 
 End-to-end fidelity audit (95-agent workflow → `PARITY_E2E_AUDIT.md` / `PARITY_E2E_FINDINGS.json`)

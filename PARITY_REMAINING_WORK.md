@@ -35,9 +35,9 @@ Dev server: `pnpm dev` (http://localhost:1420/x). Probes: `node scripts/probe-x-
 
 ---
 
-## 1. DONE — 16 fixes, 20 audit findings, all probe-verified & pushed
+## 1. DONE — 20 fixes, 24 audit findings, all probe-verified & pushed
 
-All 15 fix-probes pass (`for p in scripts/probe-x-fix*.mjs; do node "$p"; done` → **15/15 PASS**).
+All 20 fix-probes pass (`for p in scripts/probe-x-fix*.mjs; do node "$p"; done` → **20/20 PASS**).
 Every commit also passed `pnpm check` 0/0 + 172 unit tests + the existing regression probes.
 
 | Bug | Commit | Fix (wired the ported fn) | Evidence probe |
@@ -53,10 +53,14 @@ Every commit also passed `pnpm check` 0/0 + 172 unit tests + the existing regres
 | #29 sloppiness doesn't re-seed | `91b9fbf` | `{ seed: randomInteger(), roughness }` (actionProperties.tsx:611) | `probe-x-fix29-sloppiness-seed.mjs` |
 | #30 setEdges wrong radius/elbow | `a14df6a` | per-type `isUsingAdaptiveRadius` + skip elbow (actionProperties.tsx:1499) | `probe-x-fix30-setedges-pertype.mjs` |
 | #31 naive delete | `46255a9` | port `deleteSelectedElements` + `fixBindingsAfterDeletion` | `probe-x-fix31-delete.mjs` |
+| #32 Delete key fires with Cmd/Ctrl held | `1bb3bb3` | keyboard delete guard skips when Cmd/Ctrl is held (`actionDeleteSelected` key rule) | `probe-x-fix32-delete-modifier-guard.mjs` |
 | #33 duplicate breaks groups | `a05df17` | batch `duplicateElements({type:'in-place'})` shared groupIdMap | `probe-x-fix33-duplicate-group.mjs` |
 | #34 selectAll grabs locked/bound | `4aedafe` | `actionSelectAll` filter `!locked && !(text&&containerId)` | `probe-x-fix34-selectall-filter.mjs` |
 | #36 flip drifts/no swap/no rebind | `1b37569` | 3 branches: arrowhead swap, `bindOrUnbindBindingElements`, recenter | `probe-x-fix36-flip.mjs` |
 | #35/#37/#38/#42/#43 keyboard | `2c67468` | z-order chords (event.code+Darwin Alt), lock, align, zoom, view/zen | `probe-x-fix35-keyboard.mjs` |
+| #40 reset-zoom loses viewport center | `1b66a2d` | `getStateForZoom({viewportX:w/2,viewportY:h/2,nextZoom:1})` | `probe-x-fix40-reset-zoom-center.mjs` |
+| #41 zoom-to-fit uses 0.85 multiplier | `95b632e` | `zoomValueToFitBoundsOnViewport` cap + `roundToStep` floor | `probe-x-fix41-zoom-to-fit.mjs` |
+| #44 Shift+wheel vertical-pans | `156e7cd` | Shift branch pans X by `(deltaY || deltaX) / zoom` | `probe-x-fix44-shift-wheel-horizontal.mjs` |
 | UI empty-canvas panels | `e4731d5` | `showProperties` (= `showSelectedShapeActions`) + `statsOpen` gate; Alt+/ toggles stats | `probe-x-fixUI-panel-visibility.mjs` |
 
 **Precision wins (audit wording was looser than real upstream — verified against source):**
@@ -73,16 +77,12 @@ Every commit also passed `pnpm check` 0/0 + 172 unit tests + the existing regres
 | Bug | What's wrong | Wire this (upstream ref) | Primary file(s) |
 |---|---|---|---|
 | **#21** | arrow type↔elbow conversion doesn't reposition x/y, reset angle, rebuild points, rebind | port `changeArrowType` (`actionProperties.tsx:1803-1965`) | `draw-controller.svelte.ts` (~`setArrowType`/`#convertArrowType`) |
-| **#40** | reset-zoom zeroes scroll to (0,0) instead of keeping viewport center | `getStateForZoom({viewportX:w/2,viewportY:h/2,nextZoom:1})` (`actionCanvas.tsx:222`) | `draw-controller.svelte.ts:474` `resetView` |
-| **#41** | zoom-to-fit hard-codes 0.85 pad, no `roundToStep`/100% cap | mirror `zoomValueToFitBoundsOnViewport` (`actionCanvas.tsx:259-357`) | `draw-controller.svelte.ts:499` `zoomToFit` |
 | **#5** | new elements never parented to frame under cursor (`frameId` always null) | `getTopLayerFrameAtSceneCoords` at pointerDown → pass `frameId` to create | `draw-controller.svelte.ts` create branches (~2375-2490) |
 | **#22** | drawn line/arrow not auto-selected; no `LinearElementEditor` | set `selectedElementIds`+`selectedLinearElement` on finalize (App.tsx:10934) | `draw-controller.svelte.ts` linear finalize (~3060) |
 | **#23** | linear point-editor Cmd/Ctrl hard-coded false (grid-bypass dead) | forward real `ctrlKey`/`metaKey` into `#linearEvent` | `draw-controller.svelte.ts:2069` `#linearEvent` |
 | **#25** | tool always reverts to selection; `activeTool.locked` (tool pin / Q) not honored | add tool-lock state; gate reset on `!locked` | `draw-controller.svelte.ts` + `EditorPreview.svelte` |
 | **#26** | `pasteAsPlaintext` ignores excalidraw envelope (pastes raw JSON as text) | parse `data.elements` branch first (App.tsx:3762) | `draw-controller.svelte.ts:~1370` |
 | **#27/#28** | plain paste: no newline-split, no center-on-cursor, no wrap | `isPlainPaste ? [text] : text.split("\n")` + center/wrap (App.tsx:4158) | `draw-controller.svelte.ts:~1409` |
-| **#32** | Delete key fires even with Cmd/Ctrl held | add `&& !event[CTRL_OR_CMD]` guard | `EditorPreview.svelte:333` |
-| **#44** | Shift+wheel doesn't force horizontal pan | add Shift branch panning X by `(deltaY‖deltaX)/zoom` (App.tsx:12853) | `EditorPreview.svelte` wheel handler (~181) |
 | **#39** | `alignSelected` guards on element count not group count; no frame-exclusion | guard on `getSelectedElementsByGroup(...).length>1 && !some(isFrameLikeElement)` | `draw-controller.svelte.ts` `alignSelected` |
 
 ### Tier 2 — Text cluster (medium; helpers ported, editor wiring needed)
