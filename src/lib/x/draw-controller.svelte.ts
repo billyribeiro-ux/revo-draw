@@ -33,6 +33,7 @@ import {
   moveOneRight,
   mutateElement,
   addToGroup,
+  bindOrUnbindBindingElement,
   bindOrUnbindBindingElements,
   fixBindingsAfterDeletion,
   canApplyRoundnessTypeToElement,
@@ -134,6 +135,7 @@ import type {
   NonDeletedExcalidrawElement,
   NonDeletedSceneElementsMap,
   OrderedExcalidrawElement,
+  PointsPositionUpdates,
   SceneElementsMap,
   TextAlign,
 } from "@excalidraw/element/types";
@@ -285,6 +287,10 @@ export class DrawController {
   // multi-point linear (line/arrow) editing — the editor lives on
   // appState.selectedLinearElement; this flags an in-progress point drag.
   #linearPointerActive = false;
+  // last scene-pointer position during a linear point drag, used to re-bind/un-bind
+  // the dragged arrow endpoint on pointer-up (Excalidraw actionFinalize).
+  #linearLastX = 0;
+  #linearLastY = 0;
 
   // laser pointer — an ephemeral rAF-driven SVG trail (NOT in #elements/history)
   #laser: LaserTrails | null = null;
@@ -2436,6 +2442,8 @@ export class DrawController {
     if (!editor?.isEditing) {
       return;
     }
+    this.#linearLastX = x;
+    this.#linearLastY = y;
     const app = this.#linearApp();
     const elementsMap = this.scene.scene.getNonDeletedElementsMap();
 
@@ -2496,6 +2504,8 @@ export class DrawController {
     if (!editor?.isEditing) {
       return;
     }
+    const wasDragging = editor.isDragging;
+    const draggedIndices = editor.selectedPointsIndices;
     const next = LinearElementEditor.handlePointerUp(
       this.#linearEvent(NO_MODS),
       editor,
@@ -2503,6 +2513,39 @@ export class DrawController {
       this.scene.scene,
     );
     this.appState.setState({ selectedLinearElement: next });
+
+    // Re-bind / un-bind a dragged arrow endpoint: dragging an endpoint onto a shape
+    // binds it, off a shape un-binds it. Mirrors Excalidraw's actionFinalize
+    // (actionFinalize.tsx:88-123) — uses per-endpoint inside/orbit geometry and
+    // honours isBindingEnabled, replacing the bind-only #bindArrowEndpoints path.
+    const scene = this.scene.scene;
+    const elementsMap = scene.getNonDeletedElementsMap();
+    const el = LinearElementEditor.getElement(editor.elementId, elementsMap);
+    if (wasDragging && draggedIndices && el && isArrowElement(el)) {
+      const endpointIndices = draggedIndices.filter(
+        (i) => i === 0 || i === el.points.length - 1,
+      );
+      if (endpointIndices.length) {
+        const draggedPoints: PointsPositionUpdates = new Map();
+        for (const index of endpointIndices) {
+          draggedPoints.set(index, {
+            point: LinearElementEditor.pointFromAbsoluteCoords(
+              el,
+              pointFrom<GlobalPoint>(this.#linearLastX, this.#linearLastY),
+              elementsMap,
+            ),
+          });
+        }
+        bindOrUnbindBindingElement(
+          el as ExcalidrawArrowElement,
+          draggedPoints,
+          this.#linearLastX,
+          this.#linearLastY,
+          scene,
+          this.appState.current,
+        );
+      }
+    }
     this.#commit();
   }
 
