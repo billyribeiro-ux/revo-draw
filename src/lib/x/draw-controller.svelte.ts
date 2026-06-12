@@ -945,6 +945,39 @@ export class DrawController {
     }
   }
 
+  // --- file IO: save / open `.excalidraw` (Excalidraw's serializeAsJSON envelope) ---
+
+  /** Save the scene to a `.excalidraw` file (native Save dialog or download). */
+  async saveToFile(): Promise<void> {
+    const { saveAsExcalidraw } = await import("$lib/x/file-io.ts");
+    await saveAsExcalidraw(this.scene.elements, this.appState.current);
+  }
+
+  /** Open a `.excalidraw` file, replacing the current scene. Returns false if cancelled. */
+  async openFile(): Promise<boolean> {
+    const { openExcalidrawFile } = await import("$lib/x/file-io.ts");
+    const loaded = await openExcalidrawFile();
+    if (!loaded) {
+      return false;
+    }
+    this.#select(null);
+    this.#elements = syncInvalidIndices(
+      loaded.elements as ExcalidrawElement[],
+    ) as ExcalidrawElement[];
+    this.scene.replaceAllElements(this.#elements);
+    // adopt the persisted view/theme bits that round-trip safely
+    const a = loaded.appState;
+    const patch: Partial<AppState> = {};
+    if (a.viewBackgroundColor) patch.viewBackgroundColor = a.viewBackgroundColor;
+    if (a.theme) patch.theme = a.theme;
+    if (Object.keys(patch).length) {
+      this.appState.setState(patch);
+    }
+    this.activeTool = "selection";
+    this.#commit();
+    return true;
+  }
+
   // --- laser pointer (ephemeral trail) ---
 
   /** Mount the laser trail into an SVG overlay (called by the view once it's in the DOM). */

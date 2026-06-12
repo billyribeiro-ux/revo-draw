@@ -197,6 +197,9 @@
   ];
 
   const menuItems = $derived([
+    { label: 'Open…', shortcut: '⌘O', action: () => void controller.openFile() },
+    { label: 'Save to…', shortcut: '⌘S', action: () => void controller.saveToFile() },
+    'separator' as const,
     { label: 'Reset the canvas', icon: ICONS.trash, action: () => controller.clear() },
     { label: 'Zoom to fit', action: () => controller.zoomToFit() },
     { label: 'Reset view', action: () => controller.resetView() },
@@ -261,6 +264,12 @@
       } else {
         controller.undo();
       }
+      e.preventDefault();
+    } else if ((e.metaKey || e.ctrlKey) && (e.key === 's' || e.key === 'S')) {
+      void controller.saveToFile();
+      e.preventDefault();
+    } else if ((e.metaKey || e.ctrlKey) && (e.key === 'o' || e.key === 'O')) {
+      void controller.openFile();
       e.preventDefault();
     } else if ((e.metaKey || e.ctrlKey) && e.key === "'") {
       controller.toggleGrid();
