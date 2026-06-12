@@ -36,6 +36,8 @@
   import MainMenu from '$lib/x/MainMenu.svelte';
   import HelpDialog from '$lib/x/HelpDialog.svelte';
   import ExportDialog from '$lib/x/ExportDialog.svelte';
+  import Toast from '$lib/x/Toast.svelte';
+  import HintViewer from '$lib/x/HintViewer.svelte';
 
   const controller = new DrawController();
   const { scene, appState } = controller;
@@ -614,6 +616,19 @@
   <Stats
     element={controller.selectedElements[0] ?? null}
     sceneCount={controller.scene.elements.length}
+  />
+{/if}
+
+{#if !controller.zenMode && !controller.viewMode}
+  <HintViewer hint={controller.hint} />
+{/if}
+
+{#if controller.toastMessage !== null}
+  <Toast
+    message={controller.toastMessage}
+    closable={controller.toastClosable}
+    duration={controller.toastDuration}
+    onClose={() => controller.dismissToast()}
   />
 {/if}
 

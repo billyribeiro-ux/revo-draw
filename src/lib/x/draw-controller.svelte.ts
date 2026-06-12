@@ -1296,6 +1296,7 @@ export class DrawController {
     );
     if (element) {
       this.#copiedStyles = JSON.stringify([deepCopyElement(element)]);
+      this.showToast("Copied styles.");
     }
   }
 
@@ -1368,9 +1369,11 @@ export class DrawController {
     }
     try {
       await copyBlobToClipboardAsPng(blob);
+      this.showToast("Copied to clipboard as PNG.");
       return true;
     } catch (error) {
       console.warn("copy PNG to clipboard failed", error);
+      this.showToast("Couldn't copy to clipboard.");
       return false;
     }
   }
@@ -1413,6 +1416,79 @@ export class DrawController {
     return this.selectedIds.size
       ? this.scene.elements.filter((e) => this.selectedIds.has(e.id))
       : [];
+  }
+
+  // --- toast (transient status messages; Excalidraw appState.toast) ---
+
+  /** The active toast message string, or null (drives the Toast component). */
+  get toastMessage(): string | null {
+    const t = this.appState.current.toast;
+    return t ? String(t.message ?? "") : null;
+  }
+
+  /** Auto-dismiss duration for the active toast (ms), if any. */
+  get toastDuration(): number | undefined {
+    return this.appState.current.toast?.duration;
+  }
+
+  /** Whether the active toast shows a close button. */
+  get toastClosable(): boolean {
+    return this.appState.current.toast?.closable ?? false;
+  }
+
+  /** Show a transient toast (default auto-dismiss handled by the Toast component). */
+  showToast(message: string, opts?: { closable?: boolean; duration?: number }): void {
+    this.appState.setState({ toast: { message, ...opts } });
+  }
+
+  /** Dismiss the current toast. */
+  dismissToast(): void {
+    if (this.appState.current.toast) {
+      this.appState.setState({ toast: null });
+    }
+  }
+
+  /**
+   * The contextual hint shown in the bottom hint bar (Excalidraw HintViewer).
+   * English strings inlined (i18n is out of scope) with macOS shortcut glyphs.
+   */
+  get hint(): string | null {
+    const sel = this.selectedElements;
+    if (this.activeTool === "arrow" || this.activeTool === "line") {
+      return "Click to start multiple points, drag for single line";
+    }
+    if (this.activeTool === "freedraw") {
+      return "Click and drag, release when you're finished";
+    }
+    if (this.activeTool === "text") {
+      return "Tip: you can also add text by double-clicking anywhere with the selection tool";
+    }
+    if (this.editingTextId) {
+      return "Press Esc or ⌘↵ to finish editing";
+    }
+    if (this.isLineEditing) {
+      const editor = this.appState.current.selectedLinearElement;
+      return editor?.selectedPointsIndices?.length
+        ? "Press Delete to remove point(s), ⌘D to duplicate, or drag to move"
+        : "Drag a point to move it, click a midpoint to add a point";
+    }
+    if (sel.length === 1) {
+      const el = sel[0]!;
+      if (isLinearElement(el) && el.points.length === 2) {
+        return "You can constrain angles by holding Shift while dragging";
+      }
+      if (isTextElement(el)) {
+        return "Double-click or press Enter to edit text";
+      }
+      if (el.type === "image") {
+        return "Double-click to crop the image";
+      }
+      return "You can constrain proportions by holding Shift while resizing, hold Alt to resize from the center";
+    }
+    if (this.activeTool === "selection" && !sel.length) {
+      return "Hold ⌘ to deep-select within groups; hold Space to pan";
+    }
+    return null;
   }
 
   #hitTest(sceneX: number, sceneY: number): string | null {
