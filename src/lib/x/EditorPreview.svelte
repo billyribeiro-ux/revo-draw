@@ -62,11 +62,13 @@
 
   let fileInput = $state<HTMLInputElement>();
   let pendingImageAt: { x: number; y: number } | null = null;
-  let pickerOpen = $state<'stroke' | 'background' | null>(null);
+  let pickerOpen = $state<'stroke' | 'background' | 'canvas' | null>(null);
 
   // Excalidraw's default palettes
   const strokeColors = ['#1e1e1e', '#e03131', '#2f9e44', '#1971c2', '#f08c00'];
   const bgColors = ['transparent', '#ffc9c9', '#b2f2bb', '#a5d8ff', '#ffec99'];
+  // Excalidraw's canvas-background palette (white + light tints)
+  const canvasBgColors = ['#ffffff', '#f8f9fa', '#f5faff', '#fffce8', '#fdf2f8'];
   const widths = [
     { label: 'S', w: 1 },
     { label: 'M', w: 2 },
@@ -203,6 +205,7 @@
     'separator' as const,
     { label: 'Reset the canvas', icon: ICONS.trash, action: () => controller.clear() },
     { label: 'Zoom to fit', action: () => controller.zoomToFit() },
+    { label: 'Scroll back to content', action: () => controller.scrollToContent() },
     { label: 'Reset view', action: () => controller.resetView() },
     'separator' as const,
     { label: 'Save as image…', action: () => (exportOpen = true) },
@@ -521,6 +524,38 @@
         palette={bgColors}
         onPick={(c) => {
           controller.setBackgroundColor(c);
+          pickerOpen = null;
+        }}
+      />
+    {/if}
+  </div>
+  <div class="prop-group">
+    <span class="prop-label">Canvas</span>
+    <div class="swatches">
+      {#each canvasBgColors as c (c)}
+        <button
+          type="button"
+          class="swatch"
+          class:active={controller.viewBackgroundColor === c}
+          style="background:{c}"
+          aria-label="canvas background {c}"
+          onclick={() => controller.setViewBackgroundColor(c)}
+        ></button>
+      {/each}
+      <button
+        type="button"
+        class="swatch custom"
+        style="background:{controller.viewBackgroundColor}"
+        aria-label="custom canvas background color"
+        onclick={() => (pickerOpen = pickerOpen === 'canvas' ? null : 'canvas')}
+      ></button>
+    </div>
+    {#if pickerOpen === 'canvas'}
+      <ColorPicker
+        value={controller.viewBackgroundColor}
+        palette={canvasBgColors}
+        onPick={(c) => {
+          controller.setViewBackgroundColor(c);
           pickerOpen = null;
         }}
       />
