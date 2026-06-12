@@ -24,7 +24,7 @@ No auth, no cloud, no collaboration. The user's own machine.
 | Icon offline lib | @iconify/utils | 3.1.3 |
 | Local index ORM | drizzle-orm / drizzle-kit | 0.45.2 / 0.31.10 |
 | Tests | vitest | 4.1.7 (4.x = Vite 8 support) |
-| Package manager | **pnpm** | 11.x |
+| Package manager | **pnpm** | 11.6.0 |
 
 Vitest is pinned to 4.x and vite-plugin-svelte to 7.x because the §1 pins (Vite 8) require those
 majors; vitest 3 / vps ≤6 do not support Vite 8. These are the only "free" version choices and

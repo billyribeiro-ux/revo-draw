@@ -45,7 +45,7 @@ These are pinned as of **May 30, 2026**. If the Tauri scaffold template pins old
 | Icon offline lib | `@iconify/utils`                        | latest                |
 | Local index ORM  | `drizzle-orm`                           | latest                |
 | Drizzle CLI      | `drizzle-kit`                           | latest                |
-| Package manager  | **pnpm** (exclusively)                  | latest `10.x`/`11.x`  |
+| Package manager  | **pnpm** (exclusively)                  | `11.6.0`              |
 
 **Critical Vite 8 note:** Vite 8 uses Rolldown (Rust) as its single bundler, replacing the old
 esbuild+Rollup setup. On first install, **verify `unplugin-icons` and the Tauri Vite integration
