@@ -33,8 +33,12 @@ import {
   moveOneRight,
   mutateElement,
   addToGroup,
+  bindOrUnbindBindingElement,
+  bindOrUnbindBindingElements,
+  fixBindingsAfterDeletion,
   canApplyRoundnessTypeToElement,
   cropElement,
+  getCommonBoundingBox,
   getContainerElement,
   getDefaultRoundnessTypeForElement,
   duplicateElements,
@@ -131,6 +135,7 @@ import type {
   NonDeletedExcalidrawElement,
   NonDeletedSceneElementsMap,
   OrderedExcalidrawElement,
+  PointsPositionUpdates,
   SceneElementsMap,
   TextAlign,
 } from "@excalidraw/element/types";
@@ -282,6 +287,10 @@ export class DrawController {
   // multi-point linear (line/arrow) editing — the editor lives on
   // appState.selectedLinearElement; this flags an in-progress point drag.
   #linearPointerActive = false;
+  // last scene-pointer position during a linear point drag, used to re-bind/un-bind
+  // the dragged arrow endpoint on pointer-up (Excalidraw actionFinalize).
+  #linearLastX = 0;
+  #linearLastY = 0;
 
   // laser pointer — an ephemeral rAF-driven SVG trail (NOT in #elements/history)
   #laser: LaserTrails | null = null;
@@ -1016,6 +1025,29 @@ export class DrawController {
     }
     const scene = this.scene.scene;
     const elementsMap = scene.getNonDeletedElementsMap();
+
+    // Branch 1: a selection of ONLY bound arrows just swaps its arrowheads — no
+    // geometric flip (Excalidraw actionFlip flipElements:116-129).
+    if (
+      selected.every(
+        (el) => isArrowElement(el) && (el.startBinding || el.endBinding),
+      )
+    ) {
+      for (const el of selected) {
+        const arrow = el as ExcalidrawArrowElement;
+        mutateElement(arrow, elementsMap, {
+          startArrowhead: arrow.endArrowhead,
+          endArrowhead: arrow.startArrowhead,
+        });
+        ShapeCache.delete(arrow);
+      }
+      scene.triggerUpdate();
+      this.#commit();
+      return;
+    }
+
+    // Branch 2: geometric flip about the selection centre.
+    const { midX, midY } = getCommonBoundingBox(selected);
     const originals = new Map(
       Array.from(elementsMap.values()).map((e) => [e.id, deepCopyElement(e)]),
     );
@@ -1025,6 +1057,25 @@ export class DrawController {
       shouldResizeFromCenter: true,
       shouldMaintainAspectRatio: true,
     });
+
+    // re-bind/un-bind the flipped arrows (their endpoints may now sit on/off shapes)
+    bindOrUnbindBindingElements(
+      selected.filter(isArrowElement) as ExcalidrawArrowElement[],
+      scene,
+      this.appState.current,
+    );
+
+    // Branch 3: recenter the group so repeated flips don't accumulate an offset
+    // (arrows can bump the selection bounds; flipElements:158-192).
+    const { midX: newMidX, midY: newMidY } = getCommonBoundingBox(selected);
+    const diffX = midX - newMidX;
+    const diffY = midY - newMidY;
+    if (diffX !== 0 || diffY !== 0) {
+      for (const el of selected) {
+        mutateElement(el, elementsMap, { x: el.x + diffX, y: el.y + diffY });
+      }
+    }
+
     scene.triggerUpdate();
     this.#commit();
   }
@@ -1370,10 +1421,56 @@ export class DrawController {
     if (!ids.size) {
       return;
     }
-    this.#elements = this.#elements.filter((e) => !ids.has(e.id));
-    this.#select(null);
+    // Faithful port of Excalidraw's deleteSelectedElements (actionDeleteSelected.tsx
+    // 39-128): delete the selection PLUS each selected container's bound-text label;
+    // a deleted frame unparents and re-selects its children instead of deleting them.
+    const elementsMap = this.scene.scene.getNonDeletedElementsMap();
+    const framesToDelete = new Set(
+      this.#elements
+        .filter((el) => ids.has(el.id) && isFrameLikeElement(el))
+        .map((el) => el.id),
+    );
+    const toDelete = new Set<string>();
+    const reselect = new Set<string>();
+    for (const el of this.#elements) {
+      if (ids.has(el.id)) {
+        // children of a deleted frame are kept (unparented + reselected) below
+        if (el.frameId && framesToDelete.has(el.frameId)) {
+          continue;
+        }
+        toDelete.add(el.id);
+        // deleting a container also deletes its bound-text label
+        if (el.boundElements) {
+          for (const b of el.boundElements) {
+            if (b.type === "text") {
+              toDelete.add(b.id);
+            }
+          }
+        }
+      } else if (el.frameId && framesToDelete.has(el.frameId)) {
+        // child of a deleted frame: unparent it and select it
+        mutateElement(el, elementsMap, { frameId: null });
+        if (!isBoundToContainer(el)) {
+          reselect.add(el.id);
+        }
+      } else if (isBoundToContainer(el) && el.containerId && ids.has(el.containerId)) {
+        // bound text whose container is being deleted
+        toDelete.add(el.id);
+      }
+    }
+
+    const deletedElements = this.#elements.filter((e) => toDelete.has(e.id));
+    this.#elements = this.#elements.filter((e) => !toDelete.has(e.id));
+    // mark deleted so binding cleanup can find them, then drop dangling bindings
+    for (const el of deletedElements) {
+      mutateElement(el, elementsMap, { isDeleted: true });
+    }
+    fixBindingsAfterDeletion(this.#elements, deletedElements);
+
     syncInvalidIndices(this.#elements);
     this.scene.replaceAllElements(this.#elements);
+    // re-select unparented frame children, else clear the selection
+    this.#setSelection([...reselect]);
     this.#commit();
   }
 
@@ -2345,6 +2442,8 @@ export class DrawController {
     if (!editor?.isEditing) {
       return;
     }
+    this.#linearLastX = x;
+    this.#linearLastY = y;
     const app = this.#linearApp();
     const elementsMap = this.scene.scene.getNonDeletedElementsMap();
 
@@ -2405,6 +2504,8 @@ export class DrawController {
     if (!editor?.isEditing) {
       return;
     }
+    const wasDragging = editor.isDragging;
+    const draggedIndices = editor.selectedPointsIndices;
     const next = LinearElementEditor.handlePointerUp(
       this.#linearEvent(NO_MODS),
       editor,
@@ -2412,6 +2513,39 @@ export class DrawController {
       this.scene.scene,
     );
     this.appState.setState({ selectedLinearElement: next });
+
+    // Re-bind / un-bind a dragged arrow endpoint: dragging an endpoint onto a shape
+    // binds it, off a shape un-binds it. Mirrors Excalidraw's actionFinalize
+    // (actionFinalize.tsx:88-123) — uses per-endpoint inside/orbit geometry and
+    // honours isBindingEnabled, replacing the bind-only #bindArrowEndpoints path.
+    const scene = this.scene.scene;
+    const elementsMap = scene.getNonDeletedElementsMap();
+    const el = LinearElementEditor.getElement(editor.elementId, elementsMap);
+    if (wasDragging && draggedIndices && el && isArrowElement(el)) {
+      const endpointIndices = draggedIndices.filter(
+        (i) => i === 0 || i === el.points.length - 1,
+      );
+      if (endpointIndices.length) {
+        const draggedPoints: PointsPositionUpdates = new Map();
+        for (const index of endpointIndices) {
+          draggedPoints.set(index, {
+            point: LinearElementEditor.pointFromAbsoluteCoords(
+              el,
+              pointFrom<GlobalPoint>(this.#linearLastX, this.#linearLastY),
+              elementsMap,
+            ),
+          });
+        }
+        bindOrUnbindBindingElement(
+          el as ExcalidrawArrowElement,
+          draggedPoints,
+          this.#linearLastX,
+          this.#linearLastY,
+          scene,
+          this.appState.current,
+        );
+      }
+    }
     this.#commit();
   }
 
