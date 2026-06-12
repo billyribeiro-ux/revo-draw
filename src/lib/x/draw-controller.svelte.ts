@@ -582,8 +582,21 @@ export class DrawController {
     }
     const map = this.scene.scene.getNonDeletedElementsMap();
     for (const el of selected) {
+      // Elbow arrows have no roundness concept — leave them untouched, and pick the
+      // radius algorithm per element type, mirroring Excalidraw's
+      // actionChangeRoundness (actionProperties.tsx:1499-1516).
+      if (isElbowArrow(el)) {
+        continue;
+      }
       mutateElement(el, map, {
-        roundness: value === "round" ? { type: ROUNDNESS.ADAPTIVE_RADIUS } : null,
+        roundness:
+          value === "round"
+            ? {
+                type: isUsingAdaptiveRadius(el.type)
+                  ? ROUNDNESS.ADAPTIVE_RADIUS
+                  : ROUNDNESS.PROPORTIONAL_RADIUS,
+              }
+            : null,
       });
       // roundness alters the rough shape but isn't a width/height/points change,
       // so mutateElement leaves the cache stale — bust it (see #applyStyle).
