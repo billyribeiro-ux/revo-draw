@@ -62,6 +62,9 @@ export const ICONS: Record<string, string> = {
 	// LassoIcon — viewBox 22, strokeWidth 1.5 (ported from excalidraw-master)
 	lasso: `<svg aria-hidden="true" focusable="false" role="img" viewBox="0 0 22 22" fill="none"><g stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><path d="M4.028 13.252c-.657 -.972 -1.028 -2.078 -1.028 -3.252c0 -3.866 4.03 -7 9 -7s9 3.134 9 7s-4.03 7 -9 7c-1.913 0 -3.686 -.464 -5.144 -1.255"/><path d="M5 15m-2 0a2 2 0 1 0 4 0a2 2 0 1 0 -4 0"/><path d="M5 17c0 1.42 .316 2.805 1 4"/></g></svg>`,
 
+	// EmbedIcon — modifiedTablerIconProps (20x20), strokeWidth 1.5 (ported from excalidraw-master)
+	embeddable: `<svg ${tablerSmall}><g stroke-width="1.5"><polyline points="12 16 18 10 12 4"/><polyline points="8 4 2 10 8 16"/></g></svg>`,
+
 	// UndoIcon — modifiedTablerIconProps, path strokeWidth 1.25
 	undo: `<svg ${tablerSmall}><path d="M7.5 10.833 4.167 7.5 7.5 4.167M4.167 7.5h9.166a3.333 3.333 0 0 1 0 6.667H12.5" stroke-width="1.25"/></svg>`,
 

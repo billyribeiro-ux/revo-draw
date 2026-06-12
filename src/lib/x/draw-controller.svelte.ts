@@ -17,11 +17,15 @@ import {
   getHoveredElementForBinding,
   getTransformHandleTypeFromCoords,
   hitElementItself,
+  embeddableURLValidator,
+  getEmbedLink,
   isArrowElement,
   isElbowArrow,
+  isEmbeddableElement,
   isFrameLikeElement,
   isLinearElement,
   isTextElement,
+  maybeParseEmbedSrc,
   LinearElementEditor,
   moveAllLeft,
   moveAllRight,
@@ -38,6 +42,7 @@ import {
   newArrowElement,
   newElement,
   newElementWith,
+  newEmbeddableElement,
   newFrameElement,
   newFreeDrawElement,
   newLinearElement,
@@ -166,7 +171,8 @@ export type Tool =
   | "laser"
   | "frame"
   | "hand"
-  | "lasso";
+  | "lasso"
+  | "embeddable";
 
 type CreateMode = "generic" | "freedraw" | "linear";
 
@@ -198,6 +204,8 @@ export class DrawController {
   /** The set of selected element ids (reactive — drives the interactive overlay). */
   readonly selectedIds = new SvelteSet<string>();
   editingTextId = $state<string | null>(null);
+  /** An embeddable awaiting its URL (drives the embed-link dialog), if any. */
+  pendingEmbedId = $state<string | null>(null);
   /** Persisted library items (reactive — drives the library panel). */
   library = $state<LibraryItems>([]);
 
@@ -1517,6 +1525,74 @@ export class DrawController {
     }
   }
 
+  // --- embeddables (iframe embeds via a link; Excalidraw embeddable) ---
+
+  /** The embeddable element awaiting a URL, if any (drives the embed dialog). */
+  get pendingEmbed(): ExcalidrawElement | null {
+    if (!this.pendingEmbedId) {
+      return null;
+    }
+    return (
+      this.scene.scene.getNonDeletedElementsMap().get(this.pendingEmbedId) ?? null
+    );
+  }
+
+  /**
+   * Validate + set an embeddable's URL. Returns false if the URL is rejected
+   * (the dialog stays open). Uses getEmbedLink to normalize (YouTube etc.).
+   */
+  setEmbedLink(url: string): boolean {
+    const id = this.pendingEmbedId;
+    if (!id) {
+      return false;
+    }
+    const normalized = maybeParseEmbedSrc(url.trim());
+    if (!embeddableURLValidator(normalized, undefined)) {
+      this.showToast("That URL can't be embedded.");
+      return false;
+    }
+    const map = this.scene.scene.getNonDeletedElementsMap();
+    const el = map.get(id);
+    if (el) {
+      // normalize the URL into its embeddable form (YouTube → /embed/, etc.) and
+      // adopt the embed's natural size when known
+      const embed = getEmbedLink(normalized);
+      const embedLink = embed && "link" in embed ? embed.link : normalized;
+      const updates: { link: string; width?: number; height?: number } = {
+        link: embedLink,
+      };
+      if (embed?.intrinsicSize) {
+        updates.width = embed.intrinsicSize.w;
+        updates.height = embed.intrinsicSize.h;
+      }
+      mutateElement(el, map, updates);
+      this.scene.scene.triggerUpdate();
+      this.#commit();
+    }
+    this.pendingEmbedId = null;
+    return true;
+  }
+
+  /** Cancel the embed prompt, removing the placeholder embeddable. */
+  cancelEmbed(): void {
+    const id = this.pendingEmbedId;
+    this.pendingEmbedId = null;
+    if (!id) {
+      return;
+    }
+    this.#elements = this.#elements.filter((e) => e.id !== id);
+    syncInvalidIndices(this.#elements);
+    this.scene.replaceAllElements(this.#elements);
+    this.#commit();
+  }
+
+  /** All embeddable elements with a link, for the iframe overlay. */
+  get embeddables(): readonly ExcalidrawElement[] {
+    return this.scene.elements.filter(
+      (e) => isEmbeddableElement(e) && !!e.link,
+    );
+  }
+
   // --- library (reusable element groups; Excalidraw addToLibrary / insert) ---
 
   /** True when there's a selection to add to the library. */
@@ -2243,6 +2319,9 @@ export class DrawController {
     } else if (this.activeTool === "frame") {
       this.#creating = newFrameElement({ x, y, width: 0, height: 0 });
       this.#mode = "generic";
+    } else if (this.activeTool === "embeddable") {
+      this.#creating = newEmbeddableElement({ type: "embeddable", x, y });
+      this.#mode = "generic";
     } else {
       this.#creating = newElement({
         type: this.activeTool,
@@ -2588,6 +2667,21 @@ export class DrawController {
     }
     this.#creating = null;
     this.#mode = null;
+
+    // an embeddable: a zero-size click gets a default box; then prompt for its URL
+    if (isEmbeddableElement(creating)) {
+      const map = this.scene.scene.getNonDeletedElementsMap();
+      if (creating.width < 1 && creating.height < 1) {
+        mutateElement(creating, map, { width: 400, height: 300 });
+      }
+      syncInvalidIndices(this.#elements);
+      this.scene.replaceAllElements(this.#elements);
+      this.#select(creating.id);
+      this.pendingEmbedId = creating.id;
+      this.#commit();
+      this.activeTool = "selection";
+      return;
+    }
 
     // discard an accidental click (no drag → zero size) for shapes and linear elements
     const discarded =

@@ -42,6 +42,7 @@
   import WelcomeScreen from '$lib/x/WelcomeScreen.svelte';
   import CommandPalette, { type Command } from '$lib/x/CommandPalette.svelte';
   import LibraryPanel from '$lib/x/LibraryPanel.svelte';
+  import EmbedDialog from '$lib/x/EmbedDialog.svelte';
 
   // tool → human label + keyboard shortcut, for the styled toolbar tooltips
   const TOOL_INFO: Record<string, { label: string; shortcut?: string }> = {
@@ -58,6 +59,7 @@
     image: { label: 'Insert image', shortcut: '9' },
     eraser: { label: 'Eraser', shortcut: 'E' },
     frame: { label: 'Frame', shortcut: 'F' },
+    embeddable: { label: 'Embed a link' },
     laser: { label: 'Laser pointer', shortcut: 'K' }
   };
 
@@ -83,6 +85,7 @@
     'image',
     'eraser',
     'frame',
+    'embeddable',
     'laser'
   ];
 
@@ -738,6 +741,13 @@
   <CommandPalette commands={commandsList} onClose={() => (cmdpOpen = false)} />
 {/if}
 
+{#if controller.pendingEmbed}
+  <EmbedDialog
+    onSubmit={(url) => controller.setEmbedLink(url)}
+    onCancel={() => controller.cancelEmbed()}
+  />
+{/if}
+
 {#if libraryOpen}
   <LibraryPanel
     items={controller.library}
@@ -790,6 +800,23 @@
       return () => controller.stopLaserLayer();
     }}
   ></svg>
+
+  <!-- live iframe overlay for embeddable elements (positioned in screen space) -->
+  {#each controller.embeddables as embed (embed.id)}
+    {@const a = controller.appState.current}
+    {@const sx = (embed.x + a.scrollX) * a.zoom.value + a.offsetLeft}
+    {@const sy = (embed.y + a.scrollY) * a.zoom.value + a.offsetTop}
+    <iframe
+      class="embed-frame"
+      title="Embedded content"
+      src={embed.link ?? ''}
+      style="left:{sx}px; top:{sy}px; width:{embed.width * a.zoom.value}px; height:{embed.height *
+        a.zoom.value}px;"
+      sandbox="allow-scripts allow-same-origin allow-popups allow-forms"
+      referrerpolicy="no-referrer"
+      allowfullscreen
+    ></iframe>
+  {/each}
 
   {#if controller.editingText}
     {@const t = controller.editingText}
@@ -902,6 +929,14 @@
   }
 
   /* laser trail sits above the canvases but never intercepts pointer events */
+  .embed-frame {
+    position: absolute;
+    z-index: 1;
+    border: 1px solid #e9ecef;
+    border-radius: 6px;
+    background: #fff;
+  }
+
   .laser-layer {
     pointer-events: none;
   }
