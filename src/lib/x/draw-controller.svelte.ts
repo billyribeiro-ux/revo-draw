@@ -74,6 +74,7 @@ import {
   getGridPoint,
   getLineHeight,
   randomId,
+  randomInteger,
   ROUNDNESS,
   viewportCoordsToSceneCoords,
 } from "@excalidraw/common";
@@ -554,7 +555,20 @@ export class DrawController {
     this.#applyStyle({ strokeStyle }, { currentItemStrokeStyle: strokeStyle });
   }
   setSloppiness(roughness: number): void {
-    this.#applyStyle({ roughness }, { currentItemRoughness: roughness });
+    this.appState.setState({ currentItemRoughness: roughness });
+    const selected = this.selectedElements;
+    if (!selected.length) {
+      return;
+    }
+    const map = this.scene.scene.getNonDeletedElementsMap();
+    for (const el of selected) {
+      // Re-roll the seed per element so the sketch is re-randomised, matching
+      // Excalidraw's actionChangeSloppiness (actionProperties.tsx:611-616).
+      mutateElement(el, map, { seed: randomInteger(), roughness });
+      ShapeCache.delete(el);
+    }
+    this.scene.scene.triggerUpdate();
+    this.#commit();
   }
 
   get edges(): "sharp" | "round" {

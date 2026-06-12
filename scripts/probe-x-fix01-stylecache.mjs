@@ -81,7 +81,9 @@ results.push(await probe(`window.__draw.setStrokeWidth(4)`,            'strokeWi
 results.push(await probe(`window.__draw.setSloppiness(2)`,            'roughness',       1,         2,         'roughness'));
 // roundness path (setEdges): rough opts don't carry roundness, so prove the
 // regenerated Drawable itself differs (round vs sharp produce different paths)
-// and the element data flipped.
+// and the element data flipped. Force a known SHARP baseline first so the
+// sharp→round transition is deterministic regardless of prior state.
+await ev(`window.__draw.setEdges('sharp')`);
 await ev(`window.__shapeCache.delete(window.__el); window.__prime();`);
 const sharpShape = await ev(`(() => { const s = window.__shapeCache.get(window.__el,'light'); const d = Array.isArray(s)?s[0]:s; return d && d.sets ? JSON.stringify(d.sets).length : 0; })()`);
 await ev(`window.__draw.setEdges('round')`);
