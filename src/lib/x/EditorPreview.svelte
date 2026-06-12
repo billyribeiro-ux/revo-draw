@@ -331,7 +331,7 @@
       e.preventDefault();
       return;
     }
-    if (e.key === 'Backspace' || e.key === 'Delete') {
+    if ((e.key === 'Backspace' || e.key === 'Delete') && !e.metaKey && !e.ctrlKey) {
       controller.deleteSelected();
       e.preventDefault();
     } else if (e.key === 'Escape') {
