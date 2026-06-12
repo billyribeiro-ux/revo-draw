@@ -28,7 +28,10 @@ import {
   moveOneRight,
   mutateElement,
   addToGroup,
+  canApplyRoundnessTypeToElement,
+  getDefaultRoundnessTypeForElement,
   getElementsInGroup,
+  isExcalidrawElement,
   newElement,
   newElementWith,
   newFrameElement,
@@ -47,11 +50,22 @@ import {
 import type { ExcalidrawArrowElement } from "@excalidraw/element/types";
 
 import {
+  DEFAULT_FONT_FAMILY,
+  DEFAULT_FONT_SIZE,
+  DEFAULT_TEXT_ALIGN,
   getLineHeight,
   randomId,
   ROUNDNESS,
   viewportCoordsToSceneCoords,
 } from "@excalidraw/common";
+
+import {
+  copyBlobToClipboardAsPng,
+  copyElementsToClipboard,
+  parseClipboardElements,
+  probablySupportsClipboardBlob,
+  readSystemClipboardText,
+} from "$lib/x/clipboard.ts";
 
 import {
   getReferenceSnapPoints,
@@ -1059,32 +1073,78 @@ export class DrawController {
     );
   }
 
-  // --- clipboard (copy / cut / paste) ---
+  // --- clipboard (copy / cut / paste) — wired to the OS clipboard, with an
+  // in-memory mirror so paste still works when clipboard permissions are denied. ---
 
   get canPaste(): boolean {
     return this.#clipboard.length > 0;
   }
 
-  /** Copy the selected element(s) into the in-memory clipboard. */
-  copySelected(): void {
-    this.#clipboard = this.selectedElements.map((e) => deepCopyElement(e));
+  /** Copy the selected element(s) to the OS clipboard (+ in-memory mirror). */
+  async copySelected(): Promise<void> {
+    const selected = this.selectedElements;
+    if (!selected.length) {
+      return;
+    }
+    this.#clipboard = selected.map((e) => deepCopyElement(e));
+    try {
+      await copyElementsToClipboard(selected);
+    } catch (error) {
+      // OS clipboard unavailable/denied → the in-memory mirror still serves paste
+      console.warn("copy to system clipboard failed", error);
+    }
   }
 
   /** Copy then delete the selection. */
-  cutSelected(): void {
+  async cutSelected(): Promise<void> {
     if (!this.selectedIds.size) {
       return;
     }
-    this.copySelected();
+    await this.copySelected();
     this.deleteSelected();
   }
 
-  /** Paste the clipboard centered at a viewport point (or offset by +10,+10). */
-  paste(clientX?: number, clientY?: number): void {
-    if (!this.#clipboard.length) {
+  /**
+   * Paste at a viewport point (or +10,+10): prefer the OS clipboard's Excalidraw
+   * envelope, fall back to the in-memory mirror, and if the clipboard holds plain
+   * text, paste it as a new text element.
+   */
+  async paste(clientX?: number, clientY?: number): Promise<void> {
+    const text = await readSystemClipboardText();
+    const fromOS = parseClipboardElements(text);
+    if (fromOS?.length) {
+      this.#pasteElements(fromOS, clientX, clientY);
       return;
     }
-    const [x1, y1, x2, y2] = getCommonBounds(this.#clipboard);
+    // OS clipboard had non-Excalidraw text → paste it as text (unless plain-paste
+    // is explicitly requested elsewhere); else fall back to the in-memory mirror.
+    if (text.trim()) {
+      this.#pasteTextElement(text, clientX, clientY);
+      return;
+    }
+    if (this.#clipboard.length) {
+      this.#pasteElements(this.#clipboard, clientX, clientY);
+    }
+  }
+
+  /** Paste the OS clipboard's text as a plain text element (⇧⌘V). */
+  async pasteAsPlaintext(clientX?: number, clientY?: number): Promise<void> {
+    const text = (await readSystemClipboardText()).trim();
+    if (text) {
+      this.#pasteTextElement(text, clientX, clientY);
+    }
+  }
+
+  /** Insert pasted elements (re-id'd), centered at the point or offset by +10,+10. */
+  #pasteElements(
+    source: readonly ExcalidrawElement[],
+    clientX?: number,
+    clientY?: number,
+  ): void {
+    if (!source.length) {
+      return;
+    }
+    const [x1, y1, x2, y2] = getCommonBounds(source);
     let dx = 10;
     let dy = 10;
     if (clientX != null && clientY != null) {
@@ -1092,7 +1152,7 @@ export class DrawController {
       dx = x - (x1 + x2) / 2;
       dy = y - (y1 + y2) / 2;
     }
-    const copies = this.#clipboard.map((orig) =>
+    const copies = source.map((orig) =>
       newElementWith(duplicateElement(null, new Map(), orig, true), {
         x: orig.x + dx,
         y: orig.y + dy,
@@ -1104,6 +1164,123 @@ export class DrawController {
     this.#setSelection(copies.map((c) => c.id));
     this.activeTool = "selection";
     this.#commit();
+  }
+
+  /** Create a text element from pasted plaintext at the point (or 100,100). */
+  #pasteTextElement(text: string, clientX?: number, clientY?: number): void {
+    let x = 100;
+    let y = 100;
+    if (clientX != null && clientY != null) {
+      const p = this.#toScene(clientX, clientY);
+      x = p.x;
+      y = p.y;
+    }
+    const el = newTextElement({
+      text,
+      originalText: text,
+      x,
+      y,
+      ...this.#createStyle(),
+      ...this.#textStyle(),
+    });
+    redrawTextBoundingBox(el, null, this.scene.scene);
+    this.#elements.push(el);
+    syncInvalidIndices(this.#elements);
+    this.scene.replaceAllElements(this.#elements);
+    this.#setSelection([el.id]);
+    this.activeTool = "selection";
+    this.#commit();
+  }
+
+  // --- copy / paste styles (⌥⌘C / ⌥⌘V) — ported from actionStyles.ts ---
+
+  /** Serialized style-source element(s) for paste-styles (Excalidraw's `copiedStyles`). */
+  #copiedStyles = "{}";
+
+  /** Copy the style of the (first) selected element for later paste-styles. */
+  copyStyles(): void {
+    const element = this.selectedElements.find((el) =>
+      this.appState.current.selectedElementIds[el.id],
+    );
+    if (element) {
+      this.#copiedStyles = JSON.stringify([deepCopyElement(element)]);
+    }
+  }
+
+  /** Apply the copied style to the current selection (Excalidraw actionPasteStyles). */
+  pasteStyles(): void {
+    let source: ExcalidrawElement | undefined;
+    try {
+      source = JSON.parse(this.#copiedStyles)[0];
+    } catch {
+      return;
+    }
+    if (!source || !isExcalidrawElement(source)) {
+      return;
+    }
+    const map = this.scene.scene.getNonDeletedElementsMap();
+    const selected = this.selectedElements;
+    if (!selected.length) {
+      return;
+    }
+    for (const element of selected) {
+      mutateElement(element, map, {
+        backgroundColor: source.backgroundColor,
+        strokeWidth: source.strokeWidth,
+        strokeColor: source.strokeColor,
+        strokeStyle: source.strokeStyle,
+        fillStyle: source.fillStyle,
+        opacity: source.opacity,
+        roughness: source.roughness,
+        roundness: source.roundness
+          ? canApplyRoundnessTypeToElement(source.roundness.type, element)
+            ? source.roundness
+            : getDefaultRoundnessTypeForElement(element)
+          : null,
+      });
+      if (isTextElement(element) && isTextElement(source)) {
+        const fontFamily = source.fontFamily || DEFAULT_FONT_FAMILY;
+        mutateElement(element, map, {
+          fontSize: source.fontSize || DEFAULT_FONT_SIZE,
+          fontFamily,
+          textAlign: source.textAlign || DEFAULT_TEXT_ALIGN,
+          lineHeight: source.lineHeight || getLineHeight(fontFamily),
+        });
+        redrawTextBoundingBox(element, null, this.scene.scene);
+      }
+      if (isArrowElement(element) && isArrowElement(source)) {
+        mutateElement(element, map, {
+          startArrowhead: source.startArrowhead,
+          endArrowhead: source.endArrowhead,
+        });
+      }
+      if (isFrameLikeElement(element)) {
+        mutateElement(element, map, {
+          roundness: null,
+          backgroundColor: "transparent",
+        });
+      }
+    }
+    this.scene.scene.triggerUpdate();
+    this.#commit();
+  }
+
+  /** Copy the rendered scene to the OS clipboard as a PNG (export-to-clipboard). */
+  async copyToClipboardAsPng(): Promise<boolean> {
+    if (!probablySupportsClipboardBlob) {
+      return false;
+    }
+    const blob = await this.exportToPngBlob();
+    if (!blob) {
+      return false;
+    }
+    try {
+      await copyBlobToClipboardAsPng(blob);
+      return true;
+    } catch (error) {
+      console.warn("copy PNG to clipboard failed", error);
+      return false;
+    }
   }
 
   /** Duplicate the selected element(s) offset by (10,10) and select the copies. */

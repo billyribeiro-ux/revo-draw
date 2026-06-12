@@ -162,9 +162,14 @@
     { label: 'Send backward', shortcut: '⌘[', action: () => controller.sendBackward() },
     { label: 'Send to back', shortcut: '⌘⇧[', action: () => controller.sendToBack() },
     'separator' as const,
-    { label: 'Copy', shortcut: '⌘C', action: () => controller.copySelected() },
-    { label: 'Cut', shortcut: '⌘X', action: () => controller.cutSelected() },
-    { label: 'Paste', shortcut: '⌘V', action: () => controller.paste(contextAt?.x, contextAt?.y) },
+    { label: 'Copy', shortcut: '⌘C', action: () => void controller.copySelected() },
+    { label: 'Cut', shortcut: '⌘X', action: () => void controller.cutSelected() },
+    { label: 'Paste', shortcut: '⌘V', action: () => void controller.paste(contextAt?.x, contextAt?.y) },
+    { label: 'Paste as plaintext', shortcut: '⇧⌘V', action: () => void controller.pasteAsPlaintext(contextAt?.x, contextAt?.y) },
+    'separator' as const,
+    { label: 'Copy styles', shortcut: '⌥⌘C', action: () => controller.copyStyles() },
+    { label: 'Paste styles', shortcut: '⌥⌘V', action: () => controller.pasteStyles() },
+    { label: 'Copy to clipboard as PNG', action: () => void controller.copyToClipboardAsPng() },
     'separator' as const,
     { label: 'Duplicate', shortcut: '⌘D', action: () => controller.duplicateSelected() },
     { label: 'Delete', shortcut: 'Del', action: () => controller.deleteSelected() },
@@ -218,14 +223,23 @@
     } else if ((e.metaKey || e.ctrlKey) && (e.key === 'd' || e.key === 'D')) {
       controller.duplicateSelected();
       e.preventDefault();
+    } else if ((e.metaKey || e.ctrlKey) && e.altKey && (e.key === 'c' || e.key === 'C')) {
+      controller.copyStyles(); // ⌥⌘C
+      e.preventDefault();
+    } else if ((e.metaKey || e.ctrlKey) && e.altKey && (e.key === 'v' || e.key === 'V')) {
+      controller.pasteStyles(); // ⌥⌘V
+      e.preventDefault();
     } else if ((e.metaKey || e.ctrlKey) && (e.key === 'c' || e.key === 'C')) {
-      controller.copySelected();
+      void controller.copySelected();
       e.preventDefault();
     } else if ((e.metaKey || e.ctrlKey) && (e.key === 'x' || e.key === 'X')) {
-      controller.cutSelected();
+      void controller.cutSelected();
+      e.preventDefault();
+    } else if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === 'v' || e.key === 'V')) {
+      void controller.pasteAsPlaintext(lastPointer.x, lastPointer.y); // ⇧⌘V
       e.preventDefault();
     } else if ((e.metaKey || e.ctrlKey) && (e.key === 'v' || e.key === 'V')) {
-      controller.paste(lastPointer.x, lastPointer.y);
+      void controller.paste(lastPointer.x, lastPointer.y);
       e.preventDefault();
     } else if ((e.metaKey || e.ctrlKey) && e.key === ']') {
       if (e.shiftKey) {
