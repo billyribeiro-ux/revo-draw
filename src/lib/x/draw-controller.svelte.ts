@@ -6,6 +6,7 @@ import {
   deepCopyElement,
   duplicateElement,
   getCommonBounds,
+  resizeMultipleElements,
   addElementsToFrame,
   bindBindingElement,
   getElementsInNewFrame,
@@ -344,6 +345,54 @@ export class DrawController {
     });
   }
 
+  /** Center+fit the given world bounds into the viewport. */
+  #fitBounds(bounds: readonly [number, number, number, number]): void {
+    const [x1, y1, x2, y2] = bounds;
+    const a = this.appState.current;
+    const w = Math.max(1, x2 - x1);
+    const h = Math.max(1, y2 - y1);
+    const zoom = Math.min(30, Math.max(0.1, Math.min(a.width / w, a.height / h) * 0.85));
+    const cx = (x1 + x2) / 2;
+    const cy = (y1 + y2) / 2;
+    this.appState.setState({
+      zoom: { value: zoom as NormalizedZoomValue },
+      scrollX: a.width / 2 / zoom - cx,
+      scrollY: a.height / 2 / zoom - cy,
+    });
+  }
+
+  /** Zoom + center so all content fits (Excalidraw "zoom to fit"). */
+  zoomToFit(): void {
+    const els = this.scene.elements;
+    if (els.length) {
+      this.#fitBounds(getCommonBounds(els));
+    }
+  }
+
+  /** Zoom + center on the current selection. */
+  zoomToSelection(): void {
+    const sel = this.selectedElements;
+    if (sel.length) {
+      this.#fitBounds(getCommonBounds(sel));
+    }
+  }
+
+  /** Scroll (keep zoom) to center all content. */
+  scrollToContent(): void {
+    const els = this.scene.elements;
+    if (!els.length) {
+      return;
+    }
+    const a = this.appState.current;
+    const [x1, y1, x2, y2] = getCommonBounds(els);
+    const cx = (x1 + x2) / 2;
+    const cy = (y1 + y2) / 2;
+    this.appState.setState({
+      scrollX: a.width / 2 / a.zoom.value - cx,
+      scrollY: a.height / 2 / a.zoom.value - cy,
+    });
+  }
+
   // --- current style (drives new elements; mirrors Excalidraw's appState.currentItem*) ---
   get strokeColor(): string {
     return this.appState.current.currentItemStrokeColor;
@@ -530,6 +579,56 @@ export class DrawController {
   selectAt(clientX: number, clientY: number): void {
     const { x, y } = this.#toScene(clientX, clientY);
     this.#select(this.#hitTest(x, y));
+  }
+
+  /** Select every (non-deleted) element. */
+  selectAll(): void {
+    this.#setSelection(this.scene.elements.map((e) => e.id));
+  }
+
+  /** Flip the selection horizontally or vertically (Excalidraw actionFlip). */
+  flipSelected(direction: "horizontal" | "vertical"): void {
+    const selected = this.selectedElements;
+    if (!selected.length) {
+      return;
+    }
+    const scene = this.scene.scene;
+    const elementsMap = scene.getNonDeletedElementsMap();
+    const originals = new Map(
+      Array.from(elementsMap.values()).map((e) => [e.id, deepCopyElement(e)]),
+    );
+    resizeMultipleElements(selected, elementsMap, "nw", scene, originals, {
+      flipByX: direction === "horizontal",
+      flipByY: direction === "vertical",
+      shouldResizeFromCenter: true,
+      shouldMaintainAspectRatio: true,
+    });
+    scene.triggerUpdate();
+    this.#commit();
+  }
+
+  // --- canvas / view state ---
+  get viewBackgroundColor(): string {
+    return this.appState.current.viewBackgroundColor;
+  }
+  setViewBackgroundColor(color: string): void {
+    this.appState.setState({ viewBackgroundColor: color });
+    this.scene.scene.triggerUpdate();
+    saveToLocalStorage(this.scene.scene.getElementsIncludingDeleted(), this.appState.current);
+  }
+
+  get viewMode(): boolean {
+    return this.appState.current.viewModeEnabled;
+  }
+  toggleViewMode(): void {
+    this.appState.setState({ viewModeEnabled: !this.appState.current.viewModeEnabled });
+  }
+
+  get zenMode(): boolean {
+    return this.appState.current.zenModeEnabled;
+  }
+  toggleZenMode(): void {
+    this.appState.setState({ zenModeEnabled: !this.appState.current.zenModeEnabled });
   }
 
   /** Load an image file and place it centered at a viewport point. */
