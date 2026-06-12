@@ -57,6 +57,7 @@ Every commit also passed `pnpm check` 0/0 + 172 unit tests + the existing regres
 | #34 selectAll grabs locked/bound | `4aedafe` | `actionSelectAll` filter `!locked && !(text&&containerId)` | `probe-x-fix34-selectall-filter.mjs` |
 | #36 flip drifts/no swap/no rebind | `1b37569` | 3 branches: arrowhead swap, `bindOrUnbindBindingElements`, recenter | `probe-x-fix36-flip.mjs` |
 | #35/#37/#38/#42/#43 keyboard | `2c67468` | z-order chords (event.code+Darwin Alt), lock, align, zoom, view/zen | `probe-x-fix35-keyboard.mjs` |
+| UI empty-canvas panels | `e4731d5` | `showProperties` (= `showSelectedShapeActions`) + `statsOpen` gate; Alt+/ toggles stats | `probe-x-fixUI-panel-visibility.mjs` |
 
 **Precision wins (audit wording was looser than real upstream — verified against source):**
 - #13 box-selection runs in `"contain"` mode (`selection.ts:347-363`): a partial-group box selects
@@ -109,6 +110,24 @@ Every commit also passed `pnpm check` 0/0 + 172 unit tests + the existing regres
 | **#17** | eraser trail (segment-intersection over the drag path, accumulate delete set) | App.tsx:8114 + eraser trail. Current: 1 element per discrete sample. |
 | **#48–72** | the 6 stub modules — replace placeholders with real (or re-exported) impls | `src/lib/excalidraw/clipboard.ts`, `clients.ts`, `i18n.ts`, `data/library.ts`, `data/types.ts`, `actions/types.ts`. These are `[k: string]: unknown` / `declare class` stubs today. |
 
+### Tier 5 — Visual / layout fidelity (the `/x` page "looks off" vs Excalidraw)
+
+These are NOT behavioral bugs (the functions compute correctly) — they're how the chrome
+*looks*. Different verification: screenshot `/x` headless, compare to real Excalidraw's CSS, fix the
+markup/CSS, re-screenshot. Drive via `/tmp/shot.mjs` pattern (headless Chrome → `Page.captureScreenshot`).
+
+| Item | Symptom | Where | Status |
+|---|---|---|---|
+| **Empty-canvas panels** | properties + stats panels showed on empty canvas | `EditorPreview.svelte` + `showProperties`/`statsOpen` getters | ✅ **DONE** (`e4731d5`, probe `probe-x-fixUI-panel-visibility.mjs`) |
+| **Panel is two detached islands** | Stroke/width is one floating box, Fill/Sloppiness/Edges/Opacity a separate detached box below — should be ONE continuous rounded panel | `EditorPreview.svelte` `.properties` markup + `StyleControls.svelte`; check `theme.css` `.properties`/`.prop-group` | ⬜ TODO |
+| **Welcome screen sparse** | only title + 2 links; upstream centers logo + "All your data is saved locally" + richer menu-hint cluster | `WelcomeScreen.svelte` vs `welcome-screen/` | ⬜ TODO |
+| **Toolbar/island spacing & sizing** | verify glyph size, island padding, gaps, active-state vs upstream `.Island`/`.App-toolbar` CSS | `Toolbar`/`EditorPreview.svelte` + `theme.css` | ⬜ TODO (audit) |
+| **Footer / zoom cluster** | confirm position, separators, undo/redo styling vs upstream `.footer` | `EditorPreview.svelte` footer + `theme.css` | ⬜ TODO (audit) |
+| **Color picker / shade ramp layout** | confirm popover layout, top-picks row, hex input vs `ColorPicker/` | `ColorPicker.svelte` | ⬜ TODO (audit) |
+
+Reference CSS: `excalidraw-master/packages/excalidraw/css/` and per-component `.scss` files.
+Our tokens/layout: `src/lib/x/css/theme.css`.
+
 ---
 
 ## 3. Every file in play
@@ -155,3 +174,19 @@ run as regression). Audit: `PARITY_E2E_AUDIT.md`, `PARITY_E2E_FINDINGS.json`.
 > verify the real contract (e.g. box-selection "contain" mode). Start the dev server with `pnpm dev`.
 > Don't touch `pnpm-lock.yaml` unless a dependency genuinely changes. Keep `PARITY_REMAINING_WORK.md`
 > and `CHANGELOG.md` updated as you go.
+
+### 4b. ▶︎ VISUAL-FIDELITY PROMPT (the `/x` page "looks off" — paste to resume Tier 5)
+
+> The `/x` web editor's chrome still looks off vs real Excalidraw. Work through the **Tier 5** table
+> in `PARITY_REMAINING_WORK.md` (§2), one item per commit. This track is VISUAL, not behavioral, so
+> the recipe differs: (1) screenshot `/x` headless — adapt the `/tmp/shot.mjs` pattern (headless
+> Chrome → `Page.captureScreenshot` → PNG) for the relevant state (empty canvas, tool active, element
+> selected); (2) compare against real Excalidraw's CSS in
+> `excalidraw-master/packages/excalidraw/css/` and the per-component `.scss`; (3) fix the markup/CSS
+> in `src/lib/x/*.svelte` + `src/lib/x/css/theme.css` (match spacing, sizing, island grouping, tokens
+> — cite the upstream value); (4) run `pnpm check` 0/0 + svelte autofixer on touched files; (5)
+> **re-screenshot and visually confirm the before/after**; (6) commit + push with the before/after
+> noted. Where a layout invariant can be asserted programmatically (e.g. "panel visible only when X"),
+> also add a `scripts/probe-x-fixUI-*.mjs` probe like `probe-x-fixUI-panel-visibility.mjs`. Start with
+> the **two-detached-islands** item (the style panel should be ONE continuous rounded panel) and the
+> **sparse welcome screen**. Don't touch `pnpm-lock.yaml`. Keep this doc + `CHANGELOG.md` updated.
