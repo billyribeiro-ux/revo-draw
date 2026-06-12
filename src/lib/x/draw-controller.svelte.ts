@@ -75,7 +75,11 @@ import {
   snapDraggedElements,
 } from "@excalidraw/excalidraw/snapping";
 
-import { pointFrom } from "@excalidraw/math";
+import {
+  pointFrom,
+  polygonFromPoints,
+  polygonIncludesPoint,
+} from "@excalidraw/math";
 
 import { SvelteSet } from "svelte/reactivity";
 
@@ -144,7 +148,9 @@ export type Tool =
   | "image"
   | "eraser"
   | "laser"
-  | "frame";
+  | "frame"
+  | "hand"
+  | "lasso";
 
 type CreateMode = "generic" | "freedraw" | "linear";
 
@@ -155,12 +161,18 @@ export type PointerMods = {
   altKey: boolean;
   ctrlKey: boolean;
   metaKey: boolean;
+  /** true when Space is held (space-drag pans, like Excalidraw) */
+  spaceKey?: boolean;
+  /** pointer button: 0 = left/primary, 1 = middle (middle-drag pans) */
+  button?: number;
 };
 const NO_MODS: PointerMods = {
   shiftKey: false,
   altKey: false,
   ctrlKey: false,
   metaKey: false,
+  spaceKey: false,
+  button: 0,
 };
 
 export class DrawController {
@@ -202,6 +214,16 @@ export class DrawController {
   #marqueeOriginX = 0;
   #marqueeOriginY = 0;
   #marqueeBaseIds = new Set<string>();
+
+  // panning (hand tool / space-drag / middle-mouse) — viewport-pixel anchored
+  #panning = false;
+  #panLastX = 0;
+  #panLastY = 0;
+
+  // lasso (freeform) selection — collected scene-space path points
+  #lasso = false;
+  #lassoPoints: GlobalPoint[] = [];
+  #lassoBaseIds = new Set<string>();
 
   // live modifier-key state for the active gesture (shift/alt)
   #shiftKey = false;
@@ -1637,6 +1659,35 @@ export class DrawController {
     ]);
   }
 
+  /**
+   * Extend the lasso path and select every element whose bounds overlap the
+   * polygon. Excalidraw's lasso selects elements the freeform loop encloses or
+   * crosses; we test the element's four bbox corners + center against the polygon
+   * (cheap and faithful for the common cases).
+   */
+  #updateLasso(x: number, y: number): void {
+    this.#lassoPoints.push(pointFrom<GlobalPoint>(x, y));
+    if (this.#lassoPoints.length < 3) {
+      return;
+    }
+    const poly = polygonFromPoints(this.#lassoPoints);
+    const enclosed: string[] = [];
+    for (const el of this.scene.elements) {
+      const [x1, y1, x2, y2] = getCommonBounds([el]);
+      const probes: GlobalPoint[] = [
+        pointFrom<GlobalPoint>(x1, y1),
+        pointFrom<GlobalPoint>(x2, y1),
+        pointFrom<GlobalPoint>(x2, y2),
+        pointFrom<GlobalPoint>(x1, y2),
+        pointFrom<GlobalPoint>((x1 + x2) / 2, (y1 + y2) / 2),
+      ];
+      if (probes.some((p) => polygonIncludesPoint(p, poly))) {
+        enclosed.push(el.id);
+      }
+    }
+    this.#setSelection([...this.#lassoBaseIds, ...enclosed]);
+  }
+
   #beginResize(handle: TransformHandleType): void {
     this.#resizeHandle = handle;
     this.#resizeOriginals = new Map(
@@ -1824,9 +1875,27 @@ export class DrawController {
     this.#shiftKey = mods.shiftKey;
     this.#altKey = mods.altKey;
 
+    // panning takes precedence over every tool: the hand tool, Space-drag, or a
+    // middle-mouse drag pans the camera (Excalidraw canvasPanning).
+    if (this.activeTool === "hand" || mods.spaceKey || mods.button === 1) {
+      this.#panning = true;
+      this.#panLastX = clientX;
+      this.#panLastY = clientY;
+      return;
+    }
+
     // laser pointer: start an ephemeral trail (canvas-local coords; not persisted)
     if (this.activeTool === "laser") {
       this.#laser?.startPath(clientX, clientY);
+      return;
+    }
+
+    // lasso: start a freeform selection path
+    if (this.activeTool === "lasso") {
+      this.#lasso = true;
+      this.#lassoPoints = [pointFrom<GlobalPoint>(x, y)];
+      this.#lassoBaseIds = mods.shiftKey ? new Set(this.selectedIds) : new Set();
+      this.#select(null);
       return;
     }
 
@@ -1958,6 +2027,21 @@ export class DrawController {
   pointerMove(clientX: number, clientY: number, mods: PointerMods = NO_MODS): void {
     this.#shiftKey = mods.shiftKey;
     this.#altKey = mods.altKey;
+
+    // panning: translate the camera by the viewport-pixel delta
+    if (this.#panning) {
+      this.panBy(clientX - this.#panLastX, clientY - this.#panLastY);
+      this.#panLastX = clientX;
+      this.#panLastY = clientY;
+      return;
+    }
+
+    // lasso: extend the path + reselect enclosed elements
+    if (this.#lasso) {
+      const { x, y } = this.#toScene(clientX, clientY);
+      this.#updateLasso(x, y);
+      return;
+    }
 
     // laser pointer: extend the trail (no-ops unless a stroke is active)
     if (this.activeTool === "laser") {
@@ -2119,6 +2203,20 @@ export class DrawController {
   }
 
   pointerUp(): void {
+    // end a pan gesture (no scene mutation, no history)
+    if (this.#panning) {
+      this.#panning = false;
+      return;
+    }
+
+    // end a lasso selection (selection only → no history)
+    if (this.#lasso) {
+      this.#lasso = false;
+      this.#lassoPoints = [];
+      this.#lassoBaseIds = new Set();
+      return;
+    }
+
     // end a laser stroke (stays the active tool — laser is sticky)
     if (this.activeTool === "laser") {
       this.#laser?.endPath();
