@@ -37,6 +37,7 @@ import {
   cropElement,
   getDefaultRoundnessTypeForElement,
   getElementsInGroup,
+  getSelectedGroupIdForElement,
   isExcalidrawElement,
   isImageElement,
   isUsingAdaptiveRadius,
@@ -2090,7 +2091,44 @@ export class DrawController {
         return;
       }
     }
+    // Deep-enter a selected group: double-clicking a member of an already-selected
+    // group scopes selection into that group and selects just the hit element
+    // (Excalidraw App.tsx:6533-6557). Subsequent clicks select within the group.
+    if (id) {
+      const selectedGroupIds = this.appState.current.selectedGroupIds;
+      const hasSelectedGroup = Object.values(selectedGroupIds).some(Boolean);
+      if (hasSelectedGroup) {
+        const el = this.scene.scene.getNonDeletedElementsMap().get(id);
+        const selectedGroupId =
+          el && getSelectedGroupIdForElement(el, selectedGroupIds);
+        if (selectedGroupId) {
+          this.#enterGroup(selectedGroupId, id);
+          return;
+        }
+      }
+    }
     this.enterLineEditor();
+  }
+
+  /** Scope selection into `groupId`, selecting only `elementId` within it. */
+  #enterGroup(groupId: string, elementId: string): void {
+    const prev = this.appState.current;
+    const next = selectGroupsForSelectedElements(
+      { selectedElementIds: { [elementId]: true }, editingGroupId: groupId },
+      this.scene.scene.getNonDeletedElements(),
+      prev as unknown as InteractiveCanvasAppState,
+      this.#linearApp(),
+    );
+    this.selectedIds.clear();
+    for (const sid of Object.keys(next.selectedElementIds)) {
+      this.selectedIds.add(sid);
+    }
+    this.appState.setState({
+      selectedElementIds: next.selectedElementIds,
+      selectedGroupIds: next.selectedGroupIds,
+      editingGroupId: next.editingGroupId,
+    });
+    this.scene.scene.triggerUpdate();
   }
 
   enterLineEditor(): void {
