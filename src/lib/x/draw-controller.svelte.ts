@@ -734,6 +734,31 @@ export class DrawController {
   }
 
   /** True when the text tool is active or a text element is selected — drives the font panel. */
+  /**
+   * Whether the left properties panel should be visible. Mirrors Excalidraw's
+   * showSelectedShapeActions (showSelectedShapeActions.ts:7-22): show only when a
+   * drawing tool is active, text is being edited, or ≥1 element is selected — so an
+   * empty canvas with the selection tool shows NO panel. (We read the controller's
+   * own activeTool, which is authoritative here, rather than appState.activeTool.type.)
+   */
+  get showProperties(): boolean {
+    if (this.appState.current.viewModeEnabled) {
+      return false;
+    }
+    const tool = this.activeTool;
+    const drawingToolActive =
+      tool !== "selection" &&
+      tool !== "lasso" &&
+      tool !== "eraser" &&
+      tool !== "hand" &&
+      tool !== "laser";
+    return (
+      this.editingTextId !== null ||
+      drawingToolActive ||
+      this.selectedElements.length > 0
+    );
+  }
+
   get showTextProperties(): boolean {
     return this.activeTool === "text" || this.selectedElements.some(isTextElement);
   }
@@ -1234,6 +1259,16 @@ export class DrawController {
   }
   toggleZenMode(): void {
     this.appState.setState({ zenModeEnabled: !this.appState.current.zenModeEnabled });
+  }
+
+  /** Stats panel visibility — off by default, toggled via menu / Alt+/ (Excalidraw
+   *  appState.stats.open). */
+  get statsOpen(): boolean {
+    return this.appState.current.stats.open === true;
+  }
+  toggleStats(): void {
+    const stats = this.appState.current.stats;
+    this.appState.setState({ stats: { ...stats, open: !stats.open } });
   }
 
   /** Load an image file and place it centered at a viewport point. */

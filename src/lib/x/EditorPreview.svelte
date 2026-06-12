@@ -441,6 +441,9 @@
     } else if (!e.metaKey && !e.ctrlKey && e.altKey && e.code === CODES.Z) {
       controller.toggleZenMode(); // Alt+Z (actionToggleZenMode.tsx:34)
       e.preventDefault();
+    } else if (!e.metaKey && !e.ctrlKey && e.altKey && e.code === CODES.SLASH) {
+      controller.toggleStats(); // Alt+/ (actionToggleStats.tsx:26)
+      e.preventDefault();
     } else if (
       (e.code === CODES.EQUAL || e.code === CODES.NUM_ADD) &&
       (e.metaKey || e.ctrlKey || e.shiftKey)
@@ -638,7 +641,7 @@
     </button>
   </div>
 
-<div class="properties" class:hidden={controller.zenMode || controller.viewMode}>
+<div class="properties" class:hidden={!controller.showProperties}>
   <div class="prop-group">
     <span class="prop-label">Stroke</span>
     <div class="swatches">
@@ -788,7 +791,7 @@
   {/if}
 </div>
 
-{#if !controller.zenMode}
+{#if controller.statsOpen && !controller.zenMode}
   <Stats
     element={controller.selectedElements[0] ?? null}
     sceneCount={controller.scene.elements.length}
