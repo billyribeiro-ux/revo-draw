@@ -2435,8 +2435,8 @@ export class DrawController {
     return {
       shiftKey: mods.shiftKey,
       altKey: mods.altKey,
-      metaKey: false,
-      ctrlKey: false,
+      metaKey: mods.metaKey,
+      ctrlKey: mods.ctrlKey,
       pointerType: "mouse",
     } as unknown as PointerEvent;
   }
