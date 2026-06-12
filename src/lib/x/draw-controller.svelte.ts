@@ -18,6 +18,7 @@ import {
   getTransformHandleTypeFromCoords,
   hitElementItself,
   isArrowElement,
+  isElbowArrow,
   isFrameLikeElement,
   isLinearElement,
   isTextElement,
@@ -29,9 +30,12 @@ import {
   mutateElement,
   addToGroup,
   canApplyRoundnessTypeToElement,
+  cropElement,
   getDefaultRoundnessTypeForElement,
   getElementsInGroup,
   isExcalidrawElement,
+  isImageElement,
+  newArrowElement,
   newElement,
   newElementWith,
   newFrameElement,
@@ -39,6 +43,7 @@ import {
   newLinearElement,
   newTextElement,
   orderByFractionalIndex,
+  updateElbowArrowPoints,
   redrawTextBoundingBox,
   resizeTest,
   Store,
@@ -47,7 +52,10 @@ import {
   updateBoundElements,
 } from "@excalidraw/element";
 
-import type { ExcalidrawArrowElement } from "@excalidraw/element/types";
+import type {
+  ExcalidrawArrowElement,
+  ExcalidrawElbowArrowElement,
+} from "@excalidraw/element/types";
 
 import {
   DEFAULT_FONT_FAMILY,
@@ -75,7 +83,11 @@ import {
   snapDraggedElements,
 } from "@excalidraw/excalidraw/snapping";
 
-import { pointFrom } from "@excalidraw/math";
+import {
+  pointFrom,
+  polygonFromPoints,
+  polygonIncludesPoint,
+} from "@excalidraw/math";
 
 import { SvelteSet } from "svelte/reactivity";
 
@@ -87,10 +99,12 @@ import type {
   Arrowhead,
   ExcalidrawElement,
   ExcalidrawFreeDrawElement,
+  ExcalidrawImageElement,
   ExcalidrawLinearElement,
   ExcalidrawTextElement,
   FontFamilyValues,
   NonDeletedExcalidrawElement,
+  NonDeletedSceneElementsMap,
   OrderedExcalidrawElement,
   SceneElementsMap,
   TextAlign,
@@ -144,7 +158,9 @@ export type Tool =
   | "image"
   | "eraser"
   | "laser"
-  | "frame";
+  | "frame"
+  | "hand"
+  | "lasso";
 
 type CreateMode = "generic" | "freedraw" | "linear";
 
@@ -155,12 +171,18 @@ export type PointerMods = {
   altKey: boolean;
   ctrlKey: boolean;
   metaKey: boolean;
+  /** true when Space is held (space-drag pans, like Excalidraw) */
+  spaceKey?: boolean;
+  /** pointer button: 0 = left/primary, 1 = middle (middle-drag pans) */
+  button?: number;
 };
 const NO_MODS: PointerMods = {
   shiftKey: false,
   altKey: false,
   ctrlKey: false,
   metaKey: false,
+  spaceKey: false,
+  button: 0,
 };
 
 export class DrawController {
@@ -202,6 +224,20 @@ export class DrawController {
   #marqueeOriginX = 0;
   #marqueeOriginY = 0;
   #marqueeBaseIds = new Set<string>();
+
+  // panning (hand tool / space-drag / middle-mouse) — viewport-pixel anchored
+  #panning = false;
+  #panLastX = 0;
+  #panLastY = 0;
+
+  // lasso (freeform) selection — collected scene-space path points
+  #lasso = false;
+  #lassoPoints: GlobalPoint[] = [];
+  #lassoBaseIds = new Set<string>();
+
+  // image crop — the handle being dragged while in crop mode (croppingElementId
+  // lives on appState; this flags an in-progress crop drag)
+  #cropHandle: TransformHandleType | null = null;
 
   // live modifier-key state for the active gesture (shift/alt)
   #shiftKey = false;
@@ -671,6 +707,64 @@ export class DrawController {
 
   setEndArrowhead(value: Arrowhead | null): void {
     this.#applyArrowhead("end", value);
+  }
+
+  /** Current arrow type (selected arrow wins, else the app default). */
+  get currentArrowType(): "sharp" | "round" | "elbow" {
+    const arrow = this.selectedElements.find(isArrowElement);
+    if (arrow) {
+      if (arrow.elbowed) {
+        return "elbow";
+      }
+      return arrow.roundness ? "round" : "sharp";
+    }
+    return this.appState.current.currentItemArrowType;
+  }
+
+  /**
+   * Set the arrow type (Excalidraw actionChangeArrowType). Updates the app default;
+   * converting a selected arrow's elbowed-ness re-routes its points.
+   */
+  setArrowType(type: "sharp" | "round" | "elbow"): void {
+    this.appState.setState({ currentItemArrowType: type });
+    const map = this.scene.scene.getNonDeletedElementsMap();
+    let changed = false;
+    for (const el of this.selectedElements) {
+      if (!isArrowElement(el)) {
+        continue;
+      }
+      const roundness =
+        type === "round"
+          ? ({ type: ROUNDNESS.PROPORTIONAL_RADIUS } as ExcalidrawElement["roundness"])
+          : null;
+      if (type === "elbow" && !el.elbowed) {
+        const elbow = el as ExcalidrawElbowArrowElement;
+        mutateElement(elbow, map, {
+          elbowed: true,
+          roundness: null,
+          fixedSegments: [],
+        });
+        mutateElement(
+          elbow,
+          map,
+          updateElbowArrowPoints(
+            elbow,
+            map as unknown as NonDeletedSceneElementsMap,
+            { points: elbow.points },
+            { isBindingEnabled: this.appState.current.isBindingEnabled },
+          ),
+        );
+      } else if (type !== "elbow" && el.elbowed) {
+        mutateElement(el, map, { elbowed: false, roundness });
+      } else {
+        mutateElement(el, map, { roundness });
+      }
+      changed = true;
+    }
+    if (changed) {
+      this.scene.scene.triggerUpdate();
+      this.#commit();
+    }
   }
 
   /** The text element currently being edited (drives the textarea overlay), if any. */
@@ -1296,6 +1390,7 @@ export class DrawController {
     );
     if (element) {
       this.#copiedStyles = JSON.stringify([deepCopyElement(element)]);
+      this.showToast("Copied styles.");
     }
   }
 
@@ -1368,9 +1463,11 @@ export class DrawController {
     }
     try {
       await copyBlobToClipboardAsPng(blob);
+      this.showToast("Copied to clipboard as PNG.");
       return true;
     } catch (error) {
       console.warn("copy PNG to clipboard failed", error);
+      this.showToast("Couldn't copy to clipboard.");
       return false;
     }
   }
@@ -1413,6 +1510,79 @@ export class DrawController {
     return this.selectedIds.size
       ? this.scene.elements.filter((e) => this.selectedIds.has(e.id))
       : [];
+  }
+
+  // --- toast (transient status messages; Excalidraw appState.toast) ---
+
+  /** The active toast message string, or null (drives the Toast component). */
+  get toastMessage(): string | null {
+    const t = this.appState.current.toast;
+    return t ? String(t.message ?? "") : null;
+  }
+
+  /** Auto-dismiss duration for the active toast (ms), if any. */
+  get toastDuration(): number | undefined {
+    return this.appState.current.toast?.duration;
+  }
+
+  /** Whether the active toast shows a close button. */
+  get toastClosable(): boolean {
+    return this.appState.current.toast?.closable ?? false;
+  }
+
+  /** Show a transient toast (default auto-dismiss handled by the Toast component). */
+  showToast(message: string, opts?: { closable?: boolean; duration?: number }): void {
+    this.appState.setState({ toast: { message, ...opts } });
+  }
+
+  /** Dismiss the current toast. */
+  dismissToast(): void {
+    if (this.appState.current.toast) {
+      this.appState.setState({ toast: null });
+    }
+  }
+
+  /**
+   * The contextual hint shown in the bottom hint bar (Excalidraw HintViewer).
+   * English strings inlined (i18n is out of scope) with macOS shortcut glyphs.
+   */
+  get hint(): string | null {
+    const sel = this.selectedElements;
+    if (this.activeTool === "arrow" || this.activeTool === "line") {
+      return "Click to start multiple points, drag for single line";
+    }
+    if (this.activeTool === "freedraw") {
+      return "Click and drag, release when you're finished";
+    }
+    if (this.activeTool === "text") {
+      return "Tip: you can also add text by double-clicking anywhere with the selection tool";
+    }
+    if (this.editingTextId) {
+      return "Press Esc or ⌘↵ to finish editing";
+    }
+    if (this.isLineEditing) {
+      const editor = this.appState.current.selectedLinearElement;
+      return editor?.selectedPointsIndices?.length
+        ? "Press Delete to remove point(s), ⌘D to duplicate, or drag to move"
+        : "Drag a point to move it, click a midpoint to add a point";
+    }
+    if (sel.length === 1) {
+      const el = sel[0]!;
+      if (isLinearElement(el) && el.points.length === 2) {
+        return "You can constrain angles by holding Shift while dragging";
+      }
+      if (isTextElement(el)) {
+        return "Double-click or press Enter to edit text";
+      }
+      if (el.type === "image") {
+        return "Double-click to crop the image";
+      }
+      return "You can constrain proportions by holding Shift while resizing, hold Alt to resize from the center";
+    }
+    if (this.activeTool === "selection" && !sel.length) {
+      return "Hold ⌘ to deep-select within groups; hold Space to pan";
+    }
+    return null;
   }
 
   #hitTest(sceneX: number, sceneY: number): string | null {
@@ -1561,6 +1731,35 @@ export class DrawController {
     ]);
   }
 
+  /**
+   * Extend the lasso path and select every element whose bounds overlap the
+   * polygon. Excalidraw's lasso selects elements the freeform loop encloses or
+   * crosses; we test the element's four bbox corners + center against the polygon
+   * (cheap and faithful for the common cases).
+   */
+  #updateLasso(x: number, y: number): void {
+    this.#lassoPoints.push(pointFrom<GlobalPoint>(x, y));
+    if (this.#lassoPoints.length < 3) {
+      return;
+    }
+    const poly = polygonFromPoints(this.#lassoPoints);
+    const enclosed: string[] = [];
+    for (const el of this.scene.elements) {
+      const [x1, y1, x2, y2] = getCommonBounds([el]);
+      const probes: GlobalPoint[] = [
+        pointFrom<GlobalPoint>(x1, y1),
+        pointFrom<GlobalPoint>(x2, y1),
+        pointFrom<GlobalPoint>(x2, y2),
+        pointFrom<GlobalPoint>(x1, y2),
+        pointFrom<GlobalPoint>((x1 + x2) / 2, (y1 + y2) / 2),
+      ];
+      if (probes.some((p) => polygonIncludesPoint(p, poly))) {
+        enclosed.push(el.id);
+      }
+    }
+    this.#setSelection([...this.#lassoBaseIds, ...enclosed]);
+  }
+
   #beginResize(handle: TransformHandleType): void {
     this.#resizeHandle = handle;
     this.#resizeOriginals = new Map(
@@ -1605,6 +1804,23 @@ export class DrawController {
   }
 
   /** Enter point-editing for the single selected line/arrow (double-click). */
+  /**
+   * Double-click dispatch (canvas-local coords): an image enters crop mode, a
+   * linear element enters point-editing. Excalidraw's onDoubleClick.
+   */
+  doubleClickAt(clientX: number, clientY: number): void {
+    const { x, y } = this.#toScene(clientX, clientY);
+    const id = this.#hitTest(x, y);
+    if (id) {
+      const el = this.scene.scene.getNonDeletedElementsMap().get(id);
+      if (el && isImageElement(el)) {
+        this.enterCrop(id);
+        return;
+      }
+    }
+    this.enterLineEditor();
+  }
+
   enterLineEditor(): void {
     const selected = this.selectedElements;
     if (selected.length !== 1) {
@@ -1630,6 +1846,47 @@ export class DrawController {
       this.appState.setState({ selectedLinearElement: null });
       this.scene.scene.triggerUpdate();
     }
+  }
+
+  // --- image crop (double-click an image to crop; Excalidraw croppingElementId) ---
+
+  /** True while an image is in crop mode. */
+  get isCropping(): boolean {
+    return this.appState.current.croppingElementId !== null;
+  }
+
+  /** Enter crop mode for an image element (selects it + shows crop handles). */
+  enterCrop(id: string): void {
+    const el = this.scene.scene.getNonDeletedElementsMap().get(id);
+    if (!el || !isImageElement(el)) {
+      return;
+    }
+    this.#setSelection([id]);
+    this.appState.setState({ croppingElementId: id, isCropping: false });
+    this.scene.scene.triggerUpdate();
+  }
+
+  /** Exit crop mode, committing the crop (one history entry). */
+  exitCrop(): void {
+    if (this.appState.current.croppingElementId === null) {
+      return;
+    }
+    this.appState.setState({ croppingElementId: null, isCropping: false });
+    this.#cropHandle = null;
+    this.scene.scene.triggerUpdate();
+    this.#commit();
+  }
+
+  /** Natural pixel dimensions of an image element from the decoded cache, if loaded. */
+  #naturalSize(el: ExcalidrawImageElement): { w: number; h: number } | null {
+    if (!el.fileId) {
+      return null;
+    }
+    const entry = this.imageCache.get(el.fileId);
+    if (!entry) {
+      return null;
+    }
+    return { w: entry.image.naturalWidth, h: entry.image.naturalHeight };
   }
 
   /** Pointer-down while editing a linear element. Returns true if it handled the event. */
@@ -1748,9 +2005,27 @@ export class DrawController {
     this.#shiftKey = mods.shiftKey;
     this.#altKey = mods.altKey;
 
+    // panning takes precedence over every tool: the hand tool, Space-drag, or a
+    // middle-mouse drag pans the camera (Excalidraw canvasPanning).
+    if (this.activeTool === "hand" || mods.spaceKey || mods.button === 1) {
+      this.#panning = true;
+      this.#panLastX = clientX;
+      this.#panLastY = clientY;
+      return;
+    }
+
     // laser pointer: start an ephemeral trail (canvas-local coords; not persisted)
     if (this.activeTool === "laser") {
       this.#laser?.startPath(clientX, clientY);
+      return;
+    }
+
+    // lasso: start a freeform selection path
+    if (this.activeTool === "lasso") {
+      this.#lasso = true;
+      this.#lassoPoints = [pointFrom<GlobalPoint>(x, y)];
+      this.#lassoBaseIds = mods.shiftKey ? new Set(this.selectedIds) : new Set();
+      this.#select(null);
       return;
     }
 
@@ -1763,6 +2038,22 @@ export class DrawController {
     }
 
     if (this.activeTool === "selection") {
+      // while cropping an image: a handle drag crops (not resizes); clicking off
+      // the cropped image exits crop mode
+      if (this.isCropping) {
+        const handle = this.#handleAt(x, y);
+        if (handle && handle !== "rotation") {
+          this.#cropHandle = handle;
+          return;
+        }
+        const hit = this.#hitTest(x, y);
+        if (hit !== this.appState.current.croppingElementId) {
+          this.exitCrop();
+          // fall through to normal selection of whatever was clicked
+        } else {
+          return;
+        }
+      }
       // a transform handle on the current selection starts a resize/rotate...
       const handle = this.#handleAt(x, y);
       if (handle) {
@@ -1843,21 +2134,27 @@ export class DrawController {
         ...this.#createStyle(),
       });
       this.#mode = "freedraw";
-    } else if (this.activeTool === "line" || this.activeTool === "arrow") {
-      let linear = newLinearElement({
-        type: this.activeTool,
+    } else if (this.activeTool === "arrow") {
+      const elbowed = this.appState.current.currentItemArrowType === "elbow";
+      this.#creating = newArrowElement({
+        type: "arrow",
+        x,
+        y,
+        points: [pointFrom<LocalPoint>(0, 0), pointFrom<LocalPoint>(0, 0)],
+        startArrowhead: this.appState.current.currentItemStartArrowhead,
+        endArrowhead: this.appState.current.currentItemEndArrowhead,
+        elbowed,
+        ...this.#createStyle(),
+      });
+      this.#mode = "linear";
+    } else if (this.activeTool === "line") {
+      this.#creating = newLinearElement({
+        type: "line",
         x,
         y,
         points: [pointFrom<LocalPoint>(0, 0), pointFrom<LocalPoint>(0, 0)],
         ...this.#createStyle(),
       });
-      if (this.activeTool === "arrow") {
-        linear = newElementWith(linear, {
-          startArrowhead: this.appState.current.currentItemStartArrowhead,
-          endArrowhead: this.appState.current.currentItemEndArrowhead,
-        });
-      }
-      this.#creating = linear;
       this.#mode = "linear";
     } else if (this.activeTool === "frame") {
       this.#creating = newFrameElement({ x, y, width: 0, height: 0 });
@@ -1883,6 +2180,21 @@ export class DrawController {
     this.#shiftKey = mods.shiftKey;
     this.#altKey = mods.altKey;
 
+    // panning: translate the camera by the viewport-pixel delta
+    if (this.#panning) {
+      this.panBy(clientX - this.#panLastX, clientY - this.#panLastY);
+      this.#panLastX = clientX;
+      this.#panLastY = clientY;
+      return;
+    }
+
+    // lasso: extend the path + reselect enclosed elements
+    if (this.#lasso) {
+      const { x, y } = this.#toScene(clientX, clientY);
+      this.#updateLasso(x, y);
+      return;
+    }
+
     // laser pointer: extend the trail (no-ops unless a stroke is active)
     if (this.activeTool === "laser") {
       this.#laser?.addPointToPath(clientX, clientY);
@@ -1907,6 +2219,35 @@ export class DrawController {
     if (this.#erasing) {
       const { x, y } = this.#toScene(clientX, clientY);
       this.#eraseAt(x, y);
+      return;
+    }
+
+    // cropping an image via a crop handle drag
+    if (this.#cropHandle) {
+      const { x, y } = this.#toScene(clientX, clientY);
+      const map = this.scene.scene.getNonDeletedElementsMap();
+      const el = map.get(this.appState.current.croppingElementId ?? "");
+      if (el && isImageElement(el)) {
+        const nat = this.#naturalSize(el);
+        if (nat) {
+          mutateElement(
+            el,
+            map,
+            cropElement(
+              el,
+              map,
+              this.#cropHandle,
+              nat.w,
+              nat.h,
+              x,
+              y,
+              this.#shiftKey ? el.width / el.height : undefined,
+            ),
+          );
+          this.appState.setState({ isCropping: true });
+          this.scene.scene.triggerUpdate();
+        }
+      }
       return;
     }
 
@@ -2002,12 +2343,30 @@ export class DrawController {
     } else if (this.#mode === "linear") {
       // 2-point linear element: second point tracks the pointer (local coords)
       const el = this.#creating as ExcalidrawLinearElement;
-      mutateElement(el, map, {
-        points: [
-          pointFrom<LocalPoint>(0, 0),
-          pointFrom<LocalPoint>(x - this.#originX, y - this.#originY),
-        ],
-      });
+      const nextPoints = [
+        pointFrom<LocalPoint>(0, 0),
+        pointFrom<LocalPoint>(x - this.#originX, y - this.#originY),
+      ];
+      if (isElbowArrow(el)) {
+        // elbow arrows route their points orthogonally via the elbow solver
+        mutateElement(
+          el,
+          map,
+          updateElbowArrowPoints(
+            el,
+            map as unknown as NonDeletedSceneElementsMap,
+            { points: nextPoints },
+            { isBindingEnabled: this.appState.current.isBindingEnabled },
+          ),
+        );
+      } else {
+        mutateElement(el, map, { points: nextPoints });
+      }
+      // binding-highlight: if this is an arrow whose end hovers a bindable shape,
+      // highlight that shape (Excalidraw suggestedBinding overlay)
+      if (isArrowElement(el)) {
+        this.#updateBindingHighlight(pointFrom<GlobalPoint>(x, y));
+      }
     } else {
       // negative-direction aware: position at the min corner, size is the abs delta
       mutateElement(this.#creating, map, {
@@ -2019,6 +2378,32 @@ export class DrawController {
     }
     // mutateElement invalidates ShapeCache; bump the reactive signal to repaint
     this.scene.scene.triggerUpdate();
+  }
+
+  /**
+   * Highlight the bindable shape under a point (the arrow endpoint being dragged),
+   * driving the renderer's suggestedBinding overlay. Clears the highlight when no
+   * shape is hovered.
+   */
+  #updateBindingHighlight(point: GlobalPoint): void {
+    const map = this.scene.scene.getNonDeletedElementsMap();
+    const els = this.scene.scene.getNonDeletedElements();
+    const hovered = getHoveredElementForBinding(point, els, map);
+    const current = this.appState.current.suggestedBinding;
+    if (hovered) {
+      if (current?.element.id !== hovered.id) {
+        this.appState.setState({ suggestedBinding: { element: hovered } });
+      }
+    } else if (current) {
+      this.appState.setState({ suggestedBinding: null });
+    }
+  }
+
+  /** Clear any active binding-suggestion highlight. */
+  #clearBindingHighlight(): void {
+    if (this.appState.current.suggestedBinding) {
+      this.appState.setState({ suggestedBinding: null });
+    }
   }
 
   /** Bind a freshly-drawn arrow's start/end points to any bindable shapes under them. */
@@ -2043,6 +2428,28 @@ export class DrawController {
   }
 
   pointerUp(): void {
+    // end a pan gesture (no scene mutation, no history)
+    if (this.#panning) {
+      this.#panning = false;
+      return;
+    }
+
+    // end a crop-handle drag (stay in crop mode; commit happens on exitCrop)
+    if (this.#cropHandle) {
+      this.#cropHandle = null;
+      this.appState.setState({ isCropping: false });
+      this.scene.scene.triggerUpdate();
+      return;
+    }
+
+    // end a lasso selection (selection only → no history)
+    if (this.#lasso) {
+      this.#lasso = false;
+      this.#lassoPoints = [];
+      this.#lassoBaseIds = new Set();
+      return;
+    }
+
     // end a laser stroke (stays the active tool — laser is sticky)
     if (this.activeTool === "laser") {
       this.#laser?.endPath();
@@ -2107,8 +2514,10 @@ export class DrawController {
       this.#elements = this.#elements.filter((e) => e !== creating);
       syncInvalidIndices(this.#elements);
       this.scene.replaceAllElements(this.#elements);
+      this.#clearBindingHighlight();
     } else if (mode === "linear" && isArrowElement(creating)) {
       this.#bindArrowEndpoints(creating as ExcalidrawArrowElement);
+      this.#clearBindingHighlight();
     } else if (isFrameLikeElement(creating)) {
       // a freshly-drawn frame adopts the elements enclosed within it (they then clip to it)
       const inside = getElementsInNewFrame(

@@ -36,6 +36,8 @@
   import MainMenu from '$lib/x/MainMenu.svelte';
   import HelpDialog from '$lib/x/HelpDialog.svelte';
   import ExportDialog from '$lib/x/ExportDialog.svelte';
+  import Toast from '$lib/x/Toast.svelte';
+  import HintViewer from '$lib/x/HintViewer.svelte';
 
   const controller = new DrawController();
   const { scene, appState } = controller;
@@ -46,7 +48,9 @@
   let interactiveCanvas = $state<HTMLCanvasElement>();
 
   const tools: Tool[] = [
+    'hand',
     'selection',
+    'lasso',
     'rectangle',
     'ellipse',
     'diamond',
@@ -98,7 +102,8 @@
       // ignore — capture is a best-effort optimization
     }
     const { x, y } = relative(e);
-    if (controller.activeTool === 'image') {
+    // image tool opens the picker — but not while panning (space/middle/hand)
+    if (controller.activeTool === 'image' && !spaceHeld && e.button !== 1) {
       pendingImageAt = { x: e.clientX, y: e.clientY };
       fileInput?.click();
       return;
@@ -107,7 +112,9 @@
       shiftKey: e.shiftKey,
       altKey: e.altKey,
       ctrlKey: e.ctrlKey,
-      metaKey: e.metaKey
+      metaKey: e.metaKey,
+      spaceKey: spaceHeld,
+      button: e.button
     });
   }
 
@@ -122,6 +129,9 @@
   }
 
   let lastPointer = { x: 0, y: 0 };
+  // Space-held → temporary pan (Excalidraw); tracked globally, plain let (not $state —
+  // it only gates pointer handlers, never rendered).
+  let spaceHeld = false;
 
   function onpointermove(e: PointerEvent): void {
     lastPointer = relative(e);
@@ -217,16 +227,32 @@
     { label: 'Keyboard shortcuts', action: () => (helpOpen = true) }
   ]);
 
+  function onkeyup(e: KeyboardEvent): void {
+    if (e.key === ' ') {
+      spaceHeld = false;
+    }
+  }
+
   function onkeydown(e: KeyboardEvent): void {
     // while typing in the text-editor overlay, let the textarea handle keys natively
     if (e.target instanceof HTMLTextAreaElement) {
+      return;
+    }
+    // Space-drag pan: hold Space (don't scroll the page); released in onkeyup
+    if (e.key === ' ') {
+      spaceHeld = true;
+      e.preventDefault();
       return;
     }
     if (e.key === 'Backspace' || e.key === 'Delete') {
       controller.deleteSelected();
       e.preventDefault();
     } else if (e.key === 'Escape') {
-      controller.deselect();
+      if (controller.isCropping) {
+        controller.exitCrop();
+      } else {
+        controller.deselect();
+      }
     } else if ((e.metaKey || e.ctrlKey) && (e.key === 'd' || e.key === 'D')) {
       controller.duplicateSelected();
       e.preventDefault();
@@ -314,7 +340,8 @@
     '9': 'image',
     '0': 'eraser', e: 'eraser',
     f: 'frame',
-    k: 'laser'
+    k: 'laser',
+    h: 'hand'
   };
 
   function sizeCanvas(el: HTMLCanvasElement, scale: number): { width: number; height: number } {
@@ -421,7 +448,7 @@
   });
 </script>
 
-<svelte:window {onkeydown} />
+<svelte:window {onkeydown} {onkeyup} />
 
 <input
   bind:this={fileInput}
@@ -604,8 +631,10 @@
     <ArrowheadControls
       start={controller.currentStartArrowhead}
       end={controller.currentEndArrowhead}
+      arrowType={controller.currentArrowType}
       onStart={(v) => controller.setStartArrowhead(v)}
       onEnd={(v) => controller.setEndArrowhead(v)}
+      onArrowType={(v) => controller.setArrowType(v)}
     />
   {/if}
 </div>
@@ -617,17 +646,34 @@
   />
 {/if}
 
+{#if !controller.zenMode && !controller.viewMode}
+  <HintViewer hint={controller.hint} />
+{/if}
+
+{#if controller.toastMessage !== null}
+  <Toast
+    message={controller.toastMessage}
+    closable={controller.toastClosable}
+    duration={controller.toastDuration}
+    onClose={() => controller.dismissToast()}
+  />
+{/if}
+
 <div class="canvas-wrap">
   <canvas bind:this={staticCanvas} class="layer"></canvas>
   <canvas
     bind:this={interactiveCanvas}
     class="layer"
+    class:grab={controller.activeTool === 'hand'}
     {onpointerdown}
     {onpointermove}
     {onpointerup}
     {onwheel}
     {oncontextmenu}
-    ondblclick={() => controller.enterLineEditor()}
+    ondblclick={(e) => {
+      const { x, y } = relative(e as unknown as PointerEvent);
+      controller.doubleClickAt(x, y);
+    }}
   ></canvas>
   <!-- ephemeral laser-pointer trail (SVG; pointer-events:none so the canvas keeps the gesture) -->
   <svg
@@ -739,6 +785,14 @@
     width: 100%;
     height: 100%;
     touch-action: none;
+  }
+
+  /* hand tool → grab cursor (grabbing while dragging) */
+  .layer.grab {
+    cursor: grab;
+  }
+  .layer.grab:active {
+    cursor: grabbing;
   }
 
   /* laser trail sits above the canvases but never intercepts pointer events */

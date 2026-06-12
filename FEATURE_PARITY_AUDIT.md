@@ -28,12 +28,16 @@ Closed since the audit, each with a passing CDP probe (`scripts/probe-x-batch*.m
   native picker + download/input fallback). *(probe-x-batch5)*
 - **Batch 6:** configurable arrowhead types (start/end: none/arrow/triangle/circle/
   bar/diamond), inherited at create + editable on selection. *(probe-x-batch6)*
+- **Batch 7:** canvas background color picker + scroll-back-to-content. *(probe-x-batch7)*
+- **Batch 8:** Toast (auto-dismiss status island) + HintViewer (contextual hint bar). *(probe-x-batch8)*
+- **Batch 9:** hand tool + Space-drag/middle-mouse pan + lasso freeform select. *(probe-x-batch9)*
+- **Batch 10:** image crop (double-click image → crop mode → handle-drag crop). *(probe-x-batch10)*
+- **Batch 11:** binding-highlight overlay (suggestedBinding while drawing arrows) +
+  elbow arrows (orthogonal routing + sharp/round/elbow type toggle). *(probe-x-batch11)*
 
-Still open: canvas background color (toggle exists in menu via setViewBackgroundColor
-but no picker), scroll-to-content, midpoint snapping toggle, elbow arrows,
-binding-highlight overlay, image crop, color shade-ramp, styled tooltips, toasts,
-hint viewer, welcome screen, command palette, libraries, lasso, hand/space-pan,
-embeddables, mermaid.
+Still open (lower-priority chrome/large surfaces): midpoint-snapping toggle,
+color shade-ramp picker, styled tooltips with shortcuts, welcome screen, command
+palette, libraries browser, embeddables, mermaid.
 
 ## Headline result
 
