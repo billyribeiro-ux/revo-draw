@@ -950,7 +950,23 @@ export class DrawController {
 
   /** Select every (non-deleted) element. */
   selectAll(): void {
-    this.#setSelection(this.scene.elements.map((e) => e.id));
+    // Skip while point-editing a linear element (Excalidraw actionSelectAll returns
+    // false), and exclude deleted elements, locked elements, and bound-text labels
+    // (text bound to a container is selected via its container, not directly).
+    if (this.appState.current.selectedLinearElement?.isEditing) {
+      return;
+    }
+    // select-all leaves no group in edit mode (actionSelectAll.ts:36)
+    this.appState.setState({ editingGroupId: null });
+    const ids = this.scene.elements
+      .filter(
+        (el) =>
+          !el.isDeleted &&
+          !(isTextElement(el) && el.containerId) &&
+          !el.locked,
+      )
+      .map((el) => el.id);
+    this.#setSelection(ids);
   }
 
   /** Flip the selection horizontally or vertically (Excalidraw actionFlip). */
