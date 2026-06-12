@@ -33,8 +33,10 @@ import {
   moveOneRight,
   mutateElement,
   addToGroup,
+  bindOrUnbindBindingElements,
   canApplyRoundnessTypeToElement,
   cropElement,
+  getCommonBoundingBox,
   getContainerElement,
   getDefaultRoundnessTypeForElement,
   duplicateElements,
@@ -1016,6 +1018,29 @@ export class DrawController {
     }
     const scene = this.scene.scene;
     const elementsMap = scene.getNonDeletedElementsMap();
+
+    // Branch 1: a selection of ONLY bound arrows just swaps its arrowheads — no
+    // geometric flip (Excalidraw actionFlip flipElements:116-129).
+    if (
+      selected.every(
+        (el) => isArrowElement(el) && (el.startBinding || el.endBinding),
+      )
+    ) {
+      for (const el of selected) {
+        const arrow = el as ExcalidrawArrowElement;
+        mutateElement(arrow, elementsMap, {
+          startArrowhead: arrow.endArrowhead,
+          endArrowhead: arrow.startArrowhead,
+        });
+        ShapeCache.delete(arrow);
+      }
+      scene.triggerUpdate();
+      this.#commit();
+      return;
+    }
+
+    // Branch 2: geometric flip about the selection centre.
+    const { midX, midY } = getCommonBoundingBox(selected);
     const originals = new Map(
       Array.from(elementsMap.values()).map((e) => [e.id, deepCopyElement(e)]),
     );
@@ -1025,6 +1050,25 @@ export class DrawController {
       shouldResizeFromCenter: true,
       shouldMaintainAspectRatio: true,
     });
+
+    // re-bind/un-bind the flipped arrows (their endpoints may now sit on/off shapes)
+    bindOrUnbindBindingElements(
+      selected.filter(isArrowElement) as ExcalidrawArrowElement[],
+      scene,
+      this.appState.current,
+    );
+
+    // Branch 3: recenter the group so repeated flips don't accumulate an offset
+    // (arrows can bump the selection bounds; flipElements:158-192).
+    const { midX: newMidX, midY: newMidY } = getCommonBoundingBox(selected);
+    const diffX = midX - newMidX;
+    const diffY = midY - newMidY;
+    if (diffX !== 0 || diffY !== 0) {
+      for (const el of selected) {
+        mutateElement(el, elementsMap, { x: el.x + diffX, y: el.y + diffY });
+      }
+    }
+
     scene.triggerUpdate();
     this.#commit();
   }
