@@ -35,11 +35,13 @@ import {
   addToGroup,
   canApplyRoundnessTypeToElement,
   cropElement,
+  getContainerElement,
   getDefaultRoundnessTypeForElement,
   duplicateElements,
   getElementsInGroup,
   getSelectedElements,
   getSelectedGroupIdForElement,
+  isBoundToContainer,
   isExcalidrawElement,
   isImageElement,
   isUsingAdaptiveRadius,
@@ -764,7 +766,39 @@ export class DrawController {
   /** Set the font size (Excalidraw actionChangeFontSize). */
   setFontSize(fontSize: number): void {
     this.appState.setState({ currentItemFontSize: fontSize });
-    this.#applyTextStyle({ fontSize });
+    const map = this.scene.scene.getNonDeletedElementsMap();
+    let changed = false;
+    for (const el of this.selectedElements) {
+      if (!isTextElement(el)) {
+        continue;
+      }
+      const prevWidth = el.width;
+      const prevHeight = el.height;
+      const prevX = el.x;
+      const prevY = el.y;
+      const prevAlign = el.textAlign;
+      mutateElement(el, map, { fontSize });
+      // re-measure against the element's container (Excalidraw passes the container
+      // to redrawTextBoundingBox; we previously passed null — actionProperties.tsx:271)
+      redrawTextBoundingBox(el, getContainerElement(el, map), this.scene.scene);
+      // re-anchor so the text grows from its anchor point instead of the top-left,
+      // skipping bound/non-autoResize text (offsetElementAfterFontResize,
+      // actionProperties.tsx:230-249)
+      if (!isBoundToContainer(el) && el.autoResize) {
+        mutateElement(el, map, {
+          x:
+            prevAlign === "left"
+              ? prevX
+              : prevX + (prevWidth - el.width) / (prevAlign === "center" ? 2 : 1),
+          y: prevY + (prevHeight - el.height) / 2,
+        });
+      }
+      changed = true;
+    }
+    if (changed) {
+      this.scene.scene.triggerUpdate();
+      this.#commit();
+    }
   }
 
   /** Set the horizontal text alignment (Excalidraw actionChangeTextAlign). */
