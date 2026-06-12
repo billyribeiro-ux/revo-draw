@@ -5,6 +5,39 @@ Newest first. "Done" = committed on this branch with tests green; "Pending" = no
 
 ## Done
 
+### Web-editor (`/x`) behavioral-parity fixes — 2026-06-12 (branch `feat/excalidraw-parity-gaps`)
+
+End-to-end fidelity audit (95-agent workflow → `PARITY_E2E_AUDIT.md` / `PARITY_E2E_FINDINGS.json`)
+found 84 confirmed divergences, all in the two seams the port wrote itself: the hand-rolled
+`draw-controller.svelte.ts` and the 6 placeholder modules. The math/element/common/utils/
+fractional-indexing packages and the renderers are **byte-identical to `excalidraw-master`** (proven
+by `diff`), so every fix = wire the already-ported helper the controller wasn't calling. **16 fixes
+landed (20 audit findings), one bug per commit, each proven with a differential headless-Chrome probe
+(`scripts/probe-x-fix*.mjs`, 15/15 pass) plus `pnpm check` 0/0, 172 unit tests, and existing
+regression probes green.** Full remaining-work list + continuation prompt in `PARITY_REMAINING_WORK.md`.
+
+- **#1** style edits busted `ShapeCache` so the rough shape repaints (`3731960`).
+- **#3/#4** shapes/lines honour `currentItemRoundness` at create via `getCurrentItemRoundness` (`39db1ff`).
+- **#6** creation origin grid-snapped via `getGridPoint` (Ctrl bypasses) (`b19ecfa`).
+- **#12** resize keeps the grabbed corner under the cursor via `getResizeOffsetXY` (`e9fcf4d`).
+- **#13/#16** grouped selection sets `selectedGroupIds` via `selectGroupsForSelectedElements`; verified
+  the real "contain"-mode box-selection contract (`63d1798`).
+- **#15** double-click deep-enters a selected group (`editingGroupId`) (`e0d8230`).
+- **#18/#19** dragging an arrow endpoint re-binds / un-binds via `bindOrUnbindBindingElement` (`f7b4c8b`).
+- **#24** font-size change re-anchors text (`offsetElementAfterFontResize`; center stays fixed) (`9099714`).
+- **#29** sloppiness change re-rolls the seed (`91b9fbf`).
+- **#30** `setEdges` applies per-type roundness + skips elbow arrows (`a14df6a`).
+- **#31** faithful `deleteSelectedElements` (frame children unparent+reselect, bound-text delete,
+  `fixBindingsAfterDeletion`) (`46255a9`).
+- **#33** duplicate uses batch `duplicateElements` so groups stay one group (`a05df17`).
+- **#34** `selectAll` skips locked elements + bound-text labels (`4aedafe`).
+- **#36** flip swaps arrowheads (all-bound-arrows), re-binds, and recenters (no drift) (`1b37569`).
+- **#35/#37/#38/#42/#43** keyboard shortcuts wired: z-order chords (`event.code` + Darwin Alt), lock
+  (⌘⇧L), align (⌘⇧Arrow), zoom (⌘±/0, ⇧1/2), view/zen (Alt+R / Alt+Z) (`2c67468`).
+
+Housekeeping: reverted an incidental transitive `acorn 8.16.0→8.17.0` lockfile bump (no real dep
+change; pnpm pinned at 11.6.0, `--frozen-lockfile` clean).
+
 ### Audit deliverables
 - **`discovery.md`** — forensic per-function inventory of **all 474** non-test source files in
   `excalidraw-master/` (~2,150 functions/methods), produced by an 85-agent workflow, each agent
