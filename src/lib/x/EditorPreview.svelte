@@ -39,6 +39,7 @@
   import Toast from '$lib/x/Toast.svelte';
   import HintViewer from '$lib/x/HintViewer.svelte';
   import Tooltip from '$lib/x/Tooltip.svelte';
+  import WelcomeScreen from '$lib/x/WelcomeScreen.svelte';
 
   // tool → human label + keyboard shortcut, for the styled toolbar tooltips
   const TOOL_INFO: Record<string, { label: string; shortcut?: string }> = {
@@ -672,6 +673,13 @@
 
 {#if !controller.zenMode && !controller.viewMode}
   <HintViewer hint={controller.hint} />
+{/if}
+
+{#if controller.showWelcome}
+  <WelcomeScreen
+    onOpen={() => void controller.openFile()}
+    onHelp={() => (helpOpen = true)}
+  />
 {/if}
 
 {#if controller.toastMessage !== null}

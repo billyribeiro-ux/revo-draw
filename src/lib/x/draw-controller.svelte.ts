@@ -639,6 +639,16 @@ export class DrawController {
     return this.activeTool === "text" || this.selectedElements.some(isTextElement);
   }
 
+  /** Show the welcome screen on an empty canvas (Excalidraw WelcomeScreen). */
+  get showWelcome(): boolean {
+    return (
+      this.scene.elements.length === 0 &&
+      !this.appState.current.zenModeEnabled &&
+      !this.appState.current.viewModeEnabled &&
+      this.editingTextId === null
+    );
+  }
+
   /** Current font family for the properties panel (selected text wins, else the app default). */
   get currentFontFamily(): FontFamilyValues {
     const text = this.selectedElements.find(isTextElement);
