@@ -184,6 +184,8 @@
     e.preventDefault();
     if (e.ctrlKey || e.metaKey) {
       controller.zoomAt(Math.exp(-e.deltaY * 0.001), e.clientX, e.clientY);
+    } else if (e.shiftKey) {
+      controller.panBy(e.deltaY || e.deltaX, 0);
     } else {
       controller.panBy(e.deltaX, e.deltaY);
     }
