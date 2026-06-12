@@ -1,0 +1,71 @@
+## Cluster: excalidraw__components__1
+
+This cluster contains three small reusable button primitives and the four-file `canvases/` group that owns Excalidraw's three layered HTML5 `<canvas>` surfaces (interactive overlay, static scene, in-progress new element). The canvas components are the closest structural analog to a Svelte/Canvas reimplementation's render loop, so coordinate-space and memoization details below matter for parity.
+
+### packages/excalidraw/components/ButtonIcon.tsx
+
+Purpose: A minimal, ref-forwarding icon-only `<button>` primitive with title/active/standalone styling hooks.
+
+- `interface ButtonIconProps` (L8-L19): props are `icon: JSX.Element`, `title: string`, `className?: string`, `testId?: string`, `active?: boolean` (the comment at L13 says it defaults to a value-identity check when not supplied, though this component itself just passes it through to clsx), `standalone?: boolean` (L15-L16 comment: standalone style may interfere with parent styles), `onClick: (event: React.MouseEvent<HTMLButtonElement, MouseEvent>) => void`, `style?: React.CSSProperties`.
+- `ButtonIcon = forwardRef<HTMLButtonElement, ButtonIconProps>((props, ref) => …)` (L21-L40): forwardRef functional component. Destructures `title, className, testId, active, standalone, icon, onClick` (L23-L24) but reads `style` directly off `props` at L34. Renders a `type="button"` `<button>` (L26-L37) with `ref`, `key={title}` (note: `key` on a non-list element is inert here, L29), `title`, `data-testid={testId}`, and `className={clsx(className, { standalone, active })}` (L32) so `standalone`/`active` become conditional classes. Children = the `icon` element. No state, no effects, pure presentational. Styling lives in the sibling `ButtonIcon.scss` (imported L4).
+
+### packages/excalidraw/components/ButtonIconCycle.tsx
+
+Purpose: A radio-like control rendered as a single clickable label/icon that cycles through an ordered options array on each click.
+
+- `ButtonIconCycle = <T extends any>({ options, value, onChange, group }) => …` (L5-L30): generic functional component over option value type `T`. Props (inline type L10-L15): `options: { value: T; text: string; icon: JSX.Element }[]`, `value: T | null`, `onChange: (value: T) => void`, `group: string`.
+  - `current = options.find((op) => op.value === value)` (L16): locates the currently-selected option by value-identity (`===`).
+  - `cycle = () => { … }` (L18-L22): internal handler. Computes `index = options.indexOf(current!)`, then `next = (index + 1) % options.length` (wrap-around modulo), and calls `onChange(options[next].value)`. Invariant/footgun: uses `current!` non-null assertion (L19) and `current!.value`/`current!.icon` (L25, L27), so it assumes `current` is always found — if `value` doesn't match any option this throws at render. The active class is set when `current!.value !== null` (L25).
+  - Render (L24-L29): a `<label key={group}>` wrapping a hidden-ish `<input type="button" name={group} onClick={cycle} />` plus the current icon. The `<input type="button">` is the click target driving `cycle`.
+  - No internal state — selection is fully controlled by the parent via `value`/`onChange`.
+
+### packages/excalidraw/components/ButtonSeparator.tsx
+
+Purpose: A 1px-wide vertical visual divider for toolbars.
+
+- `ButtonSeparator = () => (…)` (L1-L10): stateless, prop-less functional component. Renders a single `<div>` styled inline: `width: 1`, `height: "1rem"`, `backgroundColor: "var(--default-border-color)"`, `margin: "0 auto"` (centers it horizontally). Pure presentational, no logic.
+
+### packages/excalidraw/components/canvases/index.tsx
+
+Purpose: Barrel/re-export module for the canvas components.
+
+- Pure re-export file (L1-L4). Imports the default exports of `./InteractiveCanvas` and `./StaticCanvas` and re-exports them as named exports `{ InteractiveCanvas, StaticCanvas }`. No logic, no `NewElementCanvas` re-export (that one is imported directly by consumers). No functions defined.
+
+### packages/excalidraw/components/canvases/InteractiveCanvas.tsx
+
+Purpose: The top overlay `<canvas>` that renders interactive UI (selection boxes, handles, remote collaborator cursors, snap lines, binding highlights) via an animation-frame-driven render loop, memoized so it does not re-render on every scene mutation.
+
+- `type InteractiveCanvasProps` (L35-L82): large prop bag. Key members: `containerRef: React.RefObject<HTMLDivElement | null>`, `canvas: HTMLCanvasElement | null`, `elementsMap: RenderableElementsMap`, `visibleElements: readonly NonDeletedExcalidrawElement[]`, `selectedElements`, `allElementsMap: NonDeletedSceneElementsMap`, `canvasNonce: string`, `selectionNonce: number | undefined`, `scale: number`, `appState: InteractiveCanvasAppState`, `renderScrollbars: boolean`, `editorInterface: EditorInterface`, `app: AppClassProperties`, a `renderInteractiveSceneCallback`, `handleCanvasRef`, plus a full set of DOM event handlers (`onContextMenu`, `onClick`, `onPointerMove`, `onPointerUp`, `onPointerCancel`, `onTouchMove`, `onPointerDown`, `onDoubleClick`) typed as the non-undefined `DOMAttributes` variants (L53-L81).
+- `INTERACTIVE_SCENE_ANIMATION_KEY = "animateInteractiveScene"` (L84): exported constant used as the registration key in `AnimationController`.
+- `InteractiveCanvas = (props) => …` (L86-L230): the functional component.
+  - Refs it owns: `isComponentMounted = useRef(false)` (L87) — guards the first effect run; `rendererParams = useRef<InteractiveSceneRenderConfig | null>(null)` (L88) — holds the latest render config so the long-lived animation loop reads fresh params without re-subscribing.
+  - `useEffect` with no dependency array (L90-L199) — runs after every render. (a) On the very first run it sets `isComponentMounted.current = true` and returns early (L91-L94), so the loop is not started on initial mount. (b) Builds five collaborator `Map`s — `remotePointerButton`, `remotePointerViewportCoords`, `remoteSelectedElementIds`, `remotePointerUsernames`, `remotePointerUserStates` (L96-L105). (c) Iterates `props.appState.collaborators` (L107-L136): for each user with `selectedElementIds`, inverts the map to elementId → list of socketIds (L108-L115); skips users with no pointer or `renderCursor === false` (L116-L118); records username/userState (L119-L124); **converts the remote pointer from scene coords to viewport coords via `sceneCoordsToViewportCoords({ sceneX, sceneY }, appState)`** (L125-L134) — this is the key coordinate-space transform; records the pointer button (L135). (d) Resolves `selectionColor` by reading the computed CSS custom property `--color-selection` off `containerRef.current`, falling back to `"#6965db"` (L138-L143). (e) Assembles `rendererParams.current` (L145-L171) including `scale: window.devicePixelRatio` (L152 — note: overrides the `props.scale` for the actual render), the full `renderConfig`, `animationState: { bindingHighlight: undefined }`, and `deltaTime: 0`. The comment at L162 notes `lastViewportPosition` is intentionally NOT memoized so cursor moves don't trigger re-render. (f) If the animation isn't already running (L173), starts `AnimationController.start<InteractiveSceneRenderAnimationState>(KEY, callback)` (L174-L197); each frame calls `renderInteractiveScene({ ...rendererParams.current!, deltaTime, animationState: state })` and inspects the returned `animationState`: returns it (continues animating) only if some key is `!== undefined` (L183-L193), otherwise returns `undefined` to let the controller stop the loop. Performance detail: a single persistent rAF loop reads from a mutable ref, so prop updates mutate the ref rather than re-subscribing the loop.
+  - Render (L201-L229): a `<canvas className="excalidraw__canvas interactive">`. CSS `width`/`height` are the logical `appState.width`/`height` (L205-L206) while the backing-store `width`/`height` attributes are multiplied by `props.scale` for DPR (L213-L214) — classic CSS-size vs pixel-size split. `cursor` is `GRAB` when `viewModeEnabled` and the active tool is not `"laser"`, else `AUTO` (L207-L211). All pointer/touch/click handlers are wired through; `onDoubleClick` is suppressed (`undefined`) in view mode (L223-L225). Child text is `t("labels.drawingCanvas")` for accessibility (L227).
+- `getRelevantAppStateProps = (appState: AppState): InteractiveCanvasAppState => ({ … })` (L232-L273): projects the full `AppState` down to the ~35 fields the interactive canvas actually depends on (zoom, scroll, dimensions, view mode, active tool, selection ids/groups, frame highlight, offsets, theme, selection element, linear/multi/new element, binding flags, snapping flags, rotating flag, collaborators (commented "Necessary for collab. sessions" L259), embeddable, snap lines, zen mode, editing text, cropping flags, search matches, locked id, hovered ids, frame rendering, cache-ignore-zoom, export scale, arrow type). Used purely as the memo comparison surface.
+- `areEqual = (prevProps, nextProps): boolean` (L275-L302): the `React.memo` comparator. Returns `false` (re-render) if any of `selectionNonce`, `canvasNonce`, `scale`, `elementsMap` (reference), `visibleElements` (reference), `selectedElements` (reference), or `renderScrollbars` changed (L280-L293) — the comment at L284-L286 explains `elementsMap` is compared by reference because it can be renewed even when `canvasNonce` is unchanged (appState-based filtering). Otherwise falls back to `isShallowEqual(getRelevantAppStateProps(prev), getRelevantAppStateProps(next))` (L296-L301).
+- `export default React.memo(InteractiveCanvas, areEqual)` (L304).
+
+### packages/excalidraw/components/canvases/NewElementCanvas.tsx
+
+Purpose: A dedicated, un-memoized `<canvas>` that renders only the single element currently being created (drag-to-draw preview), kept separate so the static scene need not redraw mid-creation.
+
+- `interface NewElementCanvasProps` (L15-L23): `appState: AppState`, `newElement: NonNullable<AppState["newElement"]>`, `elementsMap: RenderableElementsMap`, `allElementsMap: NonDeletedSceneElementsMap`, `scale: number`, `rc: RoughCanvas` (roughjs canvas instance), `renderConfig: StaticCanvasRenderConfig`.
+- `NewElementCanvas = (props) => …` (L25-L58): functional component.
+  - Owns `canvasRef = useRef<HTMLCanvasElement | null>(null)` (L26).
+  - `useEffect` with no deps (L27-L44) — runs after every render. Bails if `canvasRef.current` is null (L28-L30), else calls `renderNewElementScene({ canvas, scale, newElement, elementsMap, allElementsMap, rc, renderConfig, appState }, isRenderThrottlingEnabled())` (L31-L43). The second arg gates rAF throttling.
+  - Render (L46-L57): `<canvas className="excalidraw__canvas">` with CSS size = logical `appState.width`/`height` (L50-L51) and backing-store size multiplied by `props.scale` for DPR (L53-L54). Same CSS-vs-pixel split as the other canvases.
+  - No memoization (no `React.memo`), so it re-renders/redraws on every parent render while a new element exists.
+
+### packages/excalidraw/components/canvases/StaticCanvas.tsx
+
+Purpose: The bottom `<canvas>` layer rendering all committed/visible scene elements; it imperatively adopts a parent-owned canvas DOM node into its wrapper and is memoized to only redraw when the scene or relevant appState actually changes.
+
+- `type StaticCanvasProps` (L20-L31): `canvas: HTMLCanvasElement` (note: required, not nullable — the canvas is owned/created by the parent App, not by this component), `rc: RoughCanvas`, `elementsMap`, `allElementsMap`, `visibleElements`, `canvasNonce: string`, `selectionNonce: number | undefined`, `scale: number`, `appState: StaticCanvasAppState`, `renderConfig: StaticCanvasRenderConfig`.
+- `StaticCanvas = (props) => …` (L33-L75): functional component.
+  - Refs it owns: `wrapperRef = useRef<HTMLDivElement>(null)` (L34) — the `<div>` wrapper this component actually renders; `isComponentMounted = useRef(false)` (L35) — gates the one-time DOM adoption.
+  - First `useEffect` (L37-L42), deps `[appState.height, appState.width, canvas, scale]`: imperatively sizes the externally-owned canvas — sets CSS `style.width/height` in px (logical size, L38-L39) and the backing-store `canvas.width/height` = logical × `scale` (DPR, L40-L41).
+  - Second `useEffect` with no deps (L44-L72): runs after every render. Bails if `wrapperRef.current` is null (L45-L48). On first run only (L52-L57): sets `isComponentMounted.current = true`, calls `wrapper.replaceChildren(canvas)` to imperatively move the parent's canvas node into this wrapper, and adds classes `"excalidraw__canvas"` + `"static"`. Then every run calls `renderStaticScene({ canvas, rc, scale, elementsMap, allElementsMap, visibleElements, appState, renderConfig }, isRenderThrottlingEnabled())` (L59-L71). Performance/parity note: the canvas element is created and persisted by the App and merely re-parented here, so its identity survives across this component's lifecycle.
+  - Render (L74): returns only `<div className="excalidraw__canvas-wrapper" ref={wrapperRef} />` — the canvas itself is injected imperatively, not via JSX.
+- `getRelevantAppStateProps = (appState: AppState): StaticCanvasAppState => { … }` (L77-L106): projects `AppState` to the ~25 fields the static scene depends on (zoom, scroll, dimensions, view mode, open dialog, hovered ids, offsets, theme, cache-ignore-zoom, background color, export scale, dragging flag, gridSize/gridStep, frame rendering, selected ids, frame highlight, editing group, hovered font family, cropping id, suggested binding). Used as the memo comparison surface.
+- `areEqual = (prevProps, nextProps): boolean` (L108-L132): the `React.memo` comparator. Returns `false` if `canvasNonce`, `scale`, `elementsMap` (reference, with the same renewal comment as InteractiveCanvas at L115-L117), or `visibleElements` (reference) changed (L112-L122). Otherwise returns the AND of two shallow equalities: `isShallowEqual(getRelevantAppStateProps(prev), getRelevantAppStateProps(next))` AND `isShallowEqual(prevProps.renderConfig, nextProps.renderConfig)` (L124-L131). Note: unlike InteractiveCanvas, it does NOT compare `selectionNonce` or `selectedElements` (static layer is selection-agnostic) but DOES additionally compare `renderConfig`.
+- `export default React.memo(StaticCanvas, areEqual)` (L134).
