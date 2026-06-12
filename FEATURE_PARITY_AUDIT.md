@@ -34,10 +34,17 @@ Closed since the audit, each with a passing CDP probe (`scripts/probe-x-batch*.m
 - **Batch 10:** image crop (double-click image → crop mode → handle-drag crop). *(probe-x-batch10)*
 - **Batch 11:** binding-highlight overlay (suggestedBinding while drawing arrows) +
   elbow arrows (orthogonal routing + sharp/round/elbow type toggle). *(probe-x-batch11)*
+- **Batch 12:** color shade-ramp picker (COLOR_PALETTE) + object/midpoint snapping
+  toggles. *(probe-x-batch12)*
+- **Batch 13:** styled toolbar tooltips (label + shortcut keycap on hover). *(probe-x-batch13)*
+- **Batch 14:** welcome screen (empty-canvas overlay with hints + getting-started). *(probe-x-batch14)*
+- **Batch 15:** command palette (⌘/ or ⌘⇧P; search/filter/run all actions). *(probe-x-batch15)*
+- **Batch 16:** library — add selection / persist (localStorage) / insert / remove,
+  with a sidebar panel. *(probe-x-batch16)*
 
-Still open (lower-priority chrome/large surfaces): midpoint-snapping toggle,
-color shade-ramp picker, styled tooltips with shortcuts, welcome screen, command
-palette, libraries browser, embeddables, mermaid.
+Still open (require external services or are explicitly out of scope): embeddables
+(iframe/video), Mermaid-to-diagram (TTDDialog), Excalidraw+ / cloud library
+publishing, real-time collaboration, AI ("wireframe to code"), i18n.
 
 ## Headline result
 

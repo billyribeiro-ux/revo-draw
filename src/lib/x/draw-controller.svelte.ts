@@ -74,6 +74,12 @@ import {
   probablySupportsClipboardBlob,
   readSystemClipboardText,
 } from "$lib/x/clipboard.ts";
+import {
+  loadLibrary,
+  makeLibraryItem,
+  saveLibrary,
+} from "$lib/x/library-store.ts";
+import type { LibraryItems } from "@excalidraw/excalidraw/types";
 
 import {
   getReferenceSnapPoints,
@@ -192,6 +198,8 @@ export class DrawController {
   /** The set of selected element ids (reactive — drives the interactive overlay). */
   readonly selectedIds = new SvelteSet<string>();
   editingTextId = $state<string | null>(null);
+  /** Persisted library items (reactive — drives the library panel). */
+  library = $state<LibraryItems>([]);
 
   /** First selected id, for single-selection consumers (text editing, panels). */
   get selectedId(): string | null {
@@ -286,6 +294,9 @@ export class DrawController {
       this.scene.replaceAllElements(this.#elements);
       this.appState.setState(restored.appState);
     }
+
+    // restore the persisted library
+    this.library = loadLibrary();
 
     // capture the initial snapshot (empty or restored) as the undo baseline
     this.#commit();
@@ -1504,6 +1515,45 @@ export class DrawController {
       this.showToast("Couldn't copy to clipboard.");
       return false;
     }
+  }
+
+  // --- library (reusable element groups; Excalidraw addToLibrary / insert) ---
+
+  /** True when there's a selection to add to the library. */
+  get canAddToLibrary(): boolean {
+    return this.selectedIds.size > 0;
+  }
+
+  /** Add the current selection to the library as one item (Excalidraw addToLibrary). */
+  addSelectionToLibrary(): void {
+    const sel = this.selectedElements;
+    if (!sel.length) {
+      return;
+    }
+    const item = makeLibraryItem(sel, randomId(), this.#nowMs());
+    this.library = [...this.library, item];
+    saveLibrary(this.library);
+    this.showToast("Added to library.");
+  }
+
+  /** Remove a library item by id. */
+  removeLibraryItem(id: string): void {
+    this.library = this.library.filter((it) => it.id !== id);
+    saveLibrary(this.library);
+  }
+
+  /** Stamp a library item onto the canvas (re-id'd, offset), selecting the copies. */
+  insertLibraryItem(id: string, clientX?: number, clientY?: number): void {
+    const item = this.library.find((it) => it.id === id);
+    if (!item || !item.elements.length) {
+      return;
+    }
+    this.#pasteElements(item.elements as ExcalidrawElement[], clientX, clientY);
+  }
+
+  /** Epoch-ms timestamp (Date.now via a single boundary; safe in the browser). */
+  #nowMs(): number {
+    return new Date().getTime();
   }
 
   /** Duplicate the selected element(s) offset by (10,10) and select the copies. */

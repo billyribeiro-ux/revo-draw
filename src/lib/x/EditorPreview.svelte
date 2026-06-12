@@ -41,6 +41,7 @@
   import Tooltip from '$lib/x/Tooltip.svelte';
   import WelcomeScreen from '$lib/x/WelcomeScreen.svelte';
   import CommandPalette, { type Command } from '$lib/x/CommandPalette.svelte';
+  import LibraryPanel from '$lib/x/LibraryPanel.svelte';
 
   // tool → human label + keyboard shortcut, for the styled toolbar tooltips
   const TOOL_INFO: Record<string, { label: string; shortcut?: string }> = {
@@ -183,6 +184,7 @@
   let helpOpen = $state(false);
   let exportOpen = $state(false);
   let cmdpOpen = $state(false);
+  let libraryOpen = $state(false);
   let contextAt = $state<{ x: number; y: number } | null>(null);
 
   // the command palette's action list (assembled from existing controller ops)
@@ -225,6 +227,8 @@
     { group: 'File', label: 'Save to…', shortcut: '⌘S', run: () => void controller.saveToFile() },
     { group: 'File', label: 'Save as image…', run: () => (exportOpen = true) },
     { group: 'File', label: 'Reset the canvas', run: () => controller.clear() },
+    { group: 'Edit', label: 'Add to library', run: () => controller.addSelectionToLibrary() },
+    { group: 'View', label: 'Toggle library', run: () => (libraryOpen = !libraryOpen) },
     { group: 'Help', label: 'Keyboard shortcuts', shortcut: '?', run: () => (helpOpen = true) }
   ];
 
@@ -270,6 +274,8 @@
     { label: 'Lock', action: () => controller.lockSelected() },
     { label: 'Unlock all', action: () => controller.unlockAll() },
     'separator' as const,
+    { label: 'Add to library', action: () => controller.addSelectionToLibrary() },
+    'separator' as const,
     { label: 'Select all', action: () => controller.selectAll() },
     { label: 'Select none', action: () => controller.deselect() }
   ];
@@ -284,6 +290,7 @@
     { label: 'Reset view', action: () => controller.resetView() },
     'separator' as const,
     { label: 'Save as image…', action: () => (exportOpen = true) },
+    { label: libraryOpen ? 'Hide library' : 'Show library', action: () => (libraryOpen = !libraryOpen) },
     { label: controller.gridMode ? 'Hide grid' : 'Show grid', action: () => controller.toggleGrid() },
     { label: controller.objectsSnapMode ? 'Disable snapping' : 'Enable snapping', action: () => controller.toggleObjectsSnapMode() },
     { label: controller.midpointSnapping ? 'Disable midpoint snapping' : 'Enable midpoint snapping', action: () => controller.toggleMidpointSnapping() },
@@ -729,6 +736,17 @@
 
 {#if cmdpOpen}
   <CommandPalette commands={commandsList} onClose={() => (cmdpOpen = false)} />
+{/if}
+
+{#if libraryOpen}
+  <LibraryPanel
+    items={controller.library}
+    canAdd={controller.canAddToLibrary}
+    onAdd={() => controller.addSelectionToLibrary()}
+    onInsert={(id) => controller.insertLibraryItem(id)}
+    onRemove={(id) => controller.removeLibraryItem(id)}
+    onClose={() => (libraryOpen = false)}
+  />
 {/if}
 
 {#if controller.showWelcome}
