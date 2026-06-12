@@ -46,6 +46,7 @@ import {
   getSelectedElements,
   getSelectedGroupIdForElement,
   isBoundToContainer,
+  isCursorInFrame,
   isExcalidrawElement,
   isImageElement,
   isUsingAdaptiveRadius,
@@ -133,6 +134,7 @@ import type {
   Arrowhead,
   ExcalidrawElement,
   ExcalidrawFreeDrawElement,
+  ExcalidrawFrameLikeElement,
   ExcalidrawImageElement,
   ExcalidrawLinearElement,
   ExcalidrawTextElement,
@@ -2129,21 +2131,75 @@ export class DrawController {
   }
 
   #hitTest(sceneX: number, sceneY: number): string | null {
+    const hit = this.#elementsAtPosition(sceneX, sceneY).at(-1);
+    return hit?.id ?? null;
+  }
+
+  #elementsAtPosition(
+    sceneX: number,
+    sceneY: number,
+    opts: { includeLockedElements?: boolean } = {},
+  ): readonly NonDeletedExcalidrawElement[] {
     const elementsMap = this.scene.scene.getNonDeletedElementsMap();
     const threshold = 10 / this.appState.current.zoom.value;
     const point = pointFrom<GlobalPoint>(sceneX, sceneY);
-    const els = this.scene.elements;
-    // topmost (last in z-order) first
-    for (let i = els.length - 1; i >= 0; i--) {
-      const element = els[i]!;
-      if (element.locked) {
-        continue; // locked elements are not selectable
+    const hits: NonDeletedExcalidrawElement[] = [];
+    for (const element of this.scene.elements) {
+      if (!opts.includeLockedElements && element.locked) {
+        continue;
       }
       if (hitElementItself({ point, element, threshold, elementsMap })) {
-        return element.id;
+        hits.push(element);
       }
     }
-    return null;
+    return hits;
+  }
+
+  #topLayerFrameAtSceneCoords(sceneCoords: {
+    x: number;
+    y: number;
+  }): ExcalidrawFrameLikeElement | null {
+    const scene = this.scene.scene;
+    const elementsMap = scene.getNonDeletedElementsMap();
+    const framesUnderCursor = scene
+      .getNonDeletedFramesLikes()
+      .filter(
+        (frame) =>
+          !frame.locked && isCursorInFrame(sceneCoords, frame, elementsMap),
+      );
+
+    if (!framesUnderCursor.length) {
+      return null;
+    }
+
+    const topLayerFrame = framesUnderCursor.at(-1)!;
+    const hitElement = this.#elementsAtPosition(sceneCoords.x, sceneCoords.y, {
+      includeLockedElements: true,
+    }).at(-1);
+
+    if (hitElement) {
+      if (isFrameLikeElement(hitElement) && !hitElement.locked) {
+        return topLayerFrame;
+      }
+
+      const hitElementIndex = scene.getElementIndex(hitElement.id);
+      const topLayerFrameIndex = scene.getElementIndex(topLayerFrame.id);
+
+      if (
+        hitElementIndex !== -1 &&
+        topLayerFrameIndex !== -1 &&
+        hitElementIndex <= topLayerFrameIndex
+      ) {
+        return topLayerFrame;
+      }
+
+      return hitElement.frameId
+        ? framesUnderCursor.find((frame) => frame.id === hitElement.frameId) ??
+            null
+        : null;
+    }
+
+    return topLayerFrame;
   }
 
   #select(id: string | null): void {
@@ -2747,10 +2803,12 @@ export class DrawController {
     // text tool: click to place an empty text element and start editing it
     if (this.activeTool === "text") {
       this.#select(null);
+      const topLayerFrame = this.#topLayerFrameAtSceneCoords({ x, y });
       const el = newTextElement({
         text: "",
         x,
         y,
+        frameId: topLayerFrame ? topLayerFrame.id : null,
         ...this.#createStyle(),
         ...this.#textStyle(),
       });
@@ -2786,12 +2844,15 @@ export class DrawController {
     y = gy;
     this.#originX = x;
     this.#originY = y;
+    const topLayerFrame = this.#topLayerFrameAtSceneCoords({ x, y });
+    const frameId = topLayerFrame ? topLayerFrame.id : null;
 
     if (this.activeTool === "freedraw") {
       this.#creating = newFreeDrawElement({
         type: "freedraw",
         x,
         y,
+        frameId,
         points: [pointFrom<LocalPoint>(0, 0)],
         pressures: [],
         simulatePressure: true,
@@ -2808,6 +2869,7 @@ export class DrawController {
         startArrowhead: this.appState.current.currentItemStartArrowhead,
         endArrowhead: this.appState.current.currentItemEndArrowhead,
         elbowed,
+        frameId,
         ...this.#createStyle(),
       });
       this.#mode = "linear";
@@ -2816,6 +2878,7 @@ export class DrawController {
         type: "line",
         x,
         y,
+        frameId,
         points: [pointFrom<LocalPoint>(0, 0), pointFrom<LocalPoint>(0, 0)],
         roundness: this.#getCurrentItemRoundness("line"),
         ...this.#createStyle(),
@@ -2825,13 +2888,19 @@ export class DrawController {
       this.#creating = newFrameElement({ x, y, width: 0, height: 0 });
       this.#mode = "generic";
     } else if (this.activeTool === "embeddable") {
-      this.#creating = newEmbeddableElement({ type: "embeddable", x, y });
+      this.#creating = newEmbeddableElement({
+        type: "embeddable",
+        x,
+        y,
+        frameId,
+      });
       this.#mode = "generic";
     } else {
       this.#creating = newElement({
         type: this.activeTool,
         x,
         y,
+        frameId,
         width: 0,
         height: 0,
         roundness: this.#getCurrentItemRoundness(this.activeTool),
