@@ -3279,9 +3279,19 @@ export class DrawController {
       syncInvalidIndices(this.#elements);
       this.scene.replaceAllElements(this.#elements);
       this.#clearBindingHighlight();
-    } else if (mode === "linear" && isArrowElement(creating)) {
-      this.#bindArrowEndpoints(creating as ExcalidrawArrowElement);
+    } else if (mode === "linear" && isLinearElement(creating)) {
+      if (isArrowElement(creating)) {
+        this.#bindArrowEndpoints(creating as ExcalidrawArrowElement);
+      }
       this.#clearBindingHighlight();
+      this.#setSelection([creating.id]);
+      this.appState.setState({
+        selectedLinearElement: new LinearElementEditor(
+          creating,
+          this.scene.scene.getNonDeletedElementsMap(),
+        ),
+      });
+      this.scene.scene.triggerUpdate();
     } else if (isFrameLikeElement(creating)) {
       // a freshly-drawn frame adopts the elements enclosed within it (they then clip to it)
       const inside = getElementsInNewFrame(
