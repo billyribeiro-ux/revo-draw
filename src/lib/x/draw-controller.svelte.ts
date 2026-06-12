@@ -82,11 +82,14 @@ import {
   DEFAULT_FONT_SIZE,
   DEFAULT_GRID_SIZE,
   DEFAULT_TEXT_ALIGN,
+  MAX_ZOOM,
+  MIN_ZOOM,
   getGridPoint,
   getLineHeight,
   randomId,
   randomInteger,
   ROUNDNESS,
+  ZOOM_STEP,
   viewportCoordsToSceneCoords,
 } from "@excalidraw/common";
 
@@ -113,9 +116,11 @@ import {
 } from "@excalidraw/excalidraw/snapping";
 
 import {
+  clamp,
   pointFrom,
   polygonFromPoints,
   polygonIncludesPoint,
+  roundToStep,
 } from "@excalidraw/math";
 
 import { SvelteSet } from "svelte/reactivity";
@@ -217,6 +222,54 @@ const NO_MODS: PointerMods = {
   spaceKey: false,
   button: 0,
 };
+
+function getStateForZoom(
+  {
+    viewportX,
+    viewportY,
+    nextZoom,
+  }: {
+    viewportX: number;
+    viewportY: number;
+    nextZoom: NormalizedZoomValue;
+  },
+  appState: AppState,
+): Pick<AppState, "scrollX" | "scrollY" | "zoom"> {
+  const appLayerX = viewportX - appState.offsetLeft;
+  const appLayerY = viewportY - appState.offsetTop;
+  const currentZoom = appState.zoom.value;
+
+  const baseScrollX =
+    appState.scrollX + (appLayerX - appLayerX / currentZoom);
+  const baseScrollY =
+    appState.scrollY + (appLayerY - appLayerY / currentZoom);
+  const zoomOffsetScrollX = -(appLayerX - appLayerX / nextZoom);
+  const zoomOffsetScrollY = -(appLayerY - appLayerY / nextZoom);
+
+  return {
+    scrollX: baseScrollX + zoomOffsetScrollX,
+    scrollY: baseScrollY + zoomOffsetScrollY,
+    zoom: { value: nextZoom },
+  };
+}
+
+function zoomValueToFitBoundsOnViewport(
+  bounds: readonly [number, number, number, number],
+  viewportDimensions: { width: number; height: number },
+  viewportZoomFactor = 1,
+): number {
+  const [x1, y1, x2, y2] = bounds;
+  const commonBoundsWidth = Math.max(1, x2 - x1);
+  const commonBoundsHeight = Math.max(1, y2 - y1);
+  const smallestZoomValue = Math.min(
+    viewportDimensions.width / commonBoundsWidth,
+    viewportDimensions.height / commonBoundsHeight,
+  );
+  const adjustedZoomValue =
+    smallestZoomValue * clamp(viewportZoomFactor, MIN_ZOOM, 1);
+
+  return Math.min(adjustedZoomValue, 1);
+}
 
 export class DrawController {
   readonly scene = new EditorScene();
@@ -472,20 +525,39 @@ export class DrawController {
   }
 
   resetView(): void {
-    this.appState.setState({
-      zoom: { value: 1 as NormalizedZoomValue },
-      scrollX: 0,
-      scrollY: 0,
-    });
+    const a = this.appState.current;
+    this.appState.setState(
+      getStateForZoom(
+        {
+          viewportX: a.width / 2 + a.offsetLeft,
+          viewportY: a.height / 2 + a.offsetTop,
+          nextZoom: 1 as NormalizedZoomValue,
+        },
+        a,
+      ),
+    );
   }
 
   /** Center+fit the given world bounds into the viewport. */
-  #fitBounds(bounds: readonly [number, number, number, number]): void {
+  #fitBounds(
+    bounds: readonly [number, number, number, number],
+    fitToViewport = false,
+  ): void {
     const [x1, y1, x2, y2] = bounds;
     const a = this.appState.current;
     const w = Math.max(1, x2 - x1);
     const h = Math.max(1, y2 - y1);
-    const zoom = Math.min(30, Math.max(0.1, Math.min(a.width / w, a.height / h) * 0.85));
+    const adjustedZoomValue = fitToViewport
+      ? Math.min(a.width / w, a.height / h)
+      : zoomValueToFitBoundsOnViewport(bounds, {
+          width: a.width,
+          height: a.height,
+        });
+    const zoom = clamp(
+      roundToStep(adjustedZoomValue, ZOOM_STEP, "floor"),
+      MIN_ZOOM,
+      MAX_ZOOM,
+    );
     const cx = (x1 + x2) / 2;
     const cy = (y1 + y2) / 2;
     this.appState.setState({
@@ -507,7 +579,7 @@ export class DrawController {
   zoomToSelection(): void {
     const sel = this.selectedElements;
     if (sel.length) {
-      this.#fitBounds(getCommonBounds(sel));
+      this.#fitBounds(getCommonBounds(sel), true);
     }
   }
 

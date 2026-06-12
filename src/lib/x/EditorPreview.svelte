@@ -184,6 +184,8 @@
     e.preventDefault();
     if (e.ctrlKey || e.metaKey) {
       controller.zoomAt(Math.exp(-e.deltaY * 0.001), e.clientX, e.clientY);
+    } else if (e.shiftKey) {
+      controller.panBy(e.deltaY || e.deltaX, 0);
     } else {
       controller.panBy(e.deltaX, e.deltaY);
     }
@@ -331,7 +333,7 @@
       e.preventDefault();
       return;
     }
-    if (e.key === 'Backspace' || e.key === 'Delete') {
+    if ((e.key === 'Backspace' || e.key === 'Delete') && !e.metaKey && !e.ctrlKey) {
       controller.deleteSelected();
       e.preventDefault();
     } else if (e.key === 'Escape') {
