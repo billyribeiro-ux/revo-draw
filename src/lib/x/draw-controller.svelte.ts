@@ -51,6 +51,7 @@ import {
   orderByFractionalIndex,
   updateElbowArrowPoints,
   redrawTextBoundingBox,
+  getResizeOffsetXY,
   resizeTest,
   ShapeCache,
   Store,
@@ -238,6 +239,10 @@ export class DrawController {
   #resizeOriginals = new Map<string, NonDeletedExcalidrawElement>();
   #resizeCenterX = 0;
   #resizeCenterY = 0;
+  // gap between the pointer-down point and the exact handle position, kept fixed
+  // under the cursor during the resize (Excalidraw's pointerDownState.resize.offset)
+  #resizeOffsetX = 0;
+  #resizeOffsetY = 0;
 
   // marquee (box) selection state
   #marquee = false;
@@ -1986,7 +1991,7 @@ export class DrawController {
     this.#setSelection([...this.#lassoBaseIds, ...enclosed]);
   }
 
-  #beginResize(handle: TransformHandleType): void {
+  #beginResize(handle: TransformHandleType, pointerX: number, pointerY: number): void {
     this.#resizeHandle = handle;
     this.#resizeOriginals = new Map(
       this.selectedElements.map((e) => [e.id, deepCopyElement(e)]),
@@ -1994,6 +1999,18 @@ export class DrawController {
     const [x1, y1, x2, y2] = getCommonBounds(this.selectedElements);
     this.#resizeCenterX = (x1 + x2) / 2;
     this.#resizeCenterY = (y1 + y2) / 2;
+    // Capture the offset between the click point and the exact handle position so
+    // the grabbed corner stays under the cursor on the first move instead of
+    // teleporting to it (Excalidraw App.tsx:8570-8580 via getResizeOffsetXY).
+    const [ox, oy] = getResizeOffsetXY(
+      handle,
+      [...this.selectedElements],
+      this.scene.scene.getNonDeletedElementsMap(),
+      pointerX,
+      pointerY,
+    );
+    this.#resizeOffsetX = ox;
+    this.#resizeOffsetY = oy;
   }
 
   // --- multi-point linear (line/arrow) editor ---
@@ -2290,7 +2307,7 @@ export class DrawController {
       // a transform handle on the current selection starts a resize/rotate...
       const handle = this.#handleAt(x, y);
       if (handle) {
-        this.#beginResize(handle);
+        this.#beginResize(handle, x, y);
         return;
       }
       const hitId = this.#hitTest(x, y);
@@ -2500,6 +2517,17 @@ export class DrawController {
     // resizing / rotating the current selection via a transform handle
     if (this.#resizeHandle) {
       const { x, y } = this.#toScene(clientX, clientY);
+      // Subtract the grab offset so the grabbed corner tracks the cursor instead
+      // of teleporting to it, then grid-snap (Ctrl bypasses) — Excalidraw
+      // App.tsx:12589-12594. Rotation has no meaningful offset; keep raw coords.
+      const isRotate = this.#resizeHandle === "rotation";
+      const [resizeX, resizeY] = isRotate
+        ? [x, y]
+        : getGridPoint(
+            x - this.#resizeOffsetX,
+            y - this.#resizeOffsetY,
+            mods.ctrlKey || mods.metaKey ? null : this.#effectiveGridSize(),
+          );
       transformElements(
         this.#resizeOriginals,
         this.#resizeHandle,
@@ -2508,8 +2536,8 @@ export class DrawController {
         this.#shiftKey, // shouldRotateWithDiscreteAngle (shift → 15° rotation snap)
         this.#altKey, // shouldResizeFromCenter (alt → resize anchored at center)
         this.#shiftKey, // shouldMaintainAspectRatio (shift → aspect-locked resize)
-        x,
-        y,
+        resizeX,
+        resizeY,
         this.#resizeCenterX,
         this.#resizeCenterY,
       );
