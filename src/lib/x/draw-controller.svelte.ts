@@ -27,6 +27,8 @@ import {
   moveOneLeft,
   moveOneRight,
   mutateElement,
+  addToGroup,
+  getElementsInGroup,
   newElement,
   newElementWith,
   newFrameElement,
@@ -44,7 +46,7 @@ import {
 
 import type { ExcalidrawArrowElement } from "@excalidraw/element/types";
 
-import { ROUNDNESS, viewportCoordsToSceneCoords } from "@excalidraw/common";
+import { randomId, ROUNDNESS, viewportCoordsToSceneCoords } from "@excalidraw/common";
 
 import {
   getReferenceSnapPoints,
@@ -668,6 +670,79 @@ export class DrawController {
     }
   }
 
+  /** True if the current selection forms (at least) one group. */
+  get canUngroup(): boolean {
+    return this.selectedElements.some((el) => el.groupIds.length > 0);
+  }
+
+  /** Group the selected elements under a fresh group id (Excalidraw actionGroup, ⌘G). */
+  groupSelected(): void {
+    const sel = this.selectedElements;
+    if (sel.length < 2) {
+      return;
+    }
+    const newGroupId = randomId();
+    const map = this.scene.scene.getNonDeletedElementsMap();
+    const editingGroupId = this.appState.current.editingGroupId;
+    for (const el of sel) {
+      mutateElement(el, map, {
+        groupIds: addToGroup(el.groupIds, newGroupId, editingGroupId),
+      });
+    }
+    this.scene.scene.triggerUpdate();
+    this.#commit();
+  }
+
+  /** Ungroup the selection — strips the outermost group from each member (⌘⇧G). */
+  ungroupSelected(): void {
+    const sel = this.selectedElements;
+    if (!sel.length) {
+      return;
+    }
+    const map = this.scene.scene.getNonDeletedElementsMap();
+    let changed = false;
+    for (const el of sel) {
+      if (el.groupIds.length === 0) {
+        continue;
+      }
+      // groupIds run shallowest→outermost; the last entry is the outermost group.
+      const outermost = el.groupIds[el.groupIds.length - 1];
+      mutateElement(el, map, {
+        groupIds: el.groupIds.filter((g) => g !== outermost),
+      });
+      changed = true;
+    }
+    if (changed) {
+      this.scene.scene.triggerUpdate();
+      this.#commit();
+    }
+  }
+
+  /**
+   * Expand a set of element ids to include their whole outermost group
+   * (Excalidraw deep-select: clicking a grouped element selects the group).
+   */
+  #withGroupMembers(ids: readonly string[]): string[] {
+    const editingGroupId = this.appState.current.editingGroupId;
+    const out = new Set<string>(ids);
+    const byId = this.scene.scene.getNonDeletedElementsMap();
+    for (const id of ids) {
+      const el = byId.get(id);
+      if (!el || el.groupIds.length === 0) {
+        continue;
+      }
+      // while editing a group, deep-select stays scoped within it
+      const groupId =
+        editingGroupId && el.groupIds.includes(editingGroupId)
+          ? editingGroupId
+          : el.groupIds[el.groupIds.length - 1];
+      for (const member of getElementsInGroup(byId, groupId)) {
+        out.add(member.id);
+      }
+    }
+    return [...out];
+  }
+
   // --- canvas / view state ---
   get viewBackgroundColor(): string {
     return this.appState.current.viewBackgroundColor;
@@ -1025,13 +1100,16 @@ export class DrawController {
     });
   }
 
-  /** Toggle a single element in/out of the current selection (shift-click). */
+  /** Toggle a single element (and its group) in/out of the current selection (shift-click). */
   #toggleSelected(id: string): void {
+    const groupIds = this.#withGroupMembers([id]);
     const next = new Set(this.selectedIds);
+    // toggle the whole group as a unit: if the clicked element is in, remove the
+    // group; otherwise add it.
     if (next.has(id)) {
-      next.delete(id);
+      for (const g of groupIds) next.delete(g);
     } else {
-      next.add(id);
+      for (const g of groupIds) next.add(g);
     }
     this.#setSelection([...next]);
   }
@@ -1359,9 +1437,9 @@ export class DrawController {
         this.#beginDrag(x, y);
         return;
       }
-      // ...hitting an element selects it and starts a drag...
+      // ...hitting an element selects it (whole group, if grouped) and starts a drag...
       if (hitId) {
-        this.#select(hitId);
+        this.#setSelection(this.#withGroupMembers([hitId]));
         this.#beginDrag(x, y);
         return;
       }

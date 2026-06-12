@@ -171,6 +171,9 @@
     { label: 'Flip horizontal', action: () => controller.flipSelected('horizontal') },
     { label: 'Flip vertical', action: () => controller.flipSelected('vertical') },
     'separator' as const,
+    { label: 'Group selection', shortcut: '⌘G', action: () => controller.groupSelected() },
+    { label: 'Ungroup selection', shortcut: '⌘⇧G', action: () => controller.ungroupSelected() },
+    'separator' as const,
     { label: 'Align left', action: () => controller.alignSelected('start', 'x') },
     { label: 'Align center', action: () => controller.alignSelected('center', 'x') },
     { label: 'Align right', action: () => controller.alignSelected('end', 'x') },
@@ -249,6 +252,12 @@
       e.preventDefault();
     } else if ((e.metaKey || e.ctrlKey) && (e.key === 'a' || e.key === 'A')) {
       controller.selectAll();
+      e.preventDefault();
+    } else if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === 'g' || e.key === 'G')) {
+      controller.ungroupSelected();
+      e.preventDefault();
+    } else if ((e.metaKey || e.ctrlKey) && (e.key === 'g' || e.key === 'G')) {
+      controller.groupSelected();
       e.preventDefault();
     } else if (!e.metaKey && !e.ctrlKey && e.shiftKey && e.key === 'H') {
       controller.flipSelected('horizontal');
