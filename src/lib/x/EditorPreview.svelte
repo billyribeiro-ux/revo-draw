@@ -38,6 +38,25 @@
   import ExportDialog from '$lib/x/ExportDialog.svelte';
   import Toast from '$lib/x/Toast.svelte';
   import HintViewer from '$lib/x/HintViewer.svelte';
+  import Tooltip from '$lib/x/Tooltip.svelte';
+
+  // tool → human label + keyboard shortcut, for the styled toolbar tooltips
+  const TOOL_INFO: Record<string, { label: string; shortcut?: string }> = {
+    hand: { label: 'Hand (panning tool)', shortcut: 'H' },
+    selection: { label: 'Selection', shortcut: 'V' },
+    lasso: { label: 'Lasso' },
+    rectangle: { label: 'Rectangle', shortcut: 'R' },
+    diamond: { label: 'Diamond', shortcut: 'D' },
+    ellipse: { label: 'Ellipse', shortcut: 'O' },
+    arrow: { label: 'Arrow', shortcut: 'A' },
+    line: { label: 'Line', shortcut: 'L' },
+    freedraw: { label: 'Draw', shortcut: 'P' },
+    text: { label: 'Text', shortcut: 'T' },
+    image: { label: 'Insert image', shortcut: '9' },
+    eraser: { label: 'Eraser', shortcut: 'E' },
+    frame: { label: 'Frame', shortcut: 'F' },
+    laser: { label: 'Laser pointer', shortcut: 'K' }
+  };
 
   const controller = new DrawController();
   const { scene, appState } = controller;
@@ -472,16 +491,17 @@
       ☰
     </button>
     {#each tools as tool (tool)}
-      <button
-        type="button"
-        class="tool-btn"
-        class:active={controller.activeTool === tool}
-        title={tool}
-        aria-label={tool}
-        onclick={() => controller.setTool(tool)}
-      >
-        {#if ICONS[tool]}{@html ICONS[tool]}{:else}{tool}{/if}
-      </button>
+      <Tooltip label={TOOL_INFO[tool]?.label ?? tool} shortcut={TOOL_INFO[tool]?.shortcut}>
+        <button
+          type="button"
+          class="tool-btn"
+          class:active={controller.activeTool === tool}
+          aria-label={TOOL_INFO[tool]?.label ?? tool}
+          onclick={() => controller.setTool(tool)}
+        >
+          {#if ICONS[tool]}{@html ICONS[tool]}{:else}{tool}{/if}
+        </button>
+      </Tooltip>
     {/each}
     <button
       type="button"
