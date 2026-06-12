@@ -84,6 +84,7 @@ import { History } from "@excalidraw/excalidraw/history";
 import type { TransformHandleType } from "@excalidraw/element";
 
 import type {
+  Arrowhead,
   ExcalidrawElement,
   ExcalidrawFreeDrawElement,
   ExcalidrawLinearElement,
@@ -612,6 +613,64 @@ export class DrawController {
   setTextAlign(textAlign: TextAlign): void {
     this.appState.setState({ currentItemTextAlign: textAlign });
     this.#applyTextStyle({ textAlign });
+  }
+
+  // --- arrowheads (Excalidraw actionChangeArrowhead) ---
+
+  /** True when the arrow tool is active or an arrow element is selected. */
+  get showArrowProperties(): boolean {
+    return (
+      this.activeTool === "arrow" || this.selectedElements.some(isArrowElement)
+    );
+  }
+
+  /** Current start arrowhead (selected arrow wins, else the app default). */
+  get currentStartArrowhead(): Arrowhead | null {
+    const arrow = this.selectedElements.find(isArrowElement);
+    return arrow
+      ? arrow.startArrowhead
+      : this.appState.current.currentItemStartArrowhead;
+  }
+
+  /** Current end arrowhead (selected arrow wins, else the app default). */
+  get currentEndArrowhead(): Arrowhead | null {
+    const arrow = this.selectedElements.find(isArrowElement);
+    return arrow
+      ? arrow.endArrowhead
+      : this.appState.current.currentItemEndArrowhead;
+  }
+
+  /** Apply an arrowhead change to the app-state default + selected arrow(s). */
+  #applyArrowhead(end: "start" | "end", value: Arrowhead | null): void {
+    if (end === "start") {
+      this.appState.setState({ currentItemStartArrowhead: value });
+    } else {
+      this.appState.setState({ currentItemEndArrowhead: value });
+    }
+    const map = this.scene.scene.getNonDeletedElementsMap();
+    let changed = false;
+    for (const el of this.selectedElements) {
+      if (isArrowElement(el)) {
+        mutateElement(
+          el,
+          map,
+          end === "start" ? { startArrowhead: value } : { endArrowhead: value },
+        );
+        changed = true;
+      }
+    }
+    if (changed) {
+      this.scene.scene.triggerUpdate();
+      this.#commit();
+    }
+  }
+
+  setStartArrowhead(value: Arrowhead | null): void {
+    this.#applyArrowhead("start", value);
+  }
+
+  setEndArrowhead(value: Arrowhead | null): void {
+    this.#applyArrowhead("end", value);
   }
 
   /** The text element currently being edited (drives the textarea overlay), if any. */
@@ -1793,7 +1852,10 @@ export class DrawController {
         ...this.#createStyle(),
       });
       if (this.activeTool === "arrow") {
-        linear = newElementWith(linear, { endArrowhead: "arrow" });
+        linear = newElementWith(linear, {
+          startArrowhead: this.appState.current.currentItemStartArrowhead,
+          endArrowhead: this.appState.current.currentItemEndArrowhead,
+        });
       }
       this.#creating = linear;
       this.#mode = "linear";

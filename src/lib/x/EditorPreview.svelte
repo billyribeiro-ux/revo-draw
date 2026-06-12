@@ -29,6 +29,7 @@
   import { ICONS } from '$lib/x/icons.ts';
   import StyleControls from '$lib/x/StyleControls.svelte';
   import TextControls from '$lib/x/TextControls.svelte';
+  import ArrowheadControls from '$lib/x/ArrowheadControls.svelte';
   import Stats from '$lib/x/Stats.svelte';
   import ColorPicker from '$lib/x/ColorPicker.svelte';
   import ContextMenu from '$lib/x/ContextMenu.svelte';
@@ -561,6 +562,15 @@
       onFontFamily={(v) => controller.setFontFamily(v)}
       onFontSize={(v) => controller.setFontSize(v)}
       onTextAlign={(v) => controller.setTextAlign(v)}
+    />
+  {/if}
+
+  {#if controller.showArrowProperties}
+    <ArrowheadControls
+      start={controller.currentStartArrowhead}
+      end={controller.currentEndArrowhead}
+      onStart={(v) => controller.setStartArrowhead(v)}
+      onEnd={(v) => controller.setEndArrowhead(v)}
     />
   {/if}
 </div>
