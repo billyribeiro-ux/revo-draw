@@ -631,8 +631,10 @@
     <ArrowheadControls
       start={controller.currentStartArrowhead}
       end={controller.currentEndArrowhead}
+      arrowType={controller.currentArrowType}
       onStart={(v) => controller.setStartArrowhead(v)}
       onEnd={(v) => controller.setEndArrowhead(v)}
+      onArrowType={(v) => controller.setArrowType(v)}
     />
   {/if}
 </div>

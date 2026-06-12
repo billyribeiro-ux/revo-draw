@@ -8,14 +8,36 @@
   // and only this subset renders an active state.
   type Arrowhead = 'arrow' | 'triangle' | 'circle' | 'bar' | 'diamond' | null;
 
+  type ArrowType = 'sharp' | 'round' | 'elbow';
+
   interface Props {
     start: string | null;
     end: string | null;
+    arrowType: string;
     onStart: (v: Arrowhead) => void;
     onEnd: (v: Arrowhead) => void;
+    onArrowType: (v: ArrowType) => void;
   }
 
-  const { start, end, onStart, onEnd }: Props = $props();
+  const { start, end, arrowType, onStart, onEnd, onArrowType }: Props = $props();
+
+  const arrowTypeOptions: ReadonlyArray<{ value: ArrowType; label: string; icon: string }> = [
+    {
+      value: 'sharp',
+      label: 'Sharp',
+      icon: `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 15l7-10 7 10"/></svg>`,
+    },
+    {
+      value: 'round',
+      label: 'Curved',
+      icon: `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M3 15c0-6 14-6 14 0"/></svg>`,
+    },
+    {
+      value: 'elbow',
+      label: 'Elbow',
+      icon: `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 15V9h14V3"/></svg>`,
+    },
+  ];
 
   // Icons drawn for the END (right-pointing) case; the start row mirrors them
   // horizontally via CSS so the glyph points the correct way.
@@ -54,6 +76,25 @@
 </script>
 
 <div class="arrowhead-controls">
+  <fieldset class="group">
+    <legend>Arrow type</legend>
+    <div class="button-list">
+      {#each arrowTypeOptions as opt (opt.value)}
+        <button
+          type="button"
+          class="square"
+          class:active={arrowType === opt.value}
+          title={opt.label}
+          aria-label={opt.label}
+          aria-pressed={arrowType === opt.value}
+          onclick={() => onArrowType(opt.value)}
+        >
+          {@html opt.icon}
+        </button>
+      {/each}
+    </div>
+  </fieldset>
+
   <fieldset class="group">
     <legend>Arrowheads</legend>
     <div class="row">

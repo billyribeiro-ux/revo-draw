@@ -18,6 +18,7 @@ import {
   getTransformHandleTypeFromCoords,
   hitElementItself,
   isArrowElement,
+  isElbowArrow,
   isFrameLikeElement,
   isLinearElement,
   isTextElement,
@@ -34,6 +35,7 @@ import {
   getElementsInGroup,
   isExcalidrawElement,
   isImageElement,
+  newArrowElement,
   newElement,
   newElementWith,
   newFrameElement,
@@ -41,6 +43,7 @@ import {
   newLinearElement,
   newTextElement,
   orderByFractionalIndex,
+  updateElbowArrowPoints,
   redrawTextBoundingBox,
   resizeTest,
   Store,
@@ -49,7 +52,10 @@ import {
   updateBoundElements,
 } from "@excalidraw/element";
 
-import type { ExcalidrawArrowElement } from "@excalidraw/element/types";
+import type {
+  ExcalidrawArrowElement,
+  ExcalidrawElbowArrowElement,
+} from "@excalidraw/element/types";
 
 import {
   DEFAULT_FONT_FAMILY,
@@ -98,6 +104,7 @@ import type {
   ExcalidrawTextElement,
   FontFamilyValues,
   NonDeletedExcalidrawElement,
+  NonDeletedSceneElementsMap,
   OrderedExcalidrawElement,
   SceneElementsMap,
   TextAlign,
@@ -700,6 +707,64 @@ export class DrawController {
 
   setEndArrowhead(value: Arrowhead | null): void {
     this.#applyArrowhead("end", value);
+  }
+
+  /** Current arrow type (selected arrow wins, else the app default). */
+  get currentArrowType(): "sharp" | "round" | "elbow" {
+    const arrow = this.selectedElements.find(isArrowElement);
+    if (arrow) {
+      if (arrow.elbowed) {
+        return "elbow";
+      }
+      return arrow.roundness ? "round" : "sharp";
+    }
+    return this.appState.current.currentItemArrowType;
+  }
+
+  /**
+   * Set the arrow type (Excalidraw actionChangeArrowType). Updates the app default;
+   * converting a selected arrow's elbowed-ness re-routes its points.
+   */
+  setArrowType(type: "sharp" | "round" | "elbow"): void {
+    this.appState.setState({ currentItemArrowType: type });
+    const map = this.scene.scene.getNonDeletedElementsMap();
+    let changed = false;
+    for (const el of this.selectedElements) {
+      if (!isArrowElement(el)) {
+        continue;
+      }
+      const roundness =
+        type === "round"
+          ? ({ type: ROUNDNESS.PROPORTIONAL_RADIUS } as ExcalidrawElement["roundness"])
+          : null;
+      if (type === "elbow" && !el.elbowed) {
+        const elbow = el as ExcalidrawElbowArrowElement;
+        mutateElement(elbow, map, {
+          elbowed: true,
+          roundness: null,
+          fixedSegments: [],
+        });
+        mutateElement(
+          elbow,
+          map,
+          updateElbowArrowPoints(
+            elbow,
+            map as unknown as NonDeletedSceneElementsMap,
+            { points: elbow.points },
+            { isBindingEnabled: this.appState.current.isBindingEnabled },
+          ),
+        );
+      } else if (type !== "elbow" && el.elbowed) {
+        mutateElement(el, map, { elbowed: false, roundness });
+      } else {
+        mutateElement(el, map, { roundness });
+      }
+      changed = true;
+    }
+    if (changed) {
+      this.scene.scene.triggerUpdate();
+      this.#commit();
+    }
   }
 
   /** The text element currently being edited (drives the textarea overlay), if any. */
@@ -2069,21 +2134,27 @@ export class DrawController {
         ...this.#createStyle(),
       });
       this.#mode = "freedraw";
-    } else if (this.activeTool === "line" || this.activeTool === "arrow") {
-      let linear = newLinearElement({
-        type: this.activeTool,
+    } else if (this.activeTool === "arrow") {
+      const elbowed = this.appState.current.currentItemArrowType === "elbow";
+      this.#creating = newArrowElement({
+        type: "arrow",
+        x,
+        y,
+        points: [pointFrom<LocalPoint>(0, 0), pointFrom<LocalPoint>(0, 0)],
+        startArrowhead: this.appState.current.currentItemStartArrowhead,
+        endArrowhead: this.appState.current.currentItemEndArrowhead,
+        elbowed,
+        ...this.#createStyle(),
+      });
+      this.#mode = "linear";
+    } else if (this.activeTool === "line") {
+      this.#creating = newLinearElement({
+        type: "line",
         x,
         y,
         points: [pointFrom<LocalPoint>(0, 0), pointFrom<LocalPoint>(0, 0)],
         ...this.#createStyle(),
       });
-      if (this.activeTool === "arrow") {
-        linear = newElementWith(linear, {
-          startArrowhead: this.appState.current.currentItemStartArrowhead,
-          endArrowhead: this.appState.current.currentItemEndArrowhead,
-        });
-      }
-      this.#creating = linear;
       this.#mode = "linear";
     } else if (this.activeTool === "frame") {
       this.#creating = newFrameElement({ x, y, width: 0, height: 0 });
@@ -2272,12 +2343,30 @@ export class DrawController {
     } else if (this.#mode === "linear") {
       // 2-point linear element: second point tracks the pointer (local coords)
       const el = this.#creating as ExcalidrawLinearElement;
-      mutateElement(el, map, {
-        points: [
-          pointFrom<LocalPoint>(0, 0),
-          pointFrom<LocalPoint>(x - this.#originX, y - this.#originY),
-        ],
-      });
+      const nextPoints = [
+        pointFrom<LocalPoint>(0, 0),
+        pointFrom<LocalPoint>(x - this.#originX, y - this.#originY),
+      ];
+      if (isElbowArrow(el)) {
+        // elbow arrows route their points orthogonally via the elbow solver
+        mutateElement(
+          el,
+          map,
+          updateElbowArrowPoints(
+            el,
+            map as unknown as NonDeletedSceneElementsMap,
+            { points: nextPoints },
+            { isBindingEnabled: this.appState.current.isBindingEnabled },
+          ),
+        );
+      } else {
+        mutateElement(el, map, { points: nextPoints });
+      }
+      // binding-highlight: if this is an arrow whose end hovers a bindable shape,
+      // highlight that shape (Excalidraw suggestedBinding overlay)
+      if (isArrowElement(el)) {
+        this.#updateBindingHighlight(pointFrom<GlobalPoint>(x, y));
+      }
     } else {
       // negative-direction aware: position at the min corner, size is the abs delta
       mutateElement(this.#creating, map, {
@@ -2289,6 +2378,32 @@ export class DrawController {
     }
     // mutateElement invalidates ShapeCache; bump the reactive signal to repaint
     this.scene.scene.triggerUpdate();
+  }
+
+  /**
+   * Highlight the bindable shape under a point (the arrow endpoint being dragged),
+   * driving the renderer's suggestedBinding overlay. Clears the highlight when no
+   * shape is hovered.
+   */
+  #updateBindingHighlight(point: GlobalPoint): void {
+    const map = this.scene.scene.getNonDeletedElementsMap();
+    const els = this.scene.scene.getNonDeletedElements();
+    const hovered = getHoveredElementForBinding(point, els, map);
+    const current = this.appState.current.suggestedBinding;
+    if (hovered) {
+      if (current?.element.id !== hovered.id) {
+        this.appState.setState({ suggestedBinding: { element: hovered } });
+      }
+    } else if (current) {
+      this.appState.setState({ suggestedBinding: null });
+    }
+  }
+
+  /** Clear any active binding-suggestion highlight. */
+  #clearBindingHighlight(): void {
+    if (this.appState.current.suggestedBinding) {
+      this.appState.setState({ suggestedBinding: null });
+    }
   }
 
   /** Bind a freshly-drawn arrow's start/end points to any bindable shapes under them. */
@@ -2399,8 +2514,10 @@ export class DrawController {
       this.#elements = this.#elements.filter((e) => e !== creating);
       syncInvalidIndices(this.#elements);
       this.scene.replaceAllElements(this.#elements);
+      this.#clearBindingHighlight();
     } else if (mode === "linear" && isArrowElement(creating)) {
       this.#bindArrowEndpoints(creating as ExcalidrawArrowElement);
+      this.#clearBindingHighlight();
     } else if (isFrameLikeElement(creating)) {
       // a freshly-drawn frame adopts the elements enclosed within it (they then clip to it)
       const inside = getElementsInNewFrame(
