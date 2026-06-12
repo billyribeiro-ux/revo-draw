@@ -39,6 +39,7 @@ import {
   getElementsInGroup,
   isExcalidrawElement,
   isImageElement,
+  isUsingAdaptiveRadius,
   newArrowElement,
   newElement,
   newElementWith,
@@ -629,6 +630,23 @@ export class DrawController {
       roughness: a.currentItemRoughness,
       opacity: a.currentItemOpacity,
     };
+  }
+
+  /**
+   * Roundness for a newly-created element from the current item default.
+   * Mirrors Excalidraw's App.getCurrentItemRoundness (App.tsx:9500-9508):
+   * sharp → null; round → adaptive radius for rect-like types, else proportional.
+   */
+  #getCurrentItemRoundness(
+    elementType: ExcalidrawElement["type"],
+  ): ExcalidrawElement["roundness"] {
+    return this.appState.current.currentItemRoundness === "round"
+      ? {
+          type: isUsingAdaptiveRadius(elementType)
+            ? ROUNDNESS.ADAPTIVE_RADIUS
+            : ROUNDNESS.PROPORTIONAL_RADIUS,
+        }
+      : null;
   }
 
   /** Text-specific creation props, pulled from the current app-state (font + alignment). */
@@ -2359,6 +2377,7 @@ export class DrawController {
         x,
         y,
         points: [pointFrom<LocalPoint>(0, 0), pointFrom<LocalPoint>(0, 0)],
+        roundness: this.#getCurrentItemRoundness("line"),
         ...this.#createStyle(),
       });
       this.#mode = "linear";
@@ -2375,6 +2394,7 @@ export class DrawController {
         y,
         width: 0,
         height: 0,
+        roundness: this.#getCurrentItemRoundness(this.activeTool),
         ...this.#createStyle(),
       });
       this.#mode = "generic";
