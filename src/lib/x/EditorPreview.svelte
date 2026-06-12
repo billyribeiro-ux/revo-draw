@@ -28,6 +28,7 @@
   import { DrawController, type Tool } from '$lib/x/draw-controller.svelte.ts';
   import { ICONS } from '$lib/x/icons.ts';
   import StyleControls from '$lib/x/StyleControls.svelte';
+  import TextControls from '$lib/x/TextControls.svelte';
   import Stats from '$lib/x/Stats.svelte';
   import ColorPicker from '$lib/x/ColorPicker.svelte';
   import ContextMenu from '$lib/x/ContextMenu.svelte';
@@ -528,6 +529,17 @@
     onEdges={(v) => controller.setEdges(v)}
     onOpacity={(v) => controller.setOpacity(v)}
   />
+
+  {#if controller.showTextProperties}
+    <TextControls
+      fontFamily={controller.currentFontFamily}
+      fontSize={controller.currentFontSize}
+      textAlign={controller.currentTextAlign}
+      onFontFamily={(v) => controller.setFontFamily(v)}
+      onFontSize={(v) => controller.setFontSize(v)}
+      onTextAlign={(v) => controller.setTextAlign(v)}
+    />
+  {/if}
 </div>
 
 {#if !controller.zenMode}

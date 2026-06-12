@@ -46,7 +46,12 @@ import {
 
 import type { ExcalidrawArrowElement } from "@excalidraw/element/types";
 
-import { randomId, ROUNDNESS, viewportCoordsToSceneCoords } from "@excalidraw/common";
+import {
+  getLineHeight,
+  randomId,
+  ROUNDNESS,
+  viewportCoordsToSceneCoords,
+} from "@excalidraw/common";
 
 import {
   getReferenceSnapPoints,
@@ -69,9 +74,11 @@ import type {
   ExcalidrawFreeDrawElement,
   ExcalidrawLinearElement,
   ExcalidrawTextElement,
+  FontFamilyValues,
   NonDeletedExcalidrawElement,
   OrderedExcalidrawElement,
   SceneElementsMap,
+  TextAlign,
 } from "@excalidraw/element/types";
 import type { GlobalPoint, LocalPoint } from "@excalidraw/math";
 import type { EditorInterface } from "@excalidraw/common";
@@ -519,6 +526,78 @@ export class DrawController {
       roughness: a.currentItemRoughness,
       opacity: a.currentItemOpacity,
     };
+  }
+
+  /** Text-specific creation props, pulled from the current app-state (font + alignment). */
+  #textStyle(): {
+    fontFamily: FontFamilyValues;
+    fontSize: number;
+    textAlign: TextAlign;
+  } {
+    const a = this.appState.current;
+    return {
+      fontFamily: a.currentItemFontFamily,
+      fontSize: a.currentItemFontSize,
+      textAlign: a.currentItemTextAlign,
+    };
+  }
+
+  /** Apply a text-style change to the app-state default and to any selected text elements. */
+  #applyTextStyle(updates: Partial<ExcalidrawTextElement>): void {
+    const map = this.scene.scene.getNonDeletedElementsMap();
+    let changed = false;
+    for (const el of this.selectedElements) {
+      if (isTextElement(el)) {
+        mutateElement(el, map, updates);
+        redrawTextBoundingBox(el, null, this.scene.scene);
+        changed = true;
+      }
+    }
+    if (changed) {
+      this.scene.scene.triggerUpdate();
+      this.#commit();
+    }
+  }
+
+  /** True when the text tool is active or a text element is selected — drives the font panel. */
+  get showTextProperties(): boolean {
+    return this.activeTool === "text" || this.selectedElements.some(isTextElement);
+  }
+
+  /** Current font family for the properties panel (selected text wins, else the app default). */
+  get currentFontFamily(): FontFamilyValues {
+    const text = this.selectedElements.find(isTextElement);
+    return text ? text.fontFamily : this.appState.current.currentItemFontFamily;
+  }
+
+  /** Current font size for the properties panel. */
+  get currentFontSize(): number {
+    const text = this.selectedElements.find(isTextElement);
+    return text ? text.fontSize : this.appState.current.currentItemFontSize;
+  }
+
+  /** Current text alignment for the properties panel. */
+  get currentTextAlign(): TextAlign {
+    const text = this.selectedElements.find(isTextElement);
+    return text ? text.textAlign : this.appState.current.currentItemTextAlign;
+  }
+
+  /** Set the font family (Excalidraw actionChangeFontFamily) — recomputes line height. */
+  setFontFamily(fontFamily: FontFamilyValues): void {
+    this.appState.setState({ currentItemFontFamily: fontFamily });
+    this.#applyTextStyle({ fontFamily, lineHeight: getLineHeight(fontFamily) });
+  }
+
+  /** Set the font size (Excalidraw actionChangeFontSize). */
+  setFontSize(fontSize: number): void {
+    this.appState.setState({ currentItemFontSize: fontSize });
+    this.#applyTextStyle({ fontSize });
+  }
+
+  /** Set the horizontal text alignment (Excalidraw actionChangeTextAlign). */
+  setTextAlign(textAlign: TextAlign): void {
+    this.appState.setState({ currentItemTextAlign: textAlign });
+    this.#applyTextStyle({ textAlign });
   }
 
   /** The text element currently being edited (drives the textarea overlay), if any. */
@@ -1452,7 +1531,13 @@ export class DrawController {
     // text tool: click to place an empty text element and start editing it
     if (this.activeTool === "text") {
       this.#select(null);
-      const el = newTextElement({ text: "", x, y, ...this.#createStyle() });
+      const el = newTextElement({
+        text: "",
+        x,
+        y,
+        ...this.#createStyle(),
+        ...this.#textStyle(),
+      });
       this.#elements.push(el);
       syncInvalidIndices(this.#elements);
       this.scene.replaceAllElements(this.#elements);
