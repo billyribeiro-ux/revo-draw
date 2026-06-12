@@ -28,6 +28,8 @@
   import { DrawController, type Tool } from '$lib/x/draw-controller.svelte.ts';
   import { ICONS } from '$lib/x/icons.ts';
   import StyleControls from '$lib/x/StyleControls.svelte';
+  import TextControls from '$lib/x/TextControls.svelte';
+  import ArrowheadControls from '$lib/x/ArrowheadControls.svelte';
   import Stats from '$lib/x/Stats.svelte';
   import ColorPicker from '$lib/x/ColorPicker.svelte';
   import ContextMenu from '$lib/x/ContextMenu.svelte';
@@ -60,11 +62,13 @@
 
   let fileInput = $state<HTMLInputElement>();
   let pendingImageAt: { x: number; y: number } | null = null;
-  let pickerOpen = $state<'stroke' | 'background' | null>(null);
+  let pickerOpen = $state<'stroke' | 'background' | 'canvas' | null>(null);
 
   // Excalidraw's default palettes
   const strokeColors = ['#1e1e1e', '#e03131', '#2f9e44', '#1971c2', '#f08c00'];
   const bgColors = ['transparent', '#ffc9c9', '#b2f2bb', '#a5d8ff', '#ffec99'];
+  // Excalidraw's canvas-background palette (white + light tints)
+  const canvasBgColors = ['#ffffff', '#f8f9fa', '#f5faff', '#fffce8', '#fdf2f8'];
   const widths = [
     { label: 'S', w: 1 },
     { label: 'M', w: 2 },
@@ -161,15 +165,23 @@
     { label: 'Send backward', shortcut: '⌘[', action: () => controller.sendBackward() },
     { label: 'Send to back', shortcut: '⌘⇧[', action: () => controller.sendToBack() },
     'separator' as const,
-    { label: 'Copy', shortcut: '⌘C', action: () => controller.copySelected() },
-    { label: 'Cut', shortcut: '⌘X', action: () => controller.cutSelected() },
-    { label: 'Paste', shortcut: '⌘V', action: () => controller.paste(contextAt?.x, contextAt?.y) },
+    { label: 'Copy', shortcut: '⌘C', action: () => void controller.copySelected() },
+    { label: 'Cut', shortcut: '⌘X', action: () => void controller.cutSelected() },
+    { label: 'Paste', shortcut: '⌘V', action: () => void controller.paste(contextAt?.x, contextAt?.y) },
+    { label: 'Paste as plaintext', shortcut: '⇧⌘V', action: () => void controller.pasteAsPlaintext(contextAt?.x, contextAt?.y) },
+    'separator' as const,
+    { label: 'Copy styles', shortcut: '⌥⌘C', action: () => controller.copyStyles() },
+    { label: 'Paste styles', shortcut: '⌥⌘V', action: () => controller.pasteStyles() },
+    { label: 'Copy to clipboard as PNG', action: () => void controller.copyToClipboardAsPng() },
     'separator' as const,
     { label: 'Duplicate', shortcut: '⌘D', action: () => controller.duplicateSelected() },
     { label: 'Delete', shortcut: 'Del', action: () => controller.deleteSelected() },
     'separator' as const,
     { label: 'Flip horizontal', action: () => controller.flipSelected('horizontal') },
     { label: 'Flip vertical', action: () => controller.flipSelected('vertical') },
+    'separator' as const,
+    { label: 'Group selection', shortcut: '⌘G', action: () => controller.groupSelected() },
+    { label: 'Ungroup selection', shortcut: '⌘⇧G', action: () => controller.ungroupSelected() },
     'separator' as const,
     { label: 'Align left', action: () => controller.alignSelected('start', 'x') },
     { label: 'Align center', action: () => controller.alignSelected('center', 'x') },
@@ -188,8 +200,12 @@
   ];
 
   const menuItems = $derived([
+    { label: 'Open…', shortcut: '⌘O', action: () => void controller.openFile() },
+    { label: 'Save to…', shortcut: '⌘S', action: () => void controller.saveToFile() },
+    'separator' as const,
     { label: 'Reset the canvas', icon: ICONS.trash, action: () => controller.clear() },
     { label: 'Zoom to fit', action: () => controller.zoomToFit() },
+    { label: 'Scroll back to content', action: () => controller.scrollToContent() },
     { label: 'Reset view', action: () => controller.resetView() },
     'separator' as const,
     { label: 'Save as image…', action: () => (exportOpen = true) },
@@ -214,14 +230,23 @@
     } else if ((e.metaKey || e.ctrlKey) && (e.key === 'd' || e.key === 'D')) {
       controller.duplicateSelected();
       e.preventDefault();
+    } else if ((e.metaKey || e.ctrlKey) && e.altKey && (e.key === 'c' || e.key === 'C')) {
+      controller.copyStyles(); // ⌥⌘C
+      e.preventDefault();
+    } else if ((e.metaKey || e.ctrlKey) && e.altKey && (e.key === 'v' || e.key === 'V')) {
+      controller.pasteStyles(); // ⌥⌘V
+      e.preventDefault();
     } else if ((e.metaKey || e.ctrlKey) && (e.key === 'c' || e.key === 'C')) {
-      controller.copySelected();
+      void controller.copySelected();
       e.preventDefault();
     } else if ((e.metaKey || e.ctrlKey) && (e.key === 'x' || e.key === 'X')) {
-      controller.cutSelected();
+      void controller.cutSelected();
+      e.preventDefault();
+    } else if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === 'v' || e.key === 'V')) {
+      void controller.pasteAsPlaintext(lastPointer.x, lastPointer.y); // ⇧⌘V
       e.preventDefault();
     } else if ((e.metaKey || e.ctrlKey) && (e.key === 'v' || e.key === 'V')) {
-      controller.paste(lastPointer.x, lastPointer.y);
+      void controller.paste(lastPointer.x, lastPointer.y);
       e.preventDefault();
     } else if ((e.metaKey || e.ctrlKey) && e.key === ']') {
       if (e.shiftKey) {
@@ -244,11 +269,23 @@
         controller.undo();
       }
       e.preventDefault();
+    } else if ((e.metaKey || e.ctrlKey) && (e.key === 's' || e.key === 'S')) {
+      void controller.saveToFile();
+      e.preventDefault();
+    } else if ((e.metaKey || e.ctrlKey) && (e.key === 'o' || e.key === 'O')) {
+      void controller.openFile();
+      e.preventDefault();
     } else if ((e.metaKey || e.ctrlKey) && e.key === "'") {
       controller.toggleGrid();
       e.preventDefault();
     } else if ((e.metaKey || e.ctrlKey) && (e.key === 'a' || e.key === 'A')) {
       controller.selectAll();
+      e.preventDefault();
+    } else if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === 'g' || e.key === 'G')) {
+      controller.ungroupSelected();
+      e.preventDefault();
+    } else if ((e.metaKey || e.ctrlKey) && (e.key === 'g' || e.key === 'G')) {
+      controller.groupSelected();
       e.preventDefault();
     } else if (!e.metaKey && !e.ctrlKey && e.shiftKey && e.key === 'H') {
       controller.flipSelected('horizontal');
@@ -493,6 +530,38 @@
     {/if}
   </div>
   <div class="prop-group">
+    <span class="prop-label">Canvas</span>
+    <div class="swatches">
+      {#each canvasBgColors as c (c)}
+        <button
+          type="button"
+          class="swatch"
+          class:active={controller.viewBackgroundColor === c}
+          style="background:{c}"
+          aria-label="canvas background {c}"
+          onclick={() => controller.setViewBackgroundColor(c)}
+        ></button>
+      {/each}
+      <button
+        type="button"
+        class="swatch custom"
+        style="background:{controller.viewBackgroundColor}"
+        aria-label="custom canvas background color"
+        onclick={() => (pickerOpen = pickerOpen === 'canvas' ? null : 'canvas')}
+      ></button>
+    </div>
+    {#if pickerOpen === 'canvas'}
+      <ColorPicker
+        value={controller.viewBackgroundColor}
+        palette={canvasBgColors}
+        onPick={(c) => {
+          controller.setViewBackgroundColor(c);
+          pickerOpen = null;
+        }}
+      />
+    {/if}
+  </div>
+  <div class="prop-group">
     <span class="prop-label">Stroke width</span>
     <div class="widths">
       {#each widths as ww (ww.w)}
@@ -519,6 +588,26 @@
     onEdges={(v) => controller.setEdges(v)}
     onOpacity={(v) => controller.setOpacity(v)}
   />
+
+  {#if controller.showTextProperties}
+    <TextControls
+      fontFamily={controller.currentFontFamily}
+      fontSize={controller.currentFontSize}
+      textAlign={controller.currentTextAlign}
+      onFontFamily={(v) => controller.setFontFamily(v)}
+      onFontSize={(v) => controller.setFontSize(v)}
+      onTextAlign={(v) => controller.setTextAlign(v)}
+    />
+  {/if}
+
+  {#if controller.showArrowProperties}
+    <ArrowheadControls
+      start={controller.currentStartArrowhead}
+      end={controller.currentEndArrowhead}
+      onStart={(v) => controller.setStartArrowhead(v)}
+      onEnd={(v) => controller.setEndArrowhead(v)}
+    />
+  {/if}
 </div>
 
 {#if !controller.zenMode}

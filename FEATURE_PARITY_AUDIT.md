@@ -13,6 +13,28 @@ the port's real implementation (or its absence).
 
 ---
 
+## Gap-closing progress (branch `feat/excalidraw-parity-gaps`)
+
+Closed since the audit, each with a passing CDP probe (`scripts/probe-x-batch*.mjs`):
+
+- **Batch 1:** tool-letter shortcuts, select-all (⌘A), flip h/v, zoom-to-fit /
+  zoom-to-selection, view mode, zen mode. *(probe-x-batch1)*
+- **Batch 2a:** align ×6, distribute, lock/unlock (hit-test skips locked). *(probe-x-batch2)*
+- **Batch 2b:** group / ungroup (⌘G / ⌘⇧G) + deep-select through groups. *(probe-x-batch2b)*
+- **Batch 3:** text styling — font family, font size (S/M/L/XL), text align. *(probe-x-batch3)*
+- **Batch 4:** full clipboard parity — OS clipboard copy/paste (excalidraw envelope),
+  paste-as-plaintext, copy/paste styles (⌥⌘C / ⌥⌘V), export-to-clipboard (PNG). *(probe-x-batch4)*
+- **Batch 5:** file IO — save / open `.excalidraw` (serialize/parse round-trip,
+  native picker + download/input fallback). *(probe-x-batch5)*
+- **Batch 6:** configurable arrowhead types (start/end: none/arrow/triangle/circle/
+  bar/diamond), inherited at create + editable on selection. *(probe-x-batch6)*
+
+Still open: canvas background color (toggle exists in menu via setViewBackgroundColor
+but no picker), scroll-to-content, midpoint snapping toggle, elbow arrows,
+binding-highlight overlay, image crop, color shade-ramp, styled tooltips, toasts,
+hint viewer, welcome screen, command palette, libraries, lasso, hand/space-pan,
+embeddables, mermaid.
+
 ## Headline result
 
 | | Count |

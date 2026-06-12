@@ -27,6 +27,11 @@ import {
   moveOneLeft,
   moveOneRight,
   mutateElement,
+  addToGroup,
+  canApplyRoundnessTypeToElement,
+  getDefaultRoundnessTypeForElement,
+  getElementsInGroup,
+  isExcalidrawElement,
   newElement,
   newElementWith,
   newFrameElement,
@@ -44,7 +49,23 @@ import {
 
 import type { ExcalidrawArrowElement } from "@excalidraw/element/types";
 
-import { ROUNDNESS, viewportCoordsToSceneCoords } from "@excalidraw/common";
+import {
+  DEFAULT_FONT_FAMILY,
+  DEFAULT_FONT_SIZE,
+  DEFAULT_TEXT_ALIGN,
+  getLineHeight,
+  randomId,
+  ROUNDNESS,
+  viewportCoordsToSceneCoords,
+} from "@excalidraw/common";
+
+import {
+  copyBlobToClipboardAsPng,
+  copyElementsToClipboard,
+  parseClipboardElements,
+  probablySupportsClipboardBlob,
+  readSystemClipboardText,
+} from "$lib/x/clipboard.ts";
 
 import {
   getReferenceSnapPoints,
@@ -63,13 +84,16 @@ import { History } from "@excalidraw/excalidraw/history";
 import type { TransformHandleType } from "@excalidraw/element";
 
 import type {
+  Arrowhead,
   ExcalidrawElement,
   ExcalidrawFreeDrawElement,
   ExcalidrawLinearElement,
   ExcalidrawTextElement,
+  FontFamilyValues,
   NonDeletedExcalidrawElement,
   OrderedExcalidrawElement,
   SceneElementsMap,
+  TextAlign,
 } from "@excalidraw/element/types";
 import type { GlobalPoint, LocalPoint } from "@excalidraw/math";
 import type { EditorInterface } from "@excalidraw/common";
@@ -519,6 +543,136 @@ export class DrawController {
     };
   }
 
+  /** Text-specific creation props, pulled from the current app-state (font + alignment). */
+  #textStyle(): {
+    fontFamily: FontFamilyValues;
+    fontSize: number;
+    textAlign: TextAlign;
+  } {
+    const a = this.appState.current;
+    return {
+      fontFamily: a.currentItemFontFamily,
+      fontSize: a.currentItemFontSize,
+      textAlign: a.currentItemTextAlign,
+    };
+  }
+
+  /** Apply a text-style change to the app-state default and to any selected text elements. */
+  #applyTextStyle(updates: Partial<ExcalidrawTextElement>): void {
+    const map = this.scene.scene.getNonDeletedElementsMap();
+    let changed = false;
+    for (const el of this.selectedElements) {
+      if (isTextElement(el)) {
+        mutateElement(el, map, updates);
+        redrawTextBoundingBox(el, null, this.scene.scene);
+        changed = true;
+      }
+    }
+    if (changed) {
+      this.scene.scene.triggerUpdate();
+      this.#commit();
+    }
+  }
+
+  /** True when the text tool is active or a text element is selected — drives the font panel. */
+  get showTextProperties(): boolean {
+    return this.activeTool === "text" || this.selectedElements.some(isTextElement);
+  }
+
+  /** Current font family for the properties panel (selected text wins, else the app default). */
+  get currentFontFamily(): FontFamilyValues {
+    const text = this.selectedElements.find(isTextElement);
+    return text ? text.fontFamily : this.appState.current.currentItemFontFamily;
+  }
+
+  /** Current font size for the properties panel. */
+  get currentFontSize(): number {
+    const text = this.selectedElements.find(isTextElement);
+    return text ? text.fontSize : this.appState.current.currentItemFontSize;
+  }
+
+  /** Current text alignment for the properties panel. */
+  get currentTextAlign(): TextAlign {
+    const text = this.selectedElements.find(isTextElement);
+    return text ? text.textAlign : this.appState.current.currentItemTextAlign;
+  }
+
+  /** Set the font family (Excalidraw actionChangeFontFamily) — recomputes line height. */
+  setFontFamily(fontFamily: FontFamilyValues): void {
+    this.appState.setState({ currentItemFontFamily: fontFamily });
+    this.#applyTextStyle({ fontFamily, lineHeight: getLineHeight(fontFamily) });
+  }
+
+  /** Set the font size (Excalidraw actionChangeFontSize). */
+  setFontSize(fontSize: number): void {
+    this.appState.setState({ currentItemFontSize: fontSize });
+    this.#applyTextStyle({ fontSize });
+  }
+
+  /** Set the horizontal text alignment (Excalidraw actionChangeTextAlign). */
+  setTextAlign(textAlign: TextAlign): void {
+    this.appState.setState({ currentItemTextAlign: textAlign });
+    this.#applyTextStyle({ textAlign });
+  }
+
+  // --- arrowheads (Excalidraw actionChangeArrowhead) ---
+
+  /** True when the arrow tool is active or an arrow element is selected. */
+  get showArrowProperties(): boolean {
+    return (
+      this.activeTool === "arrow" || this.selectedElements.some(isArrowElement)
+    );
+  }
+
+  /** Current start arrowhead (selected arrow wins, else the app default). */
+  get currentStartArrowhead(): Arrowhead | null {
+    const arrow = this.selectedElements.find(isArrowElement);
+    return arrow
+      ? arrow.startArrowhead
+      : this.appState.current.currentItemStartArrowhead;
+  }
+
+  /** Current end arrowhead (selected arrow wins, else the app default). */
+  get currentEndArrowhead(): Arrowhead | null {
+    const arrow = this.selectedElements.find(isArrowElement);
+    return arrow
+      ? arrow.endArrowhead
+      : this.appState.current.currentItemEndArrowhead;
+  }
+
+  /** Apply an arrowhead change to the app-state default + selected arrow(s). */
+  #applyArrowhead(end: "start" | "end", value: Arrowhead | null): void {
+    if (end === "start") {
+      this.appState.setState({ currentItemStartArrowhead: value });
+    } else {
+      this.appState.setState({ currentItemEndArrowhead: value });
+    }
+    const map = this.scene.scene.getNonDeletedElementsMap();
+    let changed = false;
+    for (const el of this.selectedElements) {
+      if (isArrowElement(el)) {
+        mutateElement(
+          el,
+          map,
+          end === "start" ? { startArrowhead: value } : { endArrowhead: value },
+        );
+        changed = true;
+      }
+    }
+    if (changed) {
+      this.scene.scene.triggerUpdate();
+      this.#commit();
+    }
+  }
+
+  setStartArrowhead(value: Arrowhead | null): void {
+    this.#applyArrowhead("start", value);
+  }
+
+  setEndArrowhead(value: Arrowhead | null): void {
+    this.#applyArrowhead("end", value);
+  }
+
   /** The text element currently being edited (drives the textarea overlay), if any. */
   get editingText(): ExcalidrawTextElement | null {
     const id = this.editingTextId;
@@ -668,6 +822,79 @@ export class DrawController {
     }
   }
 
+  /** True if the current selection forms (at least) one group. */
+  get canUngroup(): boolean {
+    return this.selectedElements.some((el) => el.groupIds.length > 0);
+  }
+
+  /** Group the selected elements under a fresh group id (Excalidraw actionGroup, ⌘G). */
+  groupSelected(): void {
+    const sel = this.selectedElements;
+    if (sel.length < 2) {
+      return;
+    }
+    const newGroupId = randomId();
+    const map = this.scene.scene.getNonDeletedElementsMap();
+    const editingGroupId = this.appState.current.editingGroupId;
+    for (const el of sel) {
+      mutateElement(el, map, {
+        groupIds: addToGroup(el.groupIds, newGroupId, editingGroupId),
+      });
+    }
+    this.scene.scene.triggerUpdate();
+    this.#commit();
+  }
+
+  /** Ungroup the selection — strips the outermost group from each member (⌘⇧G). */
+  ungroupSelected(): void {
+    const sel = this.selectedElements;
+    if (!sel.length) {
+      return;
+    }
+    const map = this.scene.scene.getNonDeletedElementsMap();
+    let changed = false;
+    for (const el of sel) {
+      if (el.groupIds.length === 0) {
+        continue;
+      }
+      // groupIds run shallowest→outermost; the last entry is the outermost group.
+      const outermost = el.groupIds[el.groupIds.length - 1];
+      mutateElement(el, map, {
+        groupIds: el.groupIds.filter((g) => g !== outermost),
+      });
+      changed = true;
+    }
+    if (changed) {
+      this.scene.scene.triggerUpdate();
+      this.#commit();
+    }
+  }
+
+  /**
+   * Expand a set of element ids to include their whole outermost group
+   * (Excalidraw deep-select: clicking a grouped element selects the group).
+   */
+  #withGroupMembers(ids: readonly string[]): string[] {
+    const editingGroupId = this.appState.current.editingGroupId;
+    const out = new Set<string>(ids);
+    const byId = this.scene.scene.getNonDeletedElementsMap();
+    for (const id of ids) {
+      const el = byId.get(id);
+      if (!el || el.groupIds.length === 0) {
+        continue;
+      }
+      // while editing a group, deep-select stays scoped within it
+      const groupId =
+        editingGroupId && el.groupIds.includes(editingGroupId)
+          ? editingGroupId
+          : el.groupIds[el.groupIds.length - 1];
+      for (const member of getElementsInGroup(byId, groupId)) {
+        out.add(member.id);
+      }
+    }
+    return [...out];
+  }
+
   // --- canvas / view state ---
   get viewBackgroundColor(): string {
     return this.appState.current.viewBackgroundColor;
@@ -775,6 +1002,39 @@ export class DrawController {
       const { downloadBlob } = await import("$lib/x/export-image.ts");
       await downloadBlob(new Blob([svg], { type: "image/svg+xml" }), "drawing.svg");
     }
+  }
+
+  // --- file IO: save / open `.excalidraw` (Excalidraw's serializeAsJSON envelope) ---
+
+  /** Save the scene to a `.excalidraw` file (native Save dialog or download). */
+  async saveToFile(): Promise<void> {
+    const { saveAsExcalidraw } = await import("$lib/x/file-io.ts");
+    await saveAsExcalidraw(this.scene.elements, this.appState.current);
+  }
+
+  /** Open a `.excalidraw` file, replacing the current scene. Returns false if cancelled. */
+  async openFile(): Promise<boolean> {
+    const { openExcalidrawFile } = await import("$lib/x/file-io.ts");
+    const loaded = await openExcalidrawFile();
+    if (!loaded) {
+      return false;
+    }
+    this.#select(null);
+    this.#elements = syncInvalidIndices(
+      loaded.elements as ExcalidrawElement[],
+    ) as ExcalidrawElement[];
+    this.scene.replaceAllElements(this.#elements);
+    // adopt the persisted view/theme bits that round-trip safely
+    const a = loaded.appState;
+    const patch: Partial<AppState> = {};
+    if (a.viewBackgroundColor) patch.viewBackgroundColor = a.viewBackgroundColor;
+    if (a.theme) patch.theme = a.theme;
+    if (Object.keys(patch).length) {
+      this.appState.setState(patch);
+    }
+    this.activeTool = "selection";
+    this.#commit();
+    return true;
   }
 
   // --- laser pointer (ephemeral trail) ---
@@ -905,32 +1165,78 @@ export class DrawController {
     );
   }
 
-  // --- clipboard (copy / cut / paste) ---
+  // --- clipboard (copy / cut / paste) — wired to the OS clipboard, with an
+  // in-memory mirror so paste still works when clipboard permissions are denied. ---
 
   get canPaste(): boolean {
     return this.#clipboard.length > 0;
   }
 
-  /** Copy the selected element(s) into the in-memory clipboard. */
-  copySelected(): void {
-    this.#clipboard = this.selectedElements.map((e) => deepCopyElement(e));
+  /** Copy the selected element(s) to the OS clipboard (+ in-memory mirror). */
+  async copySelected(): Promise<void> {
+    const selected = this.selectedElements;
+    if (!selected.length) {
+      return;
+    }
+    this.#clipboard = selected.map((e) => deepCopyElement(e));
+    try {
+      await copyElementsToClipboard(selected);
+    } catch (error) {
+      // OS clipboard unavailable/denied → the in-memory mirror still serves paste
+      console.warn("copy to system clipboard failed", error);
+    }
   }
 
   /** Copy then delete the selection. */
-  cutSelected(): void {
+  async cutSelected(): Promise<void> {
     if (!this.selectedIds.size) {
       return;
     }
-    this.copySelected();
+    await this.copySelected();
     this.deleteSelected();
   }
 
-  /** Paste the clipboard centered at a viewport point (or offset by +10,+10). */
-  paste(clientX?: number, clientY?: number): void {
-    if (!this.#clipboard.length) {
+  /**
+   * Paste at a viewport point (or +10,+10): prefer the OS clipboard's Excalidraw
+   * envelope, fall back to the in-memory mirror, and if the clipboard holds plain
+   * text, paste it as a new text element.
+   */
+  async paste(clientX?: number, clientY?: number): Promise<void> {
+    const text = await readSystemClipboardText();
+    const fromOS = parseClipboardElements(text);
+    if (fromOS?.length) {
+      this.#pasteElements(fromOS, clientX, clientY);
       return;
     }
-    const [x1, y1, x2, y2] = getCommonBounds(this.#clipboard);
+    // OS clipboard had non-Excalidraw text → paste it as text (unless plain-paste
+    // is explicitly requested elsewhere); else fall back to the in-memory mirror.
+    if (text.trim()) {
+      this.#pasteTextElement(text, clientX, clientY);
+      return;
+    }
+    if (this.#clipboard.length) {
+      this.#pasteElements(this.#clipboard, clientX, clientY);
+    }
+  }
+
+  /** Paste the OS clipboard's text as a plain text element (⇧⌘V). */
+  async pasteAsPlaintext(clientX?: number, clientY?: number): Promise<void> {
+    const text = (await readSystemClipboardText()).trim();
+    if (text) {
+      this.#pasteTextElement(text, clientX, clientY);
+    }
+  }
+
+  /** Insert pasted elements (re-id'd), centered at the point or offset by +10,+10. */
+  #pasteElements(
+    source: readonly ExcalidrawElement[],
+    clientX?: number,
+    clientY?: number,
+  ): void {
+    if (!source.length) {
+      return;
+    }
+    const [x1, y1, x2, y2] = getCommonBounds(source);
     let dx = 10;
     let dy = 10;
     if (clientX != null && clientY != null) {
@@ -938,7 +1244,7 @@ export class DrawController {
       dx = x - (x1 + x2) / 2;
       dy = y - (y1 + y2) / 2;
     }
-    const copies = this.#clipboard.map((orig) =>
+    const copies = source.map((orig) =>
       newElementWith(duplicateElement(null, new Map(), orig, true), {
         x: orig.x + dx,
         y: orig.y + dy,
@@ -950,6 +1256,123 @@ export class DrawController {
     this.#setSelection(copies.map((c) => c.id));
     this.activeTool = "selection";
     this.#commit();
+  }
+
+  /** Create a text element from pasted plaintext at the point (or 100,100). */
+  #pasteTextElement(text: string, clientX?: number, clientY?: number): void {
+    let x = 100;
+    let y = 100;
+    if (clientX != null && clientY != null) {
+      const p = this.#toScene(clientX, clientY);
+      x = p.x;
+      y = p.y;
+    }
+    const el = newTextElement({
+      text,
+      originalText: text,
+      x,
+      y,
+      ...this.#createStyle(),
+      ...this.#textStyle(),
+    });
+    redrawTextBoundingBox(el, null, this.scene.scene);
+    this.#elements.push(el);
+    syncInvalidIndices(this.#elements);
+    this.scene.replaceAllElements(this.#elements);
+    this.#setSelection([el.id]);
+    this.activeTool = "selection";
+    this.#commit();
+  }
+
+  // --- copy / paste styles (⌥⌘C / ⌥⌘V) — ported from actionStyles.ts ---
+
+  /** Serialized style-source element(s) for paste-styles (Excalidraw's `copiedStyles`). */
+  #copiedStyles = "{}";
+
+  /** Copy the style of the (first) selected element for later paste-styles. */
+  copyStyles(): void {
+    const element = this.selectedElements.find((el) =>
+      this.appState.current.selectedElementIds[el.id],
+    );
+    if (element) {
+      this.#copiedStyles = JSON.stringify([deepCopyElement(element)]);
+    }
+  }
+
+  /** Apply the copied style to the current selection (Excalidraw actionPasteStyles). */
+  pasteStyles(): void {
+    let source: ExcalidrawElement | undefined;
+    try {
+      source = JSON.parse(this.#copiedStyles)[0];
+    } catch {
+      return;
+    }
+    if (!source || !isExcalidrawElement(source)) {
+      return;
+    }
+    const map = this.scene.scene.getNonDeletedElementsMap();
+    const selected = this.selectedElements;
+    if (!selected.length) {
+      return;
+    }
+    for (const element of selected) {
+      mutateElement(element, map, {
+        backgroundColor: source.backgroundColor,
+        strokeWidth: source.strokeWidth,
+        strokeColor: source.strokeColor,
+        strokeStyle: source.strokeStyle,
+        fillStyle: source.fillStyle,
+        opacity: source.opacity,
+        roughness: source.roughness,
+        roundness: source.roundness
+          ? canApplyRoundnessTypeToElement(source.roundness.type, element)
+            ? source.roundness
+            : getDefaultRoundnessTypeForElement(element)
+          : null,
+      });
+      if (isTextElement(element) && isTextElement(source)) {
+        const fontFamily = source.fontFamily || DEFAULT_FONT_FAMILY;
+        mutateElement(element, map, {
+          fontSize: source.fontSize || DEFAULT_FONT_SIZE,
+          fontFamily,
+          textAlign: source.textAlign || DEFAULT_TEXT_ALIGN,
+          lineHeight: source.lineHeight || getLineHeight(fontFamily),
+        });
+        redrawTextBoundingBox(element, null, this.scene.scene);
+      }
+      if (isArrowElement(element) && isArrowElement(source)) {
+        mutateElement(element, map, {
+          startArrowhead: source.startArrowhead,
+          endArrowhead: source.endArrowhead,
+        });
+      }
+      if (isFrameLikeElement(element)) {
+        mutateElement(element, map, {
+          roundness: null,
+          backgroundColor: "transparent",
+        });
+      }
+    }
+    this.scene.scene.triggerUpdate();
+    this.#commit();
+  }
+
+  /** Copy the rendered scene to the OS clipboard as a PNG (export-to-clipboard). */
+  async copyToClipboardAsPng(): Promise<boolean> {
+    if (!probablySupportsClipboardBlob) {
+      return false;
+    }
+    const blob = await this.exportToPngBlob();
+    if (!blob) {
+      return false;
+    }
+    try {
+      await copyBlobToClipboardAsPng(blob);
+      return true;
+    } catch (error) {
+      console.warn("copy PNG to clipboard failed", error);
+      return false;
+    }
   }
 
   /** Duplicate the selected element(s) offset by (10,10) and select the copies. */
@@ -1025,13 +1448,16 @@ export class DrawController {
     });
   }
 
-  /** Toggle a single element in/out of the current selection (shift-click). */
+  /** Toggle a single element (and its group) in/out of the current selection (shift-click). */
   #toggleSelected(id: string): void {
+    const groupIds = this.#withGroupMembers([id]);
     const next = new Set(this.selectedIds);
+    // toggle the whole group as a unit: if the clicked element is in, remove the
+    // group; otherwise add it.
     if (next.has(id)) {
-      next.delete(id);
+      for (const g of groupIds) next.delete(g);
     } else {
-      next.add(id);
+      for (const g of groupIds) next.add(g);
     }
     this.#setSelection([...next]);
   }
@@ -1359,9 +1785,9 @@ export class DrawController {
         this.#beginDrag(x, y);
         return;
       }
-      // ...hitting an element selects it and starts a drag...
+      // ...hitting an element selects it (whole group, if grouped) and starts a drag...
       if (hitId) {
-        this.#select(hitId);
+        this.#setSelection(this.#withGroupMembers([hitId]));
         this.#beginDrag(x, y);
         return;
       }
@@ -1374,7 +1800,13 @@ export class DrawController {
     // text tool: click to place an empty text element and start editing it
     if (this.activeTool === "text") {
       this.#select(null);
-      const el = newTextElement({ text: "", x, y, ...this.#createStyle() });
+      const el = newTextElement({
+        text: "",
+        x,
+        y,
+        ...this.#createStyle(),
+        ...this.#textStyle(),
+      });
       this.#elements.push(el);
       syncInvalidIndices(this.#elements);
       this.scene.replaceAllElements(this.#elements);
@@ -1420,7 +1852,10 @@ export class DrawController {
         ...this.#createStyle(),
       });
       if (this.activeTool === "arrow") {
-        linear = newElementWith(linear, { endArrowhead: "arrow" });
+        linear = newElementWith(linear, {
+          startArrowhead: this.appState.current.currentItemStartArrowhead,
+          endArrowhead: this.appState.current.currentItemEndArrowhead,
+        });
       }
       this.#creating = linear;
       this.#mode = "linear";
