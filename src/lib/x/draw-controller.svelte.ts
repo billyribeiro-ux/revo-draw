@@ -51,6 +51,7 @@ import {
   updateElbowArrowPoints,
   redrawTextBoundingBox,
   resizeTest,
+  ShapeCache,
   Store,
   syncInvalidIndices,
   transformElements,
@@ -559,6 +560,9 @@ export class DrawController {
       mutateElement(el, map, {
         roundness: value === "round" ? { type: ROUNDNESS.ADAPTIVE_RADIUS } : null,
       });
+      // roundness alters the rough shape but isn't a width/height/points change,
+      // so mutateElement leaves the cache stale — bust it (see #applyStyle).
+      ShapeCache.delete(el);
     }
     this.scene.scene.triggerUpdate();
     this.#commit();
@@ -595,6 +599,11 @@ export class DrawController {
     const map = this.scene.scene.getNonDeletedElementsMap();
     for (const el of selected) {
       mutateElement(el, map, elementPatch);
+      // mutateElement only busts ShapeCache on width/height/fileId/points changes;
+      // style props (color/fill/stroke/roughness) leave the cached rough shape stale.
+      // Excalidraw sidesteps this by applying styles via newElementWith (fresh ref →
+      // WeakMap miss); here we mutate in place, so bust the cache explicitly.
+      ShapeCache.delete(el);
     }
     this.scene.scene.triggerUpdate();
     this.#commit();
