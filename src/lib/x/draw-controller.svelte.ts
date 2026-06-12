@@ -34,6 +34,7 @@ import {
   mutateElement,
   addToGroup,
   bindOrUnbindBindingElements,
+  fixBindingsAfterDeletion,
   canApplyRoundnessTypeToElement,
   cropElement,
   getCommonBoundingBox,
@@ -1414,10 +1415,56 @@ export class DrawController {
     if (!ids.size) {
       return;
     }
-    this.#elements = this.#elements.filter((e) => !ids.has(e.id));
-    this.#select(null);
+    // Faithful port of Excalidraw's deleteSelectedElements (actionDeleteSelected.tsx
+    // 39-128): delete the selection PLUS each selected container's bound-text label;
+    // a deleted frame unparents and re-selects its children instead of deleting them.
+    const elementsMap = this.scene.scene.getNonDeletedElementsMap();
+    const framesToDelete = new Set(
+      this.#elements
+        .filter((el) => ids.has(el.id) && isFrameLikeElement(el))
+        .map((el) => el.id),
+    );
+    const toDelete = new Set<string>();
+    const reselect = new Set<string>();
+    for (const el of this.#elements) {
+      if (ids.has(el.id)) {
+        // children of a deleted frame are kept (unparented + reselected) below
+        if (el.frameId && framesToDelete.has(el.frameId)) {
+          continue;
+        }
+        toDelete.add(el.id);
+        // deleting a container also deletes its bound-text label
+        if (el.boundElements) {
+          for (const b of el.boundElements) {
+            if (b.type === "text") {
+              toDelete.add(b.id);
+            }
+          }
+        }
+      } else if (el.frameId && framesToDelete.has(el.frameId)) {
+        // child of a deleted frame: unparent it and select it
+        mutateElement(el, elementsMap, { frameId: null });
+        if (!isBoundToContainer(el)) {
+          reselect.add(el.id);
+        }
+      } else if (isBoundToContainer(el) && el.containerId && ids.has(el.containerId)) {
+        // bound text whose container is being deleted
+        toDelete.add(el.id);
+      }
+    }
+
+    const deletedElements = this.#elements.filter((e) => toDelete.has(e.id));
+    this.#elements = this.#elements.filter((e) => !toDelete.has(e.id));
+    // mark deleted so binding cleanup can find them, then drop dangling bindings
+    for (const el of deletedElements) {
+      mutateElement(el, elementsMap, { isDeleted: true });
+    }
+    fixBindingsAfterDeletion(this.#elements, deletedElements);
+
     syncInvalidIndices(this.#elements);
     this.scene.replaceAllElements(this.#elements);
+    // re-select unparented frame children, else clear the selection
+    this.#setSelection([...reselect]);
     this.#commit();
   }
 
