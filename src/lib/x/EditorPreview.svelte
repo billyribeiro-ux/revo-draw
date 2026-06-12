@@ -168,15 +168,34 @@
     { label: 'Duplicate', shortcut: '⌘D', action: () => controller.duplicateSelected() },
     { label: 'Delete', shortcut: 'Del', action: () => controller.deleteSelected() },
     'separator' as const,
+    { label: 'Flip horizontal', action: () => controller.flipSelected('horizontal') },
+    { label: 'Flip vertical', action: () => controller.flipSelected('vertical') },
+    'separator' as const,
+    { label: 'Align left', action: () => controller.alignSelected('start', 'x') },
+    { label: 'Align center', action: () => controller.alignSelected('center', 'x') },
+    { label: 'Align right', action: () => controller.alignSelected('end', 'x') },
+    { label: 'Align top', action: () => controller.alignSelected('start', 'y') },
+    { label: 'Align middle', action: () => controller.alignSelected('center', 'y') },
+    { label: 'Align bottom', action: () => controller.alignSelected('end', 'y') },
+    { label: 'Distribute horizontally', action: () => controller.distributeSelected('x') },
+    { label: 'Distribute vertically', action: () => controller.distributeSelected('y') },
+    'separator' as const,
+    { label: 'Lock', action: () => controller.lockSelected() },
+    { label: 'Unlock all', action: () => controller.unlockAll() },
+    'separator' as const,
+    { label: 'Select all', action: () => controller.selectAll() },
     { label: 'Select none', action: () => controller.deselect() }
   ];
 
   const menuItems = $derived([
     { label: 'Reset the canvas', icon: ICONS.trash, action: () => controller.clear() },
+    { label: 'Zoom to fit', action: () => controller.zoomToFit() },
     { label: 'Reset view', action: () => controller.resetView() },
     'separator' as const,
     { label: 'Save as image…', action: () => (exportOpen = true) },
     { label: controller.gridMode ? 'Hide grid' : 'Show grid', action: () => controller.toggleGrid() },
+    { label: controller.viewMode ? 'Exit view mode' : 'View mode', action: () => controller.toggleViewMode() },
+    { label: controller.zenMode ? 'Exit zen mode' : 'Zen mode', action: () => controller.toggleZenMode() },
     'separator' as const,
     { label: controller.theme === 'dark' ? 'Light mode' : 'Dark mode', action: () => controller.toggleTheme() },
     { label: 'Keyboard shortcuts', action: () => (helpOpen = true) }
@@ -228,10 +247,38 @@
     } else if ((e.metaKey || e.ctrlKey) && e.key === "'") {
       controller.toggleGrid();
       e.preventDefault();
+    } else if ((e.metaKey || e.ctrlKey) && (e.key === 'a' || e.key === 'A')) {
+      controller.selectAll();
+      e.preventDefault();
+    } else if (!e.metaKey && !e.ctrlKey && e.shiftKey && e.key === 'H') {
+      controller.flipSelected('horizontal');
+      e.preventDefault();
+    } else if (!e.metaKey && !e.ctrlKey && e.shiftKey && e.key === 'V') {
+      controller.flipSelected('vertical');
+      e.preventDefault();
     } else if (e.key === '?') {
       helpOpen = true;
+    } else if (!e.metaKey && !e.ctrlKey && !e.altKey && TOOL_KEYS[e.key]) {
+      controller.setTool(TOOL_KEYS[e.key]);
+      e.preventDefault();
     }
   }
+
+  // Excalidraw tool keyboard shortcuts (digit + letter)
+  const TOOL_KEYS: Record<string, Tool> = {
+    '1': 'selection', v: 'selection',
+    '2': 'rectangle', r: 'rectangle',
+    '3': 'diamond', d: 'diamond',
+    '4': 'ellipse', o: 'ellipse',
+    '5': 'arrow', a: 'arrow',
+    '6': 'line', l: 'line',
+    '7': 'freedraw', p: 'freedraw',
+    '8': 'text', t: 'text',
+    '9': 'image',
+    '0': 'eraser', e: 'eraser',
+    f: 'frame',
+    k: 'laser'
+  };
 
   function sizeCanvas(el: HTMLCanvasElement, scale: number): { width: number; height: number } {
     const width = el.clientWidth;
@@ -380,7 +427,7 @@
     </button>
   </div>
 
-<div class="properties">
+<div class="properties" class:hidden={controller.zenMode || controller.viewMode}>
   <div class="prop-group">
     <span class="prop-label">Stroke</span>
     <div class="swatches">
@@ -474,10 +521,12 @@
   />
 </div>
 
-<Stats
-  element={controller.selectedElements[0] ?? null}
-  sceneCount={controller.scene.elements.length}
-/>
+{#if !controller.zenMode}
+  <Stats
+    element={controller.selectedElements[0] ?? null}
+    sceneCount={controller.scene.elements.length}
+  />
+{/if}
 
 <div class="canvas-wrap">
   <canvas bind:this={staticCanvas} class="layer"></canvas>
@@ -777,6 +826,10 @@
   .swatch.custom {
     border: 2px solid #4263eb;
     margin-left: 4px;
+  }
+
+  .hidden {
+    display: none;
   }
 
   .widths {
