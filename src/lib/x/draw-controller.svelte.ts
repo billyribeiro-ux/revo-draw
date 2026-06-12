@@ -36,7 +36,9 @@ import {
   canApplyRoundnessTypeToElement,
   cropElement,
   getDefaultRoundnessTypeForElement,
+  duplicateElements,
   getElementsInGroup,
+  getSelectedElements,
   getSelectedGroupIdForElement,
   isExcalidrawElement,
   isImageElement,
@@ -58,6 +60,7 @@ import {
   ShapeCache,
   Store,
   syncInvalidIndices,
+  syncMovedIndices,
   transformElements,
   updateBoundElements,
 } from "@excalidraw/element";
@@ -68,8 +71,10 @@ import type {
 } from "@excalidraw/element/types";
 
 import {
+  arrayToMap,
   DEFAULT_FONT_FAMILY,
   DEFAULT_FONT_SIZE,
+  DEFAULT_GRID_SIZE,
   DEFAULT_TEXT_ALIGN,
   getGridPoint,
   getLineHeight,
@@ -1751,20 +1756,43 @@ export class DrawController {
 
   /** Duplicate the selected element(s) offset by (10,10) and select the copies. */
   duplicateSelected(): void {
-    const originals = this.selectedElements;
-    if (!originals.length) {
+    if (!this.selectedIds.size) {
       return;
     }
-    const copies = originals.map((orig) =>
-      newElementWith(duplicateElement(null, new Map(), orig, true), {
-        x: orig.x + 10,
-        y: orig.y + 10,
-      }),
-    );
-    this.#elements.push(...copies);
-    syncInvalidIndices(this.#elements);
+    const elements = this.scene.elements;
+    const appState = this.appState.current;
+    // Use the batch duplicateElements (type:"in-place") so a duplicated group keeps
+    // ONE shared groupIdMap, arrows rebind to the copies (not the originals), and
+    // frame parenting is rewired — matching Excalidraw's actionDuplicateSelection
+    // (actionDuplicateSelection.tsx:63-109). The old per-element duplicateElement
+    // with a fresh Map() broke all three.
+    const { duplicatedElements, elementsWithDuplicates } = duplicateElements({
+      type: "in-place",
+      elements,
+      idsOfElementsToDuplicate: arrayToMap(
+        getSelectedElements(elements, appState, {
+          includeBoundTextElement: true,
+          includeElementsInFrames: true,
+        }),
+      ),
+      appState,
+      randomizeSeed: true,
+      overrides: ({ origElement, origIdToDuplicateId }) => {
+        const duplicateFrameId =
+          origElement.frameId && origIdToDuplicateId.get(origElement.frameId);
+        return {
+          x: origElement.x + DEFAULT_GRID_SIZE / 2,
+          y: origElement.y + DEFAULT_GRID_SIZE / 2,
+          frameId: duplicateFrameId ?? origElement.frameId,
+        };
+      },
+    });
+    this.#elements = syncMovedIndices(
+      elementsWithDuplicates as ExcalidrawElement[],
+      arrayToMap(duplicatedElements),
+    ) as ExcalidrawElement[];
     this.scene.replaceAllElements(this.#elements);
-    this.#setSelection(copies.map((c) => c.id));
+    this.#setSelection(duplicatedElements.map((e) => e.id));
     this.#commit();
   }
 
