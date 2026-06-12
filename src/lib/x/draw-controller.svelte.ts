@@ -35,10 +35,16 @@ import {
   addToGroup,
   canApplyRoundnessTypeToElement,
   cropElement,
+  getContainerElement,
   getDefaultRoundnessTypeForElement,
+  duplicateElements,
   getElementsInGroup,
+  getSelectedElements,
+  getSelectedGroupIdForElement,
+  isBoundToContainer,
   isExcalidrawElement,
   isImageElement,
+  isUsingAdaptiveRadius,
   newArrowElement,
   newElement,
   newElementWith,
@@ -50,9 +56,13 @@ import {
   orderByFractionalIndex,
   updateElbowArrowPoints,
   redrawTextBoundingBox,
+  getResizeOffsetXY,
   resizeTest,
+  selectGroupsForSelectedElements,
+  ShapeCache,
   Store,
   syncInvalidIndices,
+  syncMovedIndices,
   transformElements,
   updateBoundElements,
 } from "@excalidraw/element";
@@ -63,11 +73,15 @@ import type {
 } from "@excalidraw/element/types";
 
 import {
+  arrayToMap,
   DEFAULT_FONT_FAMILY,
   DEFAULT_FONT_SIZE,
+  DEFAULT_GRID_SIZE,
   DEFAULT_TEXT_ALIGN,
+  getGridPoint,
   getLineHeight,
   randomId,
+  randomInteger,
   ROUNDNESS,
   viewportCoordsToSceneCoords,
 } from "@excalidraw/common";
@@ -126,7 +140,9 @@ import type {
   App,
   AppClassProperties,
   AppState,
+  InteractiveCanvasAppState,
   NormalizedZoomValue,
+  NullableGridSize,
 } from "@excalidraw/excalidraw/types";
 
 import { EditorAppState } from "$lib/state/app-state.svelte.ts";
@@ -234,6 +250,10 @@ export class DrawController {
   #resizeOriginals = new Map<string, NonDeletedExcalidrawElement>();
   #resizeCenterX = 0;
   #resizeCenterY = 0;
+  // gap between the pointer-down point and the exact handle position, kept fixed
+  // under the cursor during the resize (Excalidraw's pointerDownState.resize.offset)
+  #resizeOffsetX = 0;
+  #resizeOffsetY = 0;
 
   // marquee (box) selection state
   #marquee = false;
@@ -542,7 +562,20 @@ export class DrawController {
     this.#applyStyle({ strokeStyle }, { currentItemStrokeStyle: strokeStyle });
   }
   setSloppiness(roughness: number): void {
-    this.#applyStyle({ roughness }, { currentItemRoughness: roughness });
+    this.appState.setState({ currentItemRoughness: roughness });
+    const selected = this.selectedElements;
+    if (!selected.length) {
+      return;
+    }
+    const map = this.scene.scene.getNonDeletedElementsMap();
+    for (const el of selected) {
+      // Re-roll the seed per element so the sketch is re-randomised, matching
+      // Excalidraw's actionChangeSloppiness (actionProperties.tsx:611-616).
+      mutateElement(el, map, { seed: randomInteger(), roughness });
+      ShapeCache.delete(el);
+    }
+    this.scene.scene.triggerUpdate();
+    this.#commit();
   }
 
   get edges(): "sharp" | "round" {
@@ -556,9 +589,25 @@ export class DrawController {
     }
     const map = this.scene.scene.getNonDeletedElementsMap();
     for (const el of selected) {
+      // Elbow arrows have no roundness concept — leave them untouched, and pick the
+      // radius algorithm per element type, mirroring Excalidraw's
+      // actionChangeRoundness (actionProperties.tsx:1499-1516).
+      if (isElbowArrow(el)) {
+        continue;
+      }
       mutateElement(el, map, {
-        roundness: value === "round" ? { type: ROUNDNESS.ADAPTIVE_RADIUS } : null,
+        roundness:
+          value === "round"
+            ? {
+                type: isUsingAdaptiveRadius(el.type)
+                  ? ROUNDNESS.ADAPTIVE_RADIUS
+                  : ROUNDNESS.PROPORTIONAL_RADIUS,
+              }
+            : null,
       });
+      // roundness alters the rough shape but isn't a width/height/points change,
+      // so mutateElement leaves the cache stale — bust it (see #applyStyle).
+      ShapeCache.delete(el);
     }
     this.scene.scene.triggerUpdate();
     this.#commit();
@@ -595,6 +644,11 @@ export class DrawController {
     const map = this.scene.scene.getNonDeletedElementsMap();
     for (const el of selected) {
       mutateElement(el, map, elementPatch);
+      // mutateElement only busts ShapeCache on width/height/fileId/points changes;
+      // style props (color/fill/stroke/roughness) leave the cached rough shape stale.
+      // Excalidraw sidesteps this by applying styles via newElementWith (fresh ref →
+      // WeakMap miss); here we mutate in place, so bust the cache explicitly.
+      ShapeCache.delete(el);
     }
     this.scene.scene.triggerUpdate();
     this.#commit();
@@ -620,6 +674,23 @@ export class DrawController {
       roughness: a.currentItemRoughness,
       opacity: a.currentItemOpacity,
     };
+  }
+
+  /**
+   * Roundness for a newly-created element from the current item default.
+   * Mirrors Excalidraw's App.getCurrentItemRoundness (App.tsx:9500-9508):
+   * sharp → null; round → adaptive radius for rect-like types, else proportional.
+   */
+  #getCurrentItemRoundness(
+    elementType: ExcalidrawElement["type"],
+  ): ExcalidrawElement["roundness"] {
+    return this.appState.current.currentItemRoundness === "round"
+      ? {
+          type: isUsingAdaptiveRadius(elementType)
+            ? ROUNDNESS.ADAPTIVE_RADIUS
+            : ROUNDNESS.PROPORTIONAL_RADIUS,
+        }
+      : null;
   }
 
   /** Text-specific creation props, pulled from the current app-state (font + alignment). */
@@ -695,7 +766,39 @@ export class DrawController {
   /** Set the font size (Excalidraw actionChangeFontSize). */
   setFontSize(fontSize: number): void {
     this.appState.setState({ currentItemFontSize: fontSize });
-    this.#applyTextStyle({ fontSize });
+    const map = this.scene.scene.getNonDeletedElementsMap();
+    let changed = false;
+    for (const el of this.selectedElements) {
+      if (!isTextElement(el)) {
+        continue;
+      }
+      const prevWidth = el.width;
+      const prevHeight = el.height;
+      const prevX = el.x;
+      const prevY = el.y;
+      const prevAlign = el.textAlign;
+      mutateElement(el, map, { fontSize });
+      // re-measure against the element's container (Excalidraw passes the container
+      // to redrawTextBoundingBox; we previously passed null — actionProperties.tsx:271)
+      redrawTextBoundingBox(el, getContainerElement(el, map), this.scene.scene);
+      // re-anchor so the text grows from its anchor point instead of the top-left,
+      // skipping bound/non-autoResize text (offsetElementAfterFontResize,
+      // actionProperties.tsx:230-249)
+      if (!isBoundToContainer(el) && el.autoResize) {
+        mutateElement(el, map, {
+          x:
+            prevAlign === "left"
+              ? prevX
+              : prevX + (prevWidth - el.width) / (prevAlign === "center" ? 2 : 1),
+          y: prevY + (prevHeight - el.height) / 2,
+        });
+      }
+      changed = true;
+    }
+    if (changed) {
+      this.scene.scene.triggerUpdate();
+      this.#commit();
+    }
   }
 
   /** Set the horizontal text alignment (Excalidraw actionChangeTextAlign). */
@@ -886,7 +989,23 @@ export class DrawController {
 
   /** Select every (non-deleted) element. */
   selectAll(): void {
-    this.#setSelection(this.scene.elements.map((e) => e.id));
+    // Skip while point-editing a linear element (Excalidraw actionSelectAll returns
+    // false), and exclude deleted elements, locked elements, and bound-text labels
+    // (text bound to a container is selected via its container, not directly).
+    if (this.appState.current.selectedLinearElement?.isEditing) {
+      return;
+    }
+    // select-all leaves no group in edit mode (actionSelectAll.ts:36)
+    this.appState.setState({ editingGroupId: null });
+    const ids = this.scene.elements
+      .filter(
+        (el) =>
+          !el.isDeleted &&
+          !(isTextElement(el) && el.containerId) &&
+          !el.locked,
+      )
+      .map((el) => el.id);
+    this.#setSelection(ids);
   }
 
   /** Flip the selection horizontally or vertically (Excalidraw actionFlip). */
@@ -1671,20 +1790,43 @@ export class DrawController {
 
   /** Duplicate the selected element(s) offset by (10,10) and select the copies. */
   duplicateSelected(): void {
-    const originals = this.selectedElements;
-    if (!originals.length) {
+    if (!this.selectedIds.size) {
       return;
     }
-    const copies = originals.map((orig) =>
-      newElementWith(duplicateElement(null, new Map(), orig, true), {
-        x: orig.x + 10,
-        y: orig.y + 10,
-      }),
-    );
-    this.#elements.push(...copies);
-    syncInvalidIndices(this.#elements);
+    const elements = this.scene.elements;
+    const appState = this.appState.current;
+    // Use the batch duplicateElements (type:"in-place") so a duplicated group keeps
+    // ONE shared groupIdMap, arrows rebind to the copies (not the originals), and
+    // frame parenting is rewired — matching Excalidraw's actionDuplicateSelection
+    // (actionDuplicateSelection.tsx:63-109). The old per-element duplicateElement
+    // with a fresh Map() broke all three.
+    const { duplicatedElements, elementsWithDuplicates } = duplicateElements({
+      type: "in-place",
+      elements,
+      idsOfElementsToDuplicate: arrayToMap(
+        getSelectedElements(elements, appState, {
+          includeBoundTextElement: true,
+          includeElementsInFrames: true,
+        }),
+      ),
+      appState,
+      randomizeSeed: true,
+      overrides: ({ origElement, origIdToDuplicateId }) => {
+        const duplicateFrameId =
+          origElement.frameId && origIdToDuplicateId.get(origElement.frameId);
+        return {
+          x: origElement.x + DEFAULT_GRID_SIZE / 2,
+          y: origElement.y + DEFAULT_GRID_SIZE / 2,
+          frameId: duplicateFrameId ?? origElement.frameId,
+        };
+      },
+    });
+    this.#elements = syncMovedIndices(
+      elementsWithDuplicates as ExcalidrawElement[],
+      arrayToMap(duplicatedElements),
+    ) as ExcalidrawElement[];
     this.scene.replaceAllElements(this.#elements);
-    this.#setSelection(copies.map((c) => c.id));
+    this.#setSelection(duplicatedElements.map((e) => e.id));
     this.#commit();
   }
 
@@ -1806,12 +1948,32 @@ export class DrawController {
 
   /** Replace the selection with exactly `ids` (keeps appState.selectedElementIds in sync). */
   #setSelection(ids: readonly string[]): void {
-    this.selectedIds.clear();
+    const selectedElementIds: { [id: string]: true } = {};
     for (const id of ids) {
+      selectedElementIds[id] = true;
+    }
+    // Compute selectedGroupIds (and expand the selection to whole groups) so a
+    // grouped selection renders one dashed group outline and members highlight as
+    // a unit, rather than N per-element borders. Mirrors Excalidraw, which funnels
+    // every selection through selectGroupsForSelectedElements — the marquee/lasso/
+    // dbl-click paths pass the raw enclosed/clicked ids and this fills in the rest
+    // (App.tsx:10532-10540; actionSelectAll.ts:43-47).
+    const prev = this.appState.current;
+    const next = selectGroupsForSelectedElements(
+      { selectedElementIds, editingGroupId: prev.editingGroupId },
+      this.scene.scene.getNonDeletedElements(),
+      prev as unknown as InteractiveCanvasAppState,
+      this.#linearApp(),
+    );
+    // keep the internal Set in sync with the (possibly group-expanded) result
+    this.selectedIds.clear();
+    for (const id of Object.keys(next.selectedElementIds)) {
       this.selectedIds.add(id);
     }
     this.appState.setState({
-      selectedElementIds: Object.fromEntries(ids.map((id) => [id, true])),
+      selectedElementIds: next.selectedElementIds,
+      selectedGroupIds: next.selectedGroupIds,
+      editingGroupId: next.editingGroupId,
     });
   }
 
@@ -1957,7 +2119,7 @@ export class DrawController {
     this.#setSelection([...this.#lassoBaseIds, ...enclosed]);
   }
 
-  #beginResize(handle: TransformHandleType): void {
+  #beginResize(handle: TransformHandleType, pointerX: number, pointerY: number): void {
     this.#resizeHandle = handle;
     this.#resizeOriginals = new Map(
       this.selectedElements.map((e) => [e.id, deepCopyElement(e)]),
@@ -1965,6 +2127,18 @@ export class DrawController {
     const [x1, y1, x2, y2] = getCommonBounds(this.selectedElements);
     this.#resizeCenterX = (x1 + x2) / 2;
     this.#resizeCenterY = (y1 + y2) / 2;
+    // Capture the offset between the click point and the exact handle position so
+    // the grabbed corner stays under the cursor on the first move instead of
+    // teleporting to it (Excalidraw App.tsx:8570-8580 via getResizeOffsetXY).
+    const [ox, oy] = getResizeOffsetXY(
+      handle,
+      [...this.selectedElements],
+      this.scene.scene.getNonDeletedElementsMap(),
+      pointerX,
+      pointerY,
+    );
+    this.#resizeOffsetX = ox;
+    this.#resizeOffsetY = oy;
   }
 
   // --- multi-point linear (line/arrow) editor ---
@@ -1972,6 +2146,14 @@ export class DrawController {
   /** True while a line/arrow is in point-editing mode (point handles shown). */
   get isLineEditing(): boolean {
     return this.appState.current.selectedLinearElement?.isEditing === true;
+  }
+
+  /** Active grid step, or null when grid mode is off — matches Excalidraw's
+   *  App.getEffectiveGridSize(). Single source for all grid-snap call sites. */
+  #effectiveGridSize(): NullableGridSize {
+    return (
+      this.appState.current.gridModeEnabled ? this.appState.current.gridSize : null
+    ) as NullableGridSize;
   }
 
   /** The `app` surface the vendored LinearElementEditor + snapping read
@@ -1983,8 +2165,7 @@ export class DrawController {
       get state(): AppState {
         return self.appState.current;
       },
-      getEffectiveGridSize: () =>
-        self.appState.current.gridModeEnabled ? self.appState.current.gridSize : null,
+      getEffectiveGridSize: () => self.#effectiveGridSize(),
       props: { gridModeEnabled: undefined },
     } as unknown as AppClassProperties;
   }
@@ -2015,7 +2196,44 @@ export class DrawController {
         return;
       }
     }
+    // Deep-enter a selected group: double-clicking a member of an already-selected
+    // group scopes selection into that group and selects just the hit element
+    // (Excalidraw App.tsx:6533-6557). Subsequent clicks select within the group.
+    if (id) {
+      const selectedGroupIds = this.appState.current.selectedGroupIds;
+      const hasSelectedGroup = Object.values(selectedGroupIds).some(Boolean);
+      if (hasSelectedGroup) {
+        const el = this.scene.scene.getNonDeletedElementsMap().get(id);
+        const selectedGroupId =
+          el && getSelectedGroupIdForElement(el, selectedGroupIds);
+        if (selectedGroupId) {
+          this.#enterGroup(selectedGroupId, id);
+          return;
+        }
+      }
+    }
     this.enterLineEditor();
+  }
+
+  /** Scope selection into `groupId`, selecting only `elementId` within it. */
+  #enterGroup(groupId: string, elementId: string): void {
+    const prev = this.appState.current;
+    const next = selectGroupsForSelectedElements(
+      { selectedElementIds: { [elementId]: true }, editingGroupId: groupId },
+      this.scene.scene.getNonDeletedElements(),
+      prev as unknown as InteractiveCanvasAppState,
+      this.#linearApp(),
+    );
+    this.selectedIds.clear();
+    for (const sid of Object.keys(next.selectedElementIds)) {
+      this.selectedIds.add(sid);
+    }
+    this.appState.setState({
+      selectedElementIds: next.selectedElementIds,
+      selectedGroupIds: next.selectedGroupIds,
+      editingGroupId: next.editingGroupId,
+    });
+    this.scene.scene.triggerUpdate();
   }
 
   enterLineEditor(): void {
@@ -2198,7 +2416,7 @@ export class DrawController {
   }
 
   pointerDown(clientX: number, clientY: number, mods: PointerMods = NO_MODS): void {
-    const { x, y } = this.#toScene(clientX, clientY);
+    let { x, y } = this.#toScene(clientX, clientY);
     this.#shiftKey = mods.shiftKey;
     this.#altKey = mods.altKey;
 
@@ -2254,7 +2472,7 @@ export class DrawController {
       // a transform handle on the current selection starts a resize/rotate...
       const handle = this.#handleAt(x, y);
       if (handle) {
-        this.#beginResize(handle);
+        this.#beginResize(handle, x, y);
         return;
       }
       const hitId = this.#hitTest(x, y);
@@ -2317,6 +2535,14 @@ export class DrawController {
 
     // starting a new shape clears any current selection
     this.#select(null);
+    // Snap the creation origin to the grid (Ctrl/Cmd bypasses), mirroring
+    // Excalidraw's createGenericElementOnPointerDown (App.tsx:9514-9520). Only the
+    // creation origin is snapped — the hit-test/selection paths above use raw x,y.
+    const gridSize =
+      mods.ctrlKey || mods.metaKey ? null : this.#effectiveGridSize();
+    const [gx, gy] = getGridPoint(x, y, gridSize);
+    x = gx;
+    y = gy;
     this.#originX = x;
     this.#originY = y;
 
@@ -2350,6 +2576,7 @@ export class DrawController {
         x,
         y,
         points: [pointFrom<LocalPoint>(0, 0), pointFrom<LocalPoint>(0, 0)],
+        roundness: this.#getCurrentItemRoundness("line"),
         ...this.#createStyle(),
       });
       this.#mode = "linear";
@@ -2366,6 +2593,7 @@ export class DrawController {
         y,
         width: 0,
         height: 0,
+        roundness: this.#getCurrentItemRoundness(this.activeTool),
         ...this.#createStyle(),
       });
       this.#mode = "generic";
@@ -2454,6 +2682,17 @@ export class DrawController {
     // resizing / rotating the current selection via a transform handle
     if (this.#resizeHandle) {
       const { x, y } = this.#toScene(clientX, clientY);
+      // Subtract the grab offset so the grabbed corner tracks the cursor instead
+      // of teleporting to it, then grid-snap (Ctrl bypasses) — Excalidraw
+      // App.tsx:12589-12594. Rotation has no meaningful offset; keep raw coords.
+      const isRotate = this.#resizeHandle === "rotation";
+      const [resizeX, resizeY] = isRotate
+        ? [x, y]
+        : getGridPoint(
+            x - this.#resizeOffsetX,
+            y - this.#resizeOffsetY,
+            mods.ctrlKey || mods.metaKey ? null : this.#effectiveGridSize(),
+          );
       transformElements(
         this.#resizeOriginals,
         this.#resizeHandle,
@@ -2462,8 +2701,8 @@ export class DrawController {
         this.#shiftKey, // shouldRotateWithDiscreteAngle (shift → 15° rotation snap)
         this.#altKey, // shouldResizeFromCenter (alt → resize anchored at center)
         this.#shiftKey, // shouldMaintainAspectRatio (shift → aspect-locked resize)
-        x,
-        y,
+        resizeX,
+        resizeY,
         this.#resizeCenterX,
         this.#resizeCenterY,
       );

@@ -9,6 +9,8 @@
   import { renderStaticScene } from '@excalidraw/excalidraw/renderer/staticScene';
   import { renderInteractiveScene } from '@excalidraw/excalidraw/renderer/interactiveScene';
 
+  import { ShapeCache } from '@excalidraw/element';
+
   import type {
     NonDeletedSceneElementsMap,
     OrderedExcalidrawElement
@@ -68,6 +70,9 @@
   const { scene, appState } = controller;
 
   (window as unknown as { __draw?: DrawController }).__draw = controller;
+  // Dev-only probe hook: lets headless-Chrome parity probes assert against the
+  // real ShapeCache (cache-invalidation differential tests). Not used by the app.
+  (window as unknown as { __shapeCache?: typeof ShapeCache }).__shapeCache = ShapeCache;
 
   let staticCanvas = $state<HTMLCanvasElement>();
   let interactiveCanvas = $state<HTMLCanvasElement>();
