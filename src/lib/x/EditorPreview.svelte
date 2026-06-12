@@ -26,6 +26,7 @@
     AppClassProperties
   } from '@excalidraw/excalidraw/types';
   import type { EditorInterface } from '@excalidraw/common';
+  import { CODES, isDarwin } from '@excalidraw/common';
 
   import { DrawController, type Tool } from '$lib/x/draw-controller.svelte.ts';
   import { ICONS } from '$lib/x/icons.ts';
@@ -360,18 +361,24 @@
     } else if ((e.metaKey || e.ctrlKey) && (e.key === 'v' || e.key === 'V')) {
       void controller.paste(lastPointer.x, lastPointer.y);
       e.preventDefault();
-    } else if ((e.metaKey || e.ctrlKey) && e.key === ']') {
-      if (e.shiftKey) {
+    } else if ((e.metaKey || e.ctrlKey) && e.code === CODES.BRACKET_RIGHT) {
+      // forward = ⌘]; to-front = ⌘⌥] on macOS, ⌘⇧] elsewhere (actionZindex.tsx:96-141).
+      // Use event.code so the Alt-modified character doesn't break the match.
+      if (isDarwin ? e.altKey : e.shiftKey) {
         controller.bringToFront();
-      } else {
+      } else if (!e.shiftKey && !e.altKey) {
         controller.bringForward();
+      } else {
+        return;
       }
       e.preventDefault();
-    } else if ((e.metaKey || e.ctrlKey) && e.key === '[') {
-      if (e.shiftKey) {
+    } else if ((e.metaKey || e.ctrlKey) && e.code === CODES.BRACKET_LEFT) {
+      if (isDarwin ? e.altKey : e.shiftKey) {
         controller.sendToBack();
-      } else {
+      } else if (!e.shiftKey && !e.altKey) {
         controller.sendBackward();
+      } else {
+        return;
       }
       e.preventDefault();
     } else if ((e.metaKey || e.ctrlKey) && (e.key === 'z' || e.key === 'Z')) {
@@ -411,6 +418,52 @@
       e.preventDefault();
     } else if (!e.metaKey && !e.ctrlKey && e.shiftKey && e.key === 'V') {
       controller.flipSelected('vertical');
+      e.preventDefault();
+    } else if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 'l') {
+      controller.lockSelected(); // ⌘⇧L (actionElementLock.ts:143-153)
+      e.preventDefault();
+    } else if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.startsWith('Arrow')) {
+      // ⌘⇧Arrow aligns the selection (actionAlign.tsx:96-199)
+      const map = {
+        ArrowLeft: ['start', 'x'],
+        ArrowRight: ['end', 'x'],
+        ArrowUp: ['start', 'y'],
+        ArrowDown: ['end', 'y']
+      } as const;
+      const a = map[e.key as keyof typeof map];
+      if (a) {
+        controller.alignSelected(a[0], a[1]);
+        e.preventDefault();
+      }
+    } else if (!e.metaKey && !e.ctrlKey && e.altKey && e.code === CODES.R) {
+      controller.toggleViewMode(); // Alt+R (actionToggleViewMode.tsx:31)
+      e.preventDefault();
+    } else if (!e.metaKey && !e.ctrlKey && e.altKey && e.code === CODES.Z) {
+      controller.toggleZenMode(); // Alt+Z (actionToggleZenMode.tsx:34)
+      e.preventDefault();
+    } else if (
+      (e.code === CODES.EQUAL || e.code === CODES.NUM_ADD) &&
+      (e.metaKey || e.ctrlKey || e.shiftKey)
+    ) {
+      controller.zoomAt(1.1, window.innerWidth / 2, window.innerHeight / 2); // zoom in
+      e.preventDefault();
+    } else if (
+      (e.code === CODES.MINUS || e.code === CODES.NUM_SUBTRACT) &&
+      (e.metaKey || e.ctrlKey || e.shiftKey)
+    ) {
+      controller.zoomAt(1 / 1.1, window.innerWidth / 2, window.innerHeight / 2); // zoom out
+      e.preventDefault();
+    } else if (
+      (e.code === CODES.ZERO || e.code === CODES.NUM_ZERO) &&
+      (e.metaKey || e.ctrlKey || e.shiftKey)
+    ) {
+      controller.resetView(); // reset zoom
+      e.preventDefault();
+    } else if (e.code === CODES.ONE && e.shiftKey && !e.altKey && !e.metaKey && !e.ctrlKey) {
+      controller.zoomToFit(); // ⇧1 (actionZoomToFit)
+      e.preventDefault();
+    } else if (e.code === CODES.TWO && e.shiftKey && !e.altKey && !e.metaKey && !e.ctrlKey) {
+      controller.zoomToSelection(); // ⇧2 (actionZoomToFitSelection)
       e.preventDefault();
     } else if (e.key === '?') {
       helpOpen = true;
