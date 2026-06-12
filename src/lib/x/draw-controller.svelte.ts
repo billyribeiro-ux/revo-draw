@@ -53,6 +53,7 @@ import {
   redrawTextBoundingBox,
   getResizeOffsetXY,
   resizeTest,
+  selectGroupsForSelectedElements,
   ShapeCache,
   Store,
   syncInvalidIndices,
@@ -130,6 +131,7 @@ import type {
   App,
   AppClassProperties,
   AppState,
+  InteractiveCanvasAppState,
   NormalizedZoomValue,
   NullableGridSize,
 } from "@excalidraw/excalidraw/types";
@@ -1840,12 +1842,32 @@ export class DrawController {
 
   /** Replace the selection with exactly `ids` (keeps appState.selectedElementIds in sync). */
   #setSelection(ids: readonly string[]): void {
-    this.selectedIds.clear();
+    const selectedElementIds: { [id: string]: true } = {};
     for (const id of ids) {
+      selectedElementIds[id] = true;
+    }
+    // Compute selectedGroupIds (and expand the selection to whole groups) so a
+    // grouped selection renders one dashed group outline and members highlight as
+    // a unit, rather than N per-element borders. Mirrors Excalidraw, which funnels
+    // every selection through selectGroupsForSelectedElements — the marquee/lasso/
+    // dbl-click paths pass the raw enclosed/clicked ids and this fills in the rest
+    // (App.tsx:10532-10540; actionSelectAll.ts:43-47).
+    const prev = this.appState.current;
+    const next = selectGroupsForSelectedElements(
+      { selectedElementIds, editingGroupId: prev.editingGroupId },
+      this.scene.scene.getNonDeletedElements(),
+      prev as unknown as InteractiveCanvasAppState,
+      this.#linearApp(),
+    );
+    // keep the internal Set in sync with the (possibly group-expanded) result
+    this.selectedIds.clear();
+    for (const id of Object.keys(next.selectedElementIds)) {
       this.selectedIds.add(id);
     }
     this.appState.setState({
-      selectedElementIds: Object.fromEntries(ids.map((id) => [id, true])),
+      selectedElementIds: next.selectedElementIds,
+      selectedGroupIds: next.selectedGroupIds,
+      editingGroupId: next.editingGroupId,
     });
   }
 
