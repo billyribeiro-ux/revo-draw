@@ -220,6 +220,8 @@
     'separator' as const,
     { label: 'Save as image…', action: () => (exportOpen = true) },
     { label: controller.gridMode ? 'Hide grid' : 'Show grid', action: () => controller.toggleGrid() },
+    { label: controller.objectsSnapMode ? 'Disable snapping' : 'Enable snapping', action: () => controller.toggleObjectsSnapMode() },
+    { label: controller.midpointSnapping ? 'Disable midpoint snapping' : 'Enable midpoint snapping', action: () => controller.toggleMidpointSnapping() },
     { label: controller.viewMode ? 'Exit view mode' : 'View mode', action: () => controller.toggleViewMode() },
     { label: controller.zenMode ? 'Exit zen mode' : 'Zen mode', action: () => controller.toggleZenMode() },
     'separator' as const,
@@ -517,6 +519,7 @@
       <ColorPicker
         value={controller.strokeColor}
         palette={strokeColors}
+        showShades
         onPick={(c) => {
           controller.setStrokeColor(c);
           pickerOpen = null;
@@ -549,6 +552,7 @@
       <ColorPicker
         value={controller.backgroundColor}
         palette={bgColors}
+        showShades
         onPick={(c) => {
           controller.setBackgroundColor(c);
           pickerOpen = null;

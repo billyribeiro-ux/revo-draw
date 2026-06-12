@@ -399,6 +399,30 @@ export class DrawController {
     this.scene.scene.triggerUpdate();
   }
 
+  /** Whether object snapping (alignment guides) is the persistent default. */
+  get objectsSnapMode(): boolean {
+    return this.appState.current.objectsSnapModeEnabled;
+  }
+
+  /** Toggle persistent object snapping (Excalidraw actionToggleObjectsSnapMode, Alt+S). */
+  toggleObjectsSnapMode(): void {
+    this.appState.setState({
+      objectsSnapModeEnabled: !this.appState.current.objectsSnapModeEnabled,
+    });
+  }
+
+  /** Whether arrows snap to shape midpoints while binding. */
+  get midpointSnapping(): boolean {
+    return this.appState.current.isMidpointSnappingEnabled;
+  }
+
+  /** Toggle arrow midpoint snapping (Excalidraw actionToggleMidpointSnapping). */
+  toggleMidpointSnapping(): void {
+    this.appState.setState({
+      isMidpointSnappingEnabled: !this.appState.current.isMidpointSnappingEnabled,
+    });
+  }
+
   resetView(): void {
     this.appState.setState({
       zoom: { value: 1 as NormalizedZoomValue },
