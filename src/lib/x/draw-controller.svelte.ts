@@ -7,6 +7,8 @@ import {
   duplicateElement,
   getCommonBounds,
   resizeMultipleElements,
+  alignElements,
+  distributeElements,
   addElementsToFrame,
   bindBindingElement,
   getElementsInNewFrame,
@@ -607,6 +609,65 @@ export class DrawController {
     this.#commit();
   }
 
+  /** Align the selection (Excalidraw actionAlign). Needs ≥2 elements. */
+  alignSelected(position: "start" | "center" | "end", axis: "x" | "y"): void {
+    const sel = this.selectedElements;
+    if (sel.length < 2) {
+      return;
+    }
+    alignElements([...sel], { position, axis }, this.scene.scene, this.appState.current);
+    this.scene.scene.triggerUpdate();
+    this.#commit();
+  }
+
+  /** Distribute the selection evenly (Excalidraw actionDistribute). Needs ≥3 elements. */
+  distributeSelected(axis: "x" | "y"): void {
+    const sel = this.selectedElements;
+    if (sel.length < 3) {
+      return;
+    }
+    distributeElements(
+      [...sel],
+      this.scene.scene.getNonDeletedElementsMap(),
+      { space: "between", axis },
+      this.appState.current,
+      this.scene.scene,
+    );
+    this.scene.scene.triggerUpdate();
+    this.#commit();
+  }
+
+  /** Lock the selected element(s) (then deselect — locked elements are not selectable). */
+  lockSelected(): void {
+    const sel = this.selectedElements;
+    if (!sel.length) {
+      return;
+    }
+    const map = this.scene.scene.getNonDeletedElementsMap();
+    for (const el of sel) {
+      mutateElement(el, map, { locked: true });
+    }
+    this.#select(null);
+    this.scene.scene.triggerUpdate();
+    this.#commit();
+  }
+
+  /** Unlock every locked element. */
+  unlockAll(): void {
+    const map = this.scene.scene.getNonDeletedElementsMap();
+    let changed = false;
+    for (const el of this.scene.elements) {
+      if (el.locked) {
+        mutateElement(el, map, { locked: false });
+        changed = true;
+      }
+    }
+    if (changed) {
+      this.scene.scene.triggerUpdate();
+      this.#commit();
+    }
+  }
+
   // --- canvas / view state ---
   get viewBackgroundColor(): string {
     return this.appState.current.viewBackgroundColor;
@@ -939,6 +1000,9 @@ export class DrawController {
     // topmost (last in z-order) first
     for (let i = els.length - 1; i >= 0; i--) {
       const element = els[i]!;
+      if (element.locked) {
+        continue; // locked elements are not selectable
+      }
       if (hitElementItself({ point, element, threshold, elementsMap })) {
         return element.id;
       }

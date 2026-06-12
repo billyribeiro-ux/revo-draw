@@ -171,6 +171,18 @@
     { label: 'Flip horizontal', action: () => controller.flipSelected('horizontal') },
     { label: 'Flip vertical', action: () => controller.flipSelected('vertical') },
     'separator' as const,
+    { label: 'Align left', action: () => controller.alignSelected('start', 'x') },
+    { label: 'Align center', action: () => controller.alignSelected('center', 'x') },
+    { label: 'Align right', action: () => controller.alignSelected('end', 'x') },
+    { label: 'Align top', action: () => controller.alignSelected('start', 'y') },
+    { label: 'Align middle', action: () => controller.alignSelected('center', 'y') },
+    { label: 'Align bottom', action: () => controller.alignSelected('end', 'y') },
+    { label: 'Distribute horizontally', action: () => controller.distributeSelected('x') },
+    { label: 'Distribute vertically', action: () => controller.distributeSelected('y') },
+    'separator' as const,
+    { label: 'Lock', action: () => controller.lockSelected() },
+    { label: 'Unlock all', action: () => controller.unlockAll() },
+    'separator' as const,
     { label: 'Select all', action: () => controller.selectAll() },
     { label: 'Select none', action: () => controller.deselect() }
   ];
