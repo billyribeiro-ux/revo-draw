@@ -43,6 +43,7 @@
   import CommandPalette, { type Command } from '$lib/x/CommandPalette.svelte';
   import LibraryPanel from '$lib/x/LibraryPanel.svelte';
   import EmbedDialog from '$lib/x/EmbedDialog.svelte';
+  import MermaidDialog from '$lib/x/MermaidDialog.svelte';
 
   // tool → human label + keyboard shortcut, for the styled toolbar tooltips
   const TOOL_INFO: Record<string, { label: string; shortcut?: string }> = {
@@ -188,6 +189,7 @@
   let exportOpen = $state(false);
   let cmdpOpen = $state(false);
   let libraryOpen = $state(false);
+  let mermaidOpen = $state(false);
   let contextAt = $state<{ x: number; y: number } | null>(null);
 
   // the command palette's action list (assembled from existing controller ops)
@@ -232,6 +234,7 @@
     { group: 'File', label: 'Reset the canvas', run: () => controller.clear() },
     { group: 'Edit', label: 'Add to library', run: () => controller.addSelectionToLibrary() },
     { group: 'View', label: 'Toggle library', run: () => (libraryOpen = !libraryOpen) },
+    { group: 'File', label: 'Mermaid to diagram…', run: () => (mermaidOpen = true) },
     { group: 'Help', label: 'Keyboard shortcuts', shortcut: '?', run: () => (helpOpen = true) }
   ];
 
@@ -293,6 +296,7 @@
     { label: 'Reset view', action: () => controller.resetView() },
     'separator' as const,
     { label: 'Save as image…', action: () => (exportOpen = true) },
+    { label: 'Mermaid to diagram…', action: () => (mermaidOpen = true) },
     { label: libraryOpen ? 'Hide library' : 'Show library', action: () => (libraryOpen = !libraryOpen) },
     { label: controller.gridMode ? 'Hide grid' : 'Show grid', action: () => controller.toggleGrid() },
     { label: controller.objectsSnapMode ? 'Disable snapping' : 'Enable snapping', action: () => controller.toggleObjectsSnapMode() },
@@ -745,6 +749,13 @@
   <EmbedDialog
     onSubmit={(url) => controller.setEmbedLink(url)}
     onCancel={() => controller.cancelEmbed()}
+  />
+{/if}
+
+{#if mermaidOpen}
+  <MermaidDialog
+    onInsert={(src) => controller.insertMermaid(src)}
+    onClose={() => (mermaidOpen = false)}
   />
 {/if}
 

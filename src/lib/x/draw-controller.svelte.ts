@@ -1593,6 +1593,43 @@ export class DrawController {
     );
   }
 
+  // --- mermaid → diagram (Excalidraw TTDDialog; built-in flowchart converter) ---
+
+  /**
+   * Parse Mermaid flowchart text into elements and insert them centered in the
+   * viewport. Returns an error message on parse failure (the dialog shows it).
+   */
+  async insertMermaid(source: string): Promise<string | null> {
+    let elements: ExcalidrawElement[];
+    try {
+      const { mermaidToElements } = await import("$lib/x/mermaid.ts");
+      elements = mermaidToElements(source);
+    } catch (error) {
+      return error instanceof Error ? error.message : "Couldn't parse the diagram.";
+    }
+    if (!elements.length) {
+      return "No elements were generated.";
+    }
+    // center the generated diagram in the current viewport
+    const [x1, y1, x2, y2] = getCommonBounds(elements);
+    const a = this.appState.current;
+    const viewCx = a.width / 2 / a.zoom.value - a.scrollX;
+    const viewCy = a.height / 2 / a.zoom.value - a.scrollY;
+    const dx = viewCx - (x1 + x2) / 2;
+    const dy = viewCy - (y1 + y2) / 2;
+    const map = this.scene.scene.getNonDeletedElementsMap();
+    for (const el of elements) {
+      mutateElement(el, map, { x: el.x + dx, y: el.y + dy });
+    }
+    this.#elements.push(...elements);
+    syncInvalidIndices(this.#elements);
+    this.scene.replaceAllElements(this.#elements);
+    this.#setSelection(elements.map((e) => e.id));
+    this.activeTool = "selection";
+    this.#commit();
+    return null;
+  }
+
   // --- library (reusable element groups; Excalidraw addToLibrary / insert) ---
 
   /** True when there's a selection to add to the library. */
