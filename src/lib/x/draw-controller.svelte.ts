@@ -68,6 +68,7 @@ import {
   DEFAULT_FONT_FAMILY,
   DEFAULT_FONT_SIZE,
   DEFAULT_TEXT_ALIGN,
+  getGridPoint,
   getLineHeight,
   randomId,
   ROUNDNESS,
@@ -129,6 +130,7 @@ import type {
   AppClassProperties,
   AppState,
   NormalizedZoomValue,
+  NullableGridSize,
 } from "@excalidraw/excalidraw/types";
 
 import { EditorAppState } from "$lib/state/app-state.svelte.ts";
@@ -2001,6 +2003,14 @@ export class DrawController {
     return this.appState.current.selectedLinearElement?.isEditing === true;
   }
 
+  /** Active grid step, or null when grid mode is off — matches Excalidraw's
+   *  App.getEffectiveGridSize(). Single source for all grid-snap call sites. */
+  #effectiveGridSize(): NullableGridSize {
+    return (
+      this.appState.current.gridModeEnabled ? this.appState.current.gridSize : null
+    ) as NullableGridSize;
+  }
+
   /** The `app` surface the vendored LinearElementEditor + snapping read
    *  (scene / state / grid-size / props.gridModeEnabled). */
   #linearApp(): AppClassProperties {
@@ -2010,8 +2020,7 @@ export class DrawController {
       get state(): AppState {
         return self.appState.current;
       },
-      getEffectiveGridSize: () =>
-        self.appState.current.gridModeEnabled ? self.appState.current.gridSize : null,
+      getEffectiveGridSize: () => self.#effectiveGridSize(),
       props: { gridModeEnabled: undefined },
     } as unknown as AppClassProperties;
   }
@@ -2225,7 +2234,7 @@ export class DrawController {
   }
 
   pointerDown(clientX: number, clientY: number, mods: PointerMods = NO_MODS): void {
-    const { x, y } = this.#toScene(clientX, clientY);
+    let { x, y } = this.#toScene(clientX, clientY);
     this.#shiftKey = mods.shiftKey;
     this.#altKey = mods.altKey;
 
@@ -2344,6 +2353,14 @@ export class DrawController {
 
     // starting a new shape clears any current selection
     this.#select(null);
+    // Snap the creation origin to the grid (Ctrl/Cmd bypasses), mirroring
+    // Excalidraw's createGenericElementOnPointerDown (App.tsx:9514-9520). Only the
+    // creation origin is snapped — the hit-test/selection paths above use raw x,y.
+    const gridSize =
+      mods.ctrlKey || mods.metaKey ? null : this.#effectiveGridSize();
+    const [gx, gy] = getGridPoint(x, y, gridSize);
+    x = gx;
+    y = gy;
     this.#originX = x;
     this.#originY = y;
 
