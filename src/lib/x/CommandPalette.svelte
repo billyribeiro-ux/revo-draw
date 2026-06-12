@@ -2,7 +2,6 @@
   // Command palette, ported from excalidraw-master CommandPalette/. A searchable
   // modal list of every editor action: type to filter, ↑/↓ to move, Enter to run,
   // Esc to close. Props-driven (the command list is assembled by the parent).
-  import { tick } from 'svelte';
 
   export interface Command {
     label: string;
@@ -23,7 +22,6 @@
   // raw selection intent; the rendered index is clamped to the filtered list via
   // `active` ($derived) so we never write state inside an $effect (scheduler-safe).
   let activeRaw = $state(0);
-  let input = $state<HTMLInputElement>();
 
   // case-insensitive substring filter; preserves the source order (grouped)
   const filtered = $derived(
@@ -37,10 +35,11 @@
   // clamp at read-time — no effect writes state
   const active = $derived(Math.min(activeRaw, Math.max(0, filtered.length - 1)));
 
-  // autofocus the search box on mount (read-only side effect; writes no $state)
-  $effect(() => {
-    void tick().then(() => input?.focus());
-  });
+  // autofocus the search box on mount (attachment = the Svelte 5 element-lifecycle
+  // idiom; reads no reactive state so it runs exactly once)
+  const autofocus = (node: HTMLInputElement) => {
+    node.focus();
+  };
 
   function run(cmd: Command): void {
     onClose();
@@ -76,7 +75,7 @@
 >
   <div class="cmdp" role="dialog" aria-modal="true" aria-label="Command palette">
     <input
-      bind:this={input}
+      {@attach autofocus}
       bind:value={query}
       class="cmdp-input"
       type="text"

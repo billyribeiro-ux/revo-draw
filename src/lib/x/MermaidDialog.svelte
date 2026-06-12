@@ -2,7 +2,6 @@
   // Mermaid → diagram dialog (excalidraw TTDDialog). Paste a Mermaid flowchart,
   // press Insert to convert it to editable elements. Errors from the converter are
   // shown inline. Props-driven: onInsert returns an error string or null.
-  import { tick } from 'svelte';
 
   interface Props {
     onInsert: (source: string) => Promise<string | null>;
@@ -20,11 +19,11 @@
   let source = $state(SAMPLE);
   let error = $state<string | null>(null);
   let busy = $state(false);
-  let area = $state<HTMLTextAreaElement>();
 
-  $effect(() => {
-    void tick().then(() => area?.focus());
-  });
+  // autofocus the textarea on mount (attachment = Svelte 5 element-lifecycle idiom)
+  const autofocus = (node: HTMLTextAreaElement) => {
+    node.focus();
+  };
 
   async function insert(): Promise<void> {
     if (busy) {
@@ -62,7 +61,7 @@
       Paste a Mermaid <code>graph TD</code> / <code>flowchart LR</code> definition.
     </p>
     <textarea
-      bind:this={area}
+      {@attach autofocus}
       bind:value={source}
       class="mmd-input"
       spellcheck="false"

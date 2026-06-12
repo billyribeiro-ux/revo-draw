@@ -2,7 +2,6 @@
   // Embed-link dialog (excalidraw embeddable). Prompts for a URL to embed; on
   // submit the controller validates + normalizes it (getEmbedLink). Cancel removes
   // the placeholder. Props-driven.
-  import { tick } from 'svelte';
 
   interface Props {
     onSubmit: (url: string) => boolean;
@@ -12,11 +11,11 @@
   const { onSubmit, onCancel }: Props = $props();
 
   let url = $state('');
-  let input = $state<HTMLInputElement>();
 
-  $effect(() => {
-    void tick().then(() => input?.focus());
-  });
+  // autofocus the URL field on mount (attachment = Svelte 5 element-lifecycle idiom)
+  const autofocus = (node: HTMLInputElement) => {
+    node.focus();
+  };
 
   function submit(): void {
     if (url.trim()) {
@@ -46,7 +45,7 @@
     <h2 class="embed-title">Embed a link</h2>
     <p class="embed-hint">Paste a YouTube, Vimeo, or any embeddable page URL.</p>
     <input
-      bind:this={input}
+      {@attach autofocus}
       bind:value={url}
       class="embed-input"
       type="url"
