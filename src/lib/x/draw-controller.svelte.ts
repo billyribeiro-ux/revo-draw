@@ -29,9 +29,11 @@ import {
   mutateElement,
   addToGroup,
   canApplyRoundnessTypeToElement,
+  cropElement,
   getDefaultRoundnessTypeForElement,
   getElementsInGroup,
   isExcalidrawElement,
+  isImageElement,
   newElement,
   newElementWith,
   newFrameElement,
@@ -91,6 +93,7 @@ import type {
   Arrowhead,
   ExcalidrawElement,
   ExcalidrawFreeDrawElement,
+  ExcalidrawImageElement,
   ExcalidrawLinearElement,
   ExcalidrawTextElement,
   FontFamilyValues,
@@ -224,6 +227,10 @@ export class DrawController {
   #lasso = false;
   #lassoPoints: GlobalPoint[] = [];
   #lassoBaseIds = new Set<string>();
+
+  // image crop — the handle being dragged while in crop mode (croppingElementId
+  // lives on appState; this flags an in-progress crop drag)
+  #cropHandle: TransformHandleType | null = null;
 
   // live modifier-key state for the active gesture (shift/alt)
   #shiftKey = false;
@@ -1732,6 +1739,23 @@ export class DrawController {
   }
 
   /** Enter point-editing for the single selected line/arrow (double-click). */
+  /**
+   * Double-click dispatch (canvas-local coords): an image enters crop mode, a
+   * linear element enters point-editing. Excalidraw's onDoubleClick.
+   */
+  doubleClickAt(clientX: number, clientY: number): void {
+    const { x, y } = this.#toScene(clientX, clientY);
+    const id = this.#hitTest(x, y);
+    if (id) {
+      const el = this.scene.scene.getNonDeletedElementsMap().get(id);
+      if (el && isImageElement(el)) {
+        this.enterCrop(id);
+        return;
+      }
+    }
+    this.enterLineEditor();
+  }
+
   enterLineEditor(): void {
     const selected = this.selectedElements;
     if (selected.length !== 1) {
@@ -1757,6 +1781,47 @@ export class DrawController {
       this.appState.setState({ selectedLinearElement: null });
       this.scene.scene.triggerUpdate();
     }
+  }
+
+  // --- image crop (double-click an image to crop; Excalidraw croppingElementId) ---
+
+  /** True while an image is in crop mode. */
+  get isCropping(): boolean {
+    return this.appState.current.croppingElementId !== null;
+  }
+
+  /** Enter crop mode for an image element (selects it + shows crop handles). */
+  enterCrop(id: string): void {
+    const el = this.scene.scene.getNonDeletedElementsMap().get(id);
+    if (!el || !isImageElement(el)) {
+      return;
+    }
+    this.#setSelection([id]);
+    this.appState.setState({ croppingElementId: id, isCropping: false });
+    this.scene.scene.triggerUpdate();
+  }
+
+  /** Exit crop mode, committing the crop (one history entry). */
+  exitCrop(): void {
+    if (this.appState.current.croppingElementId === null) {
+      return;
+    }
+    this.appState.setState({ croppingElementId: null, isCropping: false });
+    this.#cropHandle = null;
+    this.scene.scene.triggerUpdate();
+    this.#commit();
+  }
+
+  /** Natural pixel dimensions of an image element from the decoded cache, if loaded. */
+  #naturalSize(el: ExcalidrawImageElement): { w: number; h: number } | null {
+    if (!el.fileId) {
+      return null;
+    }
+    const entry = this.imageCache.get(el.fileId);
+    if (!entry) {
+      return null;
+    }
+    return { w: entry.image.naturalWidth, h: entry.image.naturalHeight };
   }
 
   /** Pointer-down while editing a linear element. Returns true if it handled the event. */
@@ -1908,6 +1973,22 @@ export class DrawController {
     }
 
     if (this.activeTool === "selection") {
+      // while cropping an image: a handle drag crops (not resizes); clicking off
+      // the cropped image exits crop mode
+      if (this.isCropping) {
+        const handle = this.#handleAt(x, y);
+        if (handle && handle !== "rotation") {
+          this.#cropHandle = handle;
+          return;
+        }
+        const hit = this.#hitTest(x, y);
+        if (hit !== this.appState.current.croppingElementId) {
+          this.exitCrop();
+          // fall through to normal selection of whatever was clicked
+        } else {
+          return;
+        }
+      }
       // a transform handle on the current selection starts a resize/rotate...
       const handle = this.#handleAt(x, y);
       if (handle) {
@@ -2070,6 +2151,35 @@ export class DrawController {
       return;
     }
 
+    // cropping an image via a crop handle drag
+    if (this.#cropHandle) {
+      const { x, y } = this.#toScene(clientX, clientY);
+      const map = this.scene.scene.getNonDeletedElementsMap();
+      const el = map.get(this.appState.current.croppingElementId ?? "");
+      if (el && isImageElement(el)) {
+        const nat = this.#naturalSize(el);
+        if (nat) {
+          mutateElement(
+            el,
+            map,
+            cropElement(
+              el,
+              map,
+              this.#cropHandle,
+              nat.w,
+              nat.h,
+              x,
+              y,
+              this.#shiftKey ? el.width / el.height : undefined,
+            ),
+          );
+          this.appState.setState({ isCropping: true });
+          this.scene.scene.triggerUpdate();
+        }
+      }
+      return;
+    }
+
     // resizing / rotating the current selection via a transform handle
     if (this.#resizeHandle) {
       const { x, y } = this.#toScene(clientX, clientY);
@@ -2206,6 +2316,14 @@ export class DrawController {
     // end a pan gesture (no scene mutation, no history)
     if (this.#panning) {
       this.#panning = false;
+      return;
+    }
+
+    // end a crop-handle drag (stay in crop mode; commit happens on exitCrop)
+    if (this.#cropHandle) {
+      this.#cropHandle = null;
+      this.appState.setState({ isCropping: false });
+      this.scene.scene.triggerUpdate();
       return;
     }
 

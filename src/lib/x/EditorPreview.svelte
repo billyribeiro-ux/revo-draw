@@ -248,7 +248,11 @@
       controller.deleteSelected();
       e.preventDefault();
     } else if (e.key === 'Escape') {
-      controller.deselect();
+      if (controller.isCropping) {
+        controller.exitCrop();
+      } else {
+        controller.deselect();
+      }
     } else if ((e.metaKey || e.ctrlKey) && (e.key === 'd' || e.key === 'D')) {
       controller.duplicateSelected();
       e.preventDefault();
@@ -664,7 +668,10 @@
     {onpointerup}
     {onwheel}
     {oncontextmenu}
-    ondblclick={() => controller.enterLineEditor()}
+    ondblclick={(e) => {
+      const { x, y } = relative(e as unknown as PointerEvent);
+      controller.doubleClickAt(x, y);
+    }}
   ></canvas>
   <!-- ephemeral laser-pointer trail (SVG; pointer-events:none so the canvas keeps the gesture) -->
   <svg
