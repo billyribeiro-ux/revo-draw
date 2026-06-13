@@ -13,14 +13,19 @@ import {
   bindBindingElement,
   calculateFixedPointForElbowArrowBinding,
   canBecomePolygon,
+  computeBoundTextPosition,
+  doBoundsIntersect,
   getElementsInNewFrame,
   getElementsWithinSelection,
   getElementAbsoluteCoords,
+  getElementBounds,
+  getElementLineSegments,
   getFrameChildren,
   getBoundTextElement,
   getHoveredElementForBinding,
   getTransformHandleTypeFromCoords,
   hitElementItself,
+  intersectElementWithLineSegment,
   embeddableURLValidator,
   getEmbedLink,
   isInvisiblySmallElement,
@@ -28,9 +33,11 @@ import {
   isElbowArrow,
   isEmbeddableElement,
   isFrameLikeElement,
+  isFreeDrawElement,
   isLinearElement,
   isLineElement,
   isPathALoop,
+  isPointInElement,
   isTextElement,
   hasBoundTextElement,
   isTextBindableContainer,
@@ -51,6 +58,8 @@ import {
   getContainerElement,
   getDefaultRoundnessTypeForElement,
   duplicateElements,
+  getFreedrawOutlineAsSegments,
+  getFreedrawOutlinePoints,
   getElementsInGroup,
   getSelectedElementsByGroup,
   getSelectedElements,
@@ -79,6 +88,7 @@ import {
   resizeTest,
   selectGroupsForSelectedElements,
   ShapeCache,
+  shouldTestInside,
   Store,
   syncInvalidIndices,
   syncMovedIndices,
@@ -140,10 +150,14 @@ import {
 
 import {
   clamp,
+  lineSegment,
+  lineSegmentsDistance,
   pointDistance,
   pointFrom,
+  polygon,
   polygonFromPoints,
   polygonIncludesPoint,
+  polygonIncludesPointNonZero,
   roundToStep,
 } from "@excalidraw/math";
 
@@ -173,8 +187,13 @@ import type {
   SceneElementsMap,
   TextAlign,
 } from "@excalidraw/element/types";
-import type { GlobalPoint, LocalPoint, Radians } from "@excalidraw/math";
-import type { EditorInterface } from "@excalidraw/common";
+import type {
+  GlobalPoint,
+  LineSegment,
+  LocalPoint,
+  Radians,
+} from "@excalidraw/math";
+import type { Bounds, EditorInterface } from "@excalidraw/common";
 import type {
   App,
   AppClassProperties,
@@ -388,6 +407,9 @@ export class DrawController {
   // image cache (fileId → loaded image) passed to renderConfig.imageCache
   readonly imageCache = makeImageCache();
   #erasing = false;
+  #eraserLastPoint: GlobalPoint | null = null;
+  #eraserMoved = false;
+  #eraserPendingIds = new Set<string>();
 
   // undo/redo (Store captures snapshots → durable increments → History stacks)
   #store: Store;
@@ -1762,17 +1784,241 @@ export class DrawController {
     this.#laser = null;
   }
 
-  #eraseAt(sceneX: number, sceneY: number): void {
-    const id = this.#hitTest(sceneX, sceneY);
-    if (!id) {
+  #startErasing(sceneX: number, sceneY: number, erase = true): void {
+    this.#erasing = true;
+    this.#eraserMoved = false;
+    this.#eraserPendingIds.clear();
+    this.#eraserLastPoint = pointFrom<GlobalPoint>(sceneX, sceneY);
+    if (erase) {
+      this.#queueElementsAtPointForErasure(sceneX, sceneY, true);
+    }
+  }
+
+  #trackEraser(sceneX: number, sceneY: number, erase: boolean): void {
+    const next = pointFrom<GlobalPoint>(sceneX, sceneY);
+    const previous = this.#eraserLastPoint;
+    if (!previous) {
+      this.#startErasing(sceneX, sceneY, erase);
       return;
     }
-    this.#elements = this.#elements.filter((e) => e.id !== id);
-    if (this.selectedIds.has(id)) {
-      this.#setSelection([...this.selectedIds].filter((s) => s !== id));
+
+    if (pointDistance(previous, next) === 0) {
+      return;
     }
+
+    this.#eraserMoved = true;
+    const segment = lineSegment(previous, next);
+    const elementsMap = this.scene.scene.getNonDeletedElementsMap();
+    for (const element of this.scene.elements) {
+      if (element.locked) {
+        continue;
+      }
+      if (
+        erase === this.#eraserPendingIds.has(element.id) &&
+        !element.groupIds.length
+      ) {
+        continue;
+      }
+      if (this.#eraserSegmentHitsElement(segment, element, elementsMap)) {
+        this.#queueElementForErasure(element, elementsMap, erase);
+      }
+    }
+    this.#eraserLastPoint = next;
+  }
+
+  #queueElementsAtPointForErasure(
+    sceneX: number,
+    sceneY: number,
+    erase: boolean,
+  ): void {
+    const elementsMap = this.scene.scene.getNonDeletedElementsMap();
+    for (const element of this.#elementsAtPosition(sceneX, sceneY)) {
+      this.#queueElementForErasure(element, elementsMap, erase);
+    }
+  }
+
+  #queueElementForErasure(
+    element: NonDeletedExcalidrawElement,
+    elementsMap: NonDeletedSceneElementsMap,
+    erase: boolean,
+  ): void {
+    const ids = new Set<string>([element.id]);
+    const groupId = element.groupIds.at(-1);
+    if (groupId) {
+      for (const grouped of getElementsInGroup(elementsMap, groupId)) {
+        ids.add(grouped.id);
+      }
+    }
+
+    if (hasBoundTextElement(element)) {
+      const boundText = getBoundTextElement(element, elementsMap);
+      if (boundText) {
+        ids.add(boundText.id);
+      }
+    }
+    if (isBoundToContainer(element) && element.containerId) {
+      ids.add(element.containerId);
+    }
+
+    for (const id of ids) {
+      if (erase) {
+        this.#eraserPendingIds.add(id);
+      } else {
+        this.#eraserPendingIds.delete(id);
+      }
+    }
+  }
+
+  #eraserSegmentHitsElement(
+    segment: LineSegment<GlobalPoint>,
+    element: NonDeletedExcalidrawElement,
+    elementsMap: NonDeletedSceneElementsMap,
+  ): boolean {
+    const lastPoint = segment[1];
+    const threshold = isFreeDrawElement(element) ? 15 : element.strokeWidth / 2;
+    const segmentBounds = [
+      Math.min(segment[0][0], segment[1][0]) - threshold,
+      Math.min(segment[0][1], segment[1][1]) - threshold,
+      Math.max(segment[0][0], segment[1][0]) + threshold,
+      Math.max(segment[0][1], segment[1][1]) + threshold,
+    ] as Bounds;
+    const [x1, y1, x2, y2] = getElementBounds(element, elementsMap);
+    const elementBounds = [
+      x1 - threshold,
+      y1 - threshold,
+      x2 + threshold,
+      y2 + threshold,
+    ] as Bounds;
+
+    if (!doBoundsIntersect(segmentBounds, elementBounds)) {
+      return false;
+    }
+
+    if (
+      shouldTestInside(element) &&
+      isPointInElement(lastPoint, element, elementsMap)
+    ) {
+      return true;
+    }
+
+    if (isFreeDrawElement(element)) {
+      const outlinePoints = getFreedrawOutlinePoints(element);
+      const strokeSegments = getFreedrawOutlineAsSegments(
+        element,
+        outlinePoints,
+        elementsMap,
+      );
+      const tolerance = Math.max(2.25, 5 / this.appState.current.zoom.value);
+
+      for (const strokeSegment of strokeSegments) {
+        if (lineSegmentsDistance(strokeSegment, segment) <= tolerance) {
+          return true;
+        }
+      }
+
+      const outline = polygon(
+        ...(outlinePoints.map(([x, y]) =>
+          pointFrom<GlobalPoint>(element.x + x, element.y + y),
+        ) as GlobalPoint[]),
+      );
+      return polygonIncludesPointNonZero(segment[0], outline);
+    }
+
+    if (isArrowElement(element) || (isLineElement(element) && !element.polygon)) {
+      const tolerance = Math.max(
+        element.strokeWidth,
+        (element.strokeWidth * 2) / this.appState.current.zoom.value,
+      );
+      for (const elementSegment of getElementLineSegments(element, elementsMap)) {
+        if (lineSegmentsDistance(elementSegment, segment) <= tolerance) {
+          return true;
+        }
+      }
+      return false;
+    }
+
+    if (
+      intersectElementWithLineSegment(element, elementsMap, segment, 0, true)
+        .length
+    ) {
+      return true;
+    }
+
+    const boundTextElement = getBoundTextElement(element, elementsMap);
+    return !!(
+      boundTextElement &&
+      intersectElementWithLineSegment(
+        {
+          ...boundTextElement,
+          ...computeBoundTextPosition(element, boundTextElement, elementsMap),
+        },
+        elementsMap,
+        segment,
+        0,
+        true,
+      ).length
+    );
+  }
+
+  #finishErasing(): boolean {
+    if (!this.#eraserMoved && this.#eraserLastPoint) {
+      this.#queueElementsAtPointForErasure(
+        this.#eraserLastPoint[0],
+        this.#eraserLastPoint[1],
+        true,
+      );
+    }
+
+    const toDelete = new Set(this.#eraserPendingIds);
+    this.#erasing = false;
+    this.#eraserLastPoint = null;
+    this.#eraserMoved = false;
+    this.#eraserPendingIds.clear();
+
+    if (!toDelete.size) {
+      return false;
+    }
+
+    for (const element of this.#elements) {
+      if (element.frameId && toDelete.has(element.frameId)) {
+        toDelete.add(element.id);
+      }
+      if (
+        isBoundToContainer(element) &&
+        element.containerId &&
+        toDelete.has(element.containerId)
+      ) {
+        toDelete.add(element.id);
+      }
+      if (toDelete.has(element.id) && element.boundElements) {
+        for (const boundElement of element.boundElements) {
+          if (boundElement.type === "text") {
+            toDelete.add(boundElement.id);
+          }
+        }
+      }
+    }
+
+    const deletedElements = this.#elements.filter((element) =>
+      toDelete.has(element.id),
+    );
+    if (!deletedElements.length) {
+      return false;
+    }
+
+    const elementsMap = this.scene.scene.getNonDeletedElementsMap();
+    this.#elements = this.#elements.filter(
+      (element) => !toDelete.has(element.id),
+    );
+    for (const element of deletedElements) {
+      mutateElement(element, elementsMap, { isDeleted: true });
+    }
+    fixBindingsAfterDeletion(this.#elements, deletedElements);
+
     syncInvalidIndices(this.#elements);
     this.scene.replaceAllElements(this.#elements);
+    this.#setSelection([...this.selectedIds].filter((id) => !toDelete.has(id)));
+    return true;
   }
 
   /** Delete the selected element(s) — or, while point-editing, the selected point(s). */
@@ -3494,8 +3740,7 @@ export class DrawController {
 
     // eraser: remove elements under the pointer (drag to erase a path)
     if (this.activeTool === "eraser") {
-      this.#erasing = true;
-      this.#eraseAt(x, y);
+      this.#startErasing(x, y, !mods.altKey);
       return;
     }
 
@@ -3643,7 +3888,7 @@ export class DrawController {
     // erasing along a drag
     if (this.#erasing) {
       const { x, y } = this.#toScene(clientX, clientY);
-      this.#eraseAt(x, y);
+      this.#trackEraser(x, y, !mods.altKey);
       return;
     }
 
@@ -3914,8 +4159,9 @@ export class DrawController {
 
     // end an erase stroke
     if (this.#erasing) {
-      this.#erasing = false;
-      this.#commit();
+      if (this.#finishErasing()) {
+        this.#commit();
+      }
       return;
     }
 

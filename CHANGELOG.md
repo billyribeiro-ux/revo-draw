@@ -5,6 +5,33 @@ Newest first. "Done" = committed on this branch with tests green; "Pending" = no
 
 ## Done
 
+### Web-editor (`/x`) Phase 2 Tier 4 heavy port — #48–72 stub modules — 2026-06-13 (branch `feat/excalidraw-parity-gaps`)
+
+Completed and pushed replacement of the six Excalidraw stub modules (`d3f6ac9`):
+
+- `clients.ts` now provides deterministic upstream-style collaborator colors, initials, and remote
+  cursor rendering instead of no-op renderer stubs.
+- `clipboard.ts`, `data/library.ts`, `data/types.ts`, and `actions/types.ts` now expose concrete
+  Excalidraw-compatible local surfaces instead of broad placeholder types.
+- `i18n.ts` now provides the local English translation/language API needed by scrollbars and
+  library helpers.
+
+Verification: `pnpm check` 0/0, `pnpm test` 172/172, `pnpm build`,
+`probe-x-fix48-72-stub-modules.mjs`, `probe-x-linear.mjs`, and `probe-x-imgerase.mjs`.
+
+### Web-editor (`/x`) Phase 2 Tier 4 heavy port — #17 eraser trail — 2026-06-13 (branch `feat/excalidraw-parity-gaps`)
+
+Completed and pushed eraser trail hit detection (`3c075af`):
+
+- Eraser drag strokes now accumulate every element intersected by each segment between pointer
+  samples instead of only deleting elements under discrete sampled points.
+- Deletion is applied once on pointer-up, preserving one undo entry per stroke.
+- Stationary clicks erase all hit elements under the pointer, and deletion cleanup still handles
+  groups, bound text, frame children, and dangling bindings.
+
+Verification: `pnpm check` 0/0, `pnpm test` 172/172,
+`probe-x-fix17-eraser-trail.mjs`, and `probe-x-imgerase.mjs`.
+
 ### Web-editor (`/x`) Phase 2 Tier 4 heavy port — #2 multi-point linears — 2026-06-12 (branch `feat/excalidraw-parity-gaps`)
 
 Completed and pushed the multi-point line/arrow creation state machine (`f1a2dde`):
