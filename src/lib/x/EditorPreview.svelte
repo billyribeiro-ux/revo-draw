@@ -26,7 +26,7 @@
     AppClassProperties
   } from '@excalidraw/excalidraw/types';
   import type { EditorInterface } from '@excalidraw/common';
-  import { CODES, isDarwin } from '@excalidraw/common';
+  import { CODES, isDarwin, sceneCoordsToViewportCoords } from '@excalidraw/common';
 
   import { DrawController, type Tool } from '$lib/x/draw-controller.svelte.ts';
   import { ICONS } from '$lib/x/icons.ts';
@@ -903,9 +903,13 @@
 
   {#if controller.editingText}
     {@const t = controller.editingText}
+    {@const a = controller.appState.current}
+    {@const textViewport = sceneCoordsToViewportCoords({ sceneX: t.x, sceneY: t.y }, a)}
     <textarea
       class="text-editor"
-      style="left:{t.x}px; top:{t.y}px; font-size:{t.fontSize}px; line-height:{t.lineHeight};"
+      style="left:{textViewport.x}px; top:{textViewport.y}px; width:{t.width *
+        a.zoom.value}px; height:{t.height * a.zoom.value}px; font-size:{t.fontSize *
+        a.zoom.value}px; line-height:{t.lineHeight};"
       value={t.text}
       oninput={(e) => controller.setEditingText(e.currentTarget.value)}
       onblur={() => controller.commitText()}
