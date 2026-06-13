@@ -1713,7 +1713,10 @@ export class DrawController {
   /** Paste the OS clipboard's text as a plain text element (⇧⌘V). */
   async pasteAsPlaintext(clientX?: number, clientY?: number): Promise<void> {
     const text = (await readSystemClipboardText()).trim();
-    if (text) {
+    const fromOS = parseClipboardElements(text);
+    if (fromOS?.length) {
+      this.#pasteElements(fromOS, clientX, clientY);
+    } else if (text) {
       this.#pasteTextElement(text, clientX, clientY);
     }
   }
