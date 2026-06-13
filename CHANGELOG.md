@@ -5,6 +5,22 @@ Newest first. "Done" = committed on this branch with tests green; "Pending" = no
 
 ## Done
 
+### Web-editor (`/x`) Phase 2 Tier 3 property partial completion — 2026-06-12 (branch `feat/excalidraw-parity-gaps`)
+
+Completed and pushed the Tier 3 property partials from `PARITY_REMAINING_WORK.md`, one bug per
+commit with dedicated headless-Chrome probes:
+
+- **#11** Image resize now keeps aspect ratio by default and uses Shift to free distortion
+  (`63dc6f7`, `probe-x-fix11-image-aspect-lock.mjs`).
+- **#52** Non-transparent background color on a selected closeable line now enables polygon fill
+  (`50c6083`, `probe-x-fix52-line-polygon-background.mjs`).
+- **Bound text** Stroke color, opacity, and text-style controls now propagate from selected
+  containers to their bound text labels (`ea946ea`,
+  `probe-x-fix-bound-text-style-propagation.mjs`).
+
+Verification: each commit passed `pnpm check` 0/0, `pnpm test` 172/172, its new probe, and the
+relevant existing regression probes named in the commit body.
+
 ### Web-editor (`/x`) Phase 2 Tier 2 text completion — 2026-06-12 (branch `feat/excalidraw-parity-gaps`)
 
 Completed and pushed the Tier 2 text-editor wiring cluster from `PARITY_REMAINING_WORK.md`, one bug

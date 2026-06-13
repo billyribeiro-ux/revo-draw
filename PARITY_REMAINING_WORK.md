@@ -35,7 +35,7 @@ Dev server: `pnpm dev` (http://localhost:1420/x). Probes: `node scripts/probe-x-
 
 ---
 
-## 1. DONE — Tier 1 + Tier 2 wiring complete, all entries probe-verified & pushed
+## 1. DONE — Tier 1 + Tier 2 + Tier 3 wiring complete, all entries probe-verified & pushed
 
 Each completed row below landed as an isolated commit with a dedicated probe. Every commit also
 passed `pnpm check` 0/0 + 172 unit tests + the relevant existing regression probes.
@@ -50,6 +50,7 @@ passed `pnpm check` 0/0 + 172 unit tests + the relevant existing regression prob
 | #8 double-click text editing flow | `0b63fd0` | selection-mode double-click edits text, creates free text on canvas, or opens bound text on containers | `probe-x-fix08-double-click-text.mjs` |
 | #9 text editor camera transform | `33dff27` | `sceneCoordsToViewportCoords` positions editor overlay and scales dimensions/font by zoom | `probe-x-fix09-text-editor-camera.mjs` |
 | #10 edited text double-renders | `f0c4c70` | active `editingTextId` is filtered from static render element list/map while textarea owns editing | `probe-x-fix10-hide-editing-text-render.mjs` |
+| #11 image resize aspect-lock | `63dc6f7` | image selections invert `shouldMaintainAspectRatio`: no-Shift locks, Shift frees distortion | `probe-x-fix11-image-aspect-lock.mjs` |
 | #12 resize handle teleports | `e9fcf4d` | `getResizeOffsetXY` captured + subtracted on move | `probe-x-fix12-resize-offset.mjs` |
 | #13/#16 group selection/outline | `63d1798` | `selectGroupsForSelectedElements` in `#setSelection` | `probe-x-fix13-group-selection.mjs` |
 | #15 dbl-click deep-enter group | `e0d8230` | `#enterGroup` (App.tsx:6533) sets `editingGroupId` | `probe-x-fix15-dblclick-group.mjs` |
@@ -73,6 +74,8 @@ passed `pnpm check` 0/0 + 172 unit tests + the relevant existing regression prob
 | #40 reset-zoom loses viewport center | `1b66a2d` | `getStateForZoom({viewportX:w/2,viewportY:h/2,nextZoom:1})` | `probe-x-fix40-reset-zoom-center.mjs` |
 | #41 zoom-to-fit uses 0.85 multiplier | `95b632e` | `zoomValueToFitBoundsOnViewport` cap + `roundToStep` floor | `probe-x-fix41-zoom-to-fit.mjs` |
 | #44 Shift+wheel vertical-pans | `156e7cd` | Shift branch pans X by `(deltaY || deltaX) / zoom` | `probe-x-fix44-shift-wheel-horizontal.mjs` |
+| #52 line→polygon background fill | `50c6083` | non-transparent background on selected closeable lines applies `toggleLinePolygonState(line, true)` | `probe-x-fix52-line-polygon-background.mjs` |
+| #bound-text style propagation | `ea946ea` | stroke/opacity/text-style actions expand selected containers to their bound text labels | `probe-x-fix-bound-text-style-propagation.mjs` |
 | UI empty-canvas panels | `e4731d5` | `showProperties` (= `showSelectedShapeActions`) + `statsOpen` gate; Alt+/ toggles stats | `probe-x-fixUI-panel-visibility.mjs` |
 
 **Precision wins (audit wording was looser than real upstream — verified against source):**
@@ -92,13 +95,9 @@ passed `pnpm check` 0/0 + 172 unit tests + the relevant existing regression prob
 
 ✅ Complete. All Tier 2 rows are now in the DONE table above.
 
-### Tier 3 — Property partials (small)
+### Tier 3 — Property partials
 
-| Bug | What's wrong | Wire this | File |
-|---|---|---|---|
-| #11 | resize aspect-lock not inverted for images (shift backwards) | `selectedElements.some(isImageElement) ? !shift : shift` (App.tsx:12661) | `draw-controller.svelte.ts:~2469` |
-| #52 line→polygon | `setBackgroundColor` drops the line-closeable→fill enable | port `actionProperties.tsx:397-421` | `draw-controller.svelte.ts:~515` |
-| #bound-text color | stroke/opacity/font don't propagate to a container's bound text | apply to `getBoundTextElement` too (actionProperties.tsx:322) | `draw-controller.svelte.ts` `#applyStyle`/`#applyTextStyle` |
+✅ Complete. All Tier 3 rows are now in the DONE table above.
 
 ### Tier 4 — Heavy ports (real work, NOT wiring — do last)
 
@@ -158,8 +157,8 @@ run as regression). Audit: `PARITY_E2E_AUDIT.md`, `PARITY_E2E_FINDINGS.json`.
 > `PARITY_REMAINING_WORK.md` first — it has the principle, the done-list with evidence, and the
 > remaining bugs with the exact ported function to wire for each.
 >
-> Work through the remaining bugs **one per commit**, in this order: Tier 3 (property partials)
-> → Tier 4 (heavy: #2 multi-point, #17 eraser trail, #48–72 stub
+> Work through the remaining bugs **one per commit**, in this order: Tier 4 (heavy: #2 multi-point,
+> #17 eraser trail, #48–72 stub
 > modules). For EACH bug follow the verification recipe in §0: read the upstream reference and cite
 > file:line; wire the **already-ported, byte-identical** helper in `src/lib/x/draw-controller.svelte.ts`
 > or `EditorPreview.svelte` (never re-author ported logic); run `pnpm check` (must be 0/0) and the
