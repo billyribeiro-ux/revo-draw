@@ -1,6 +1,6 @@
 # Excalidraw Parity — Remaining Work, Evidence & Continuation Prompt
 
-**Branch:** `feat/excalidraw-parity-gaps` · **As of:** 2026-06-12 · **pnpm:** 11.6.0 (pinned, consistent)
+**Branch:** `feat/excalidraw-parity-gaps` · **As of:** 2026-06-13 · **pnpm:** 11.6.0 (pinned, consistent)
 
 This is the single source of truth for finishing the web-editor (`/x`, `src/lib/x/`) parity
 campaign against `excalidraw-master`. It lists **what's done (with runtime evidence)**, **what's
@@ -55,6 +55,7 @@ passed `pnpm check` 0/0 + 172 unit tests + the relevant existing regression prob
 | #12 resize handle teleports | `e9fcf4d` | `getResizeOffsetXY` captured + subtracted on move | `probe-x-fix12-resize-offset.mjs` |
 | #13/#16 group selection/outline | `63d1798` | `selectGroupsForSelectedElements` in `#setSelection` | `probe-x-fix13-group-selection.mjs` |
 | #15 dbl-click deep-enter group | `e0d8230` | `#enterGroup` (App.tsx:6533) sets `editingGroupId` | `probe-x-fix15-dblclick-group.mjs` |
+| #17 eraser trail | `3c075af` | eraser strokes accumulate segment intersections, delete on pointer-up, support all-hit click fallback and one-gesture undo | `probe-x-fix17-eraser-trail.mjs` |
 | #18/#19 arrow endpoint re/un-bind | `f7b4c8b` | `bindOrUnbindBindingElement` on linear pointer-up | `probe-x-fix18-endpoint-rebind.mjs` |
 | #21 arrow type conversion geometry | `663fe6e` | `changeArrowType` rebuilds from absolute endpoints, resets elbow x/y/angle, reroutes/rebinds | `probe-x-fix21-arrow-type-conversion.mjs` |
 | #22 line/arrow finalize selection | `e120372` | finalize selects created linear element + installs `LinearElementEditor` | `probe-x-fix22-linear-finalize-selection.mjs` |
@@ -104,7 +105,6 @@ passed `pnpm check` 0/0 + 172 unit tests + the relevant existing regression prob
 
 | Bug | Scope | Notes |
 |---|---|---|
-| **#17** | eraser trail (segment-intersection over the drag path, accumulate delete set) | App.tsx:8114 + eraser trail. Current: 1 element per discrete sample. |
 | **#48–72** | the 6 stub modules — replace placeholders with real (or re-exported) impls | `src/lib/excalidraw/clipboard.ts`, `clients.ts`, `i18n.ts`, `data/library.ts`, `data/types.ts`, `actions/types.ts`. These are `[k: string]: unknown` / `declare class` stubs today. |
 
 ### Tier 5 — Visual / layout fidelity (the `/x` page "looks off" vs Excalidraw)
@@ -157,8 +157,7 @@ run as regression). Audit: `PARITY_E2E_AUDIT.md`, `PARITY_E2E_FINDINGS.json`.
 > `PARITY_REMAINING_WORK.md` first — it has the principle, the done-list with evidence, and the
 > remaining bugs with the exact ported function to wire for each.
 >
-> Work through the remaining bugs **one per commit**, in this order: Tier 4 (heavy: #2 multi-point,
-> #17 eraser trail, #48–72 stub
+> Work through the remaining bugs **one per commit**, in this order: Tier 4 (heavy: #48–72 stub
 > modules). For EACH bug follow the verification recipe in §0: read the upstream reference and cite
 > file:line; wire the **already-ported, byte-identical** helper in `src/lib/x/draw-controller.svelte.ts`
 > or `EditorPreview.svelte` (never re-author ported logic); run `pnpm check` (must be 0/0) and the
