@@ -14,7 +14,9 @@ import {
   calculateFixedPointForElbowArrowBinding,
   getElementsInNewFrame,
   getElementsWithinSelection,
+  getElementAbsoluteCoords,
   getFrameChildren,
+  getBoundTextElement,
   getHoveredElementForBinding,
   getTransformHandleTypeFromCoords,
   hitElementItself,
@@ -26,6 +28,8 @@ import {
   isFrameLikeElement,
   isLinearElement,
   isTextElement,
+  hasBoundTextElement,
+  isTextBindableContainer,
   maybeParseEmbedSrc,
   LinearElementEditor,
   moveAllLeft,
@@ -90,8 +94,10 @@ import {
   DEFAULT_FONT_SIZE,
   DEFAULT_GRID_SIZE,
   DEFAULT_TEXT_ALIGN,
+  DEFAULT_VERTICAL_ALIGN,
   MAX_ZOOM,
   MIN_ZOOM,
+  VERTICAL_ALIGN,
   getFontString,
   getGridPoint,
   getLineHeight,
@@ -147,6 +153,7 @@ import type {
   ExcalidrawImageElement,
   ExcalidrawLinearElement,
   ExcalidrawTextElement,
+  ExcalidrawTextContainer,
   FontFamilyValues,
   NonDeleted,
   NonDeletedExcalidrawElement,
@@ -2451,6 +2458,144 @@ export class DrawController {
     return topLayerFrame;
   }
 
+  #textBindableContainerAtPosition(
+    x: number,
+    y: number,
+  ): ExcalidrawTextContainer | null {
+    const selected = this.selectedElements;
+    if (selected.length === 1) {
+      return isTextBindableContainer(selected[0], false) ? selected[0] : null;
+    }
+
+    const elementsMap = this.scene.scene.getNonDeletedElementsMap();
+    const point = pointFrom<GlobalPoint>(x, y);
+    for (let index = this.scene.elements.length - 1; index >= 0; index -= 1) {
+      const element = this.scene.elements[index]!;
+      if (element.isDeleted || element.locked) {
+        continue;
+      }
+      if (
+        isArrowElement(element) &&
+        hitElementItself({
+          point,
+          element,
+          elementsMap,
+          threshold: 10 / this.appState.current.zoom.value,
+        })
+      ) {
+        return isTextBindableContainer(element, false) ? element : null;
+      }
+
+      const [x1, y1, x2, y2] = getElementAbsoluteCoords(
+        element,
+        elementsMap,
+      );
+      if (x1 < x && x < x2 && y1 < y && y < y2) {
+        if (isFrameLikeElement(element)) {
+          continue;
+        }
+        return isTextBindableContainer(element, false) ? element : null;
+      }
+    }
+
+    return null;
+  }
+
+  #startTextToolEditing(
+    x: number,
+    y: number,
+    mods: PointerMods,
+  ): void {
+    const elementsMap = this.scene.scene.getNonDeletedElementsMap();
+    const hitElement =
+      this.#elementsAtPosition(x, y, { includeLockedElements: true }).at(-1) ??
+      null;
+    let container = this.#textBindableContainerAtPosition(x, y);
+
+    if (isTextElement(hitElement) && hitElement.containerId) {
+      container = getContainerElement(hitElement, elementsMap);
+    } else if (
+      isTextBindableContainer(hitElement, false) &&
+      hasBoundTextElement(hitElement)
+    ) {
+      container = hitElement;
+      x = hitElement.x + hitElement.width / 2;
+      y = hitElement.y + hitElement.height / 2;
+    }
+
+    const existingText = container
+      ? getBoundTextElement(container, elementsMap)
+      : null;
+    if (container && existingText) {
+      this.#setSelection([container.id]);
+      this.editingTextId = existingText.id;
+      this.#resetToolAfterCreation();
+      return;
+    }
+
+    const insertAtParentCenter = !mods.altKey;
+    const topLayerFrame = this.#topLayerFrameAtSceneCoords({ x, y });
+    const centeredContainer = insertAtParentCenter ? container : null;
+    const textX = centeredContainer
+      ? centeredContainer.x + centeredContainer.width / 2
+      : x;
+    const textY = centeredContainer
+      ? centeredContainer.y + centeredContainer.height / 2
+      : y;
+    const textStyle = this.#textStyle();
+    const el = newTextElement({
+      text: "",
+      x: textX,
+      y: textY,
+      frameId: container
+        ? container.frameId
+        : topLayerFrame
+          ? topLayerFrame.id
+          : null,
+      containerId: container ? container.id : undefined,
+      groupIds: container?.groupIds ?? [],
+      textAlign: centeredContainer ? "center" : textStyle.textAlign,
+      verticalAlign: centeredContainer
+        ? VERTICAL_ALIGN.MIDDLE
+        : DEFAULT_VERTICAL_ALIGN,
+      angle: container
+        ? isArrowElement(container)
+          ? (0 as Radians)
+          : container.angle
+        : (0 as Radians),
+      ...this.#createStyle(),
+      fontFamily: textStyle.fontFamily,
+      fontSize: textStyle.fontSize,
+    });
+
+    if (container) {
+      mutateElement(container, elementsMap, {
+        boundElements: (container.boundElements || []).concat({
+          type: "text",
+          id: el.id,
+        }),
+      });
+      redrawTextBoundingBox(el, container, this.scene.scene);
+      const containerIndex = this.#elements.findIndex(
+        (element) => element.id === container.id,
+      );
+      this.#elements.splice(
+        containerIndex === -1 ? this.#elements.length : containerIndex + 1,
+        0,
+        el,
+      );
+      syncInvalidIndices(this.#elements);
+      this.scene.replaceAllElements(this.#elements);
+      this.#setSelection([container.id]);
+    } else {
+      this.#elements.push(el);
+      syncInvalidIndices(this.#elements);
+      this.scene.replaceAllElements(this.#elements);
+      this.#select(el.id);
+    }
+    this.editingTextId = el.id;
+  }
+
   #select(id: string | null): void {
     this.#setSelection(id ? [id] : []);
   }
@@ -3051,21 +3196,7 @@ export class DrawController {
 
     // text tool: click to place an empty text element and start editing it
     if (this.activeTool === "text") {
-      this.#select(null);
-      const topLayerFrame = this.#topLayerFrameAtSceneCoords({ x, y });
-      const el = newTextElement({
-        text: "",
-        x,
-        y,
-        frameId: topLayerFrame ? topLayerFrame.id : null,
-        ...this.#createStyle(),
-        ...this.#textStyle(),
-      });
-      this.#elements.push(el);
-      syncInvalidIndices(this.#elements);
-      this.scene.replaceAllElements(this.#elements);
-      this.#select(el.id);
-      this.editingTextId = el.id;
+      this.#startTextToolEditing(x, y, mods);
       return;
     }
 
