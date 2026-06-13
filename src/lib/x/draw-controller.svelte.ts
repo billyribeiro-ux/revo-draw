@@ -12,6 +12,7 @@ import {
   addElementsToFrame,
   bindBindingElement,
   calculateFixedPointForElbowArrowBinding,
+  canBecomePolygon,
   getElementsInNewFrame,
   getElementsWithinSelection,
   getElementAbsoluteCoords,
@@ -27,6 +28,7 @@ import {
   isEmbeddableElement,
   isFrameLikeElement,
   isLinearElement,
+  isLineElement,
   isTextElement,
   hasBoundTextElement,
   isTextBindableContainer,
@@ -78,6 +80,7 @@ import {
   Store,
   syncInvalidIndices,
   syncMovedIndices,
+  toggleLinePolygonState,
   transformElements,
   updateBoundElements,
   wrapText,
@@ -101,6 +104,7 @@ import {
   getFontString,
   getGridPoint,
   getLineHeight,
+  isTransparent,
   randomId,
   randomInteger,
   ROUNDNESS,
@@ -653,7 +657,31 @@ export class DrawController {
     this.#applyStyle({ strokeColor: color }, { currentItemStrokeColor: color });
   }
   setBackgroundColor(color: string): void {
-    this.#applyStyle({ backgroundColor: color }, { currentItemBackgroundColor: color });
+    const selected = this.selectedElements;
+    const shouldEnablePolygon =
+      selected.length > 0 &&
+      !isTransparent(color) &&
+      selected.every((el) => isLineElement(el) && canBecomePolygon(el.points));
+
+    if (!shouldEnablePolygon) {
+      this.#applyStyle({ backgroundColor: color }, { currentItemBackgroundColor: color });
+      return;
+    }
+
+    this.appState.setState({ currentItemBackgroundColor: color });
+    const map = this.scene.scene.getNonDeletedElementsMap();
+    for (const el of selected) {
+      if (!isLineElement(el)) {
+        continue;
+      }
+      mutateElement(el, map, {
+        backgroundColor: color,
+        ...(toggleLinePolygonState(el, true) ?? {}),
+      });
+      ShapeCache.delete(el);
+    }
+    this.scene.scene.triggerUpdate();
+    this.#commit();
   }
   setStrokeWidth(width: number): void {
     this.#applyStyle({ strokeWidth: width }, { currentItemStrokeWidth: width });
