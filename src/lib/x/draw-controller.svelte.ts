@@ -43,6 +43,7 @@ import {
   getDefaultRoundnessTypeForElement,
   duplicateElements,
   getElementsInGroup,
+  getSelectedElementsByGroup,
   getSelectedElements,
   getSelectedGroupIdForElement,
   getVisibleSceneBounds,
@@ -1204,13 +1205,23 @@ export class DrawController {
     this.#commit();
   }
 
-  /** Align the selection (Excalidraw actionAlign). Needs ≥2 elements. */
+  /** Align the selection (Excalidraw actionAlign). Needs ≥2 selected groups. */
   alignSelected(position: "start" | "center" | "end", axis: "x" | "y"): void {
     const sel = this.selectedElements;
-    if (sel.length < 2) {
+    const elementsMap = this.scene.scene.getNonDeletedElementsMap();
+    if (
+      getSelectedElementsByGroup([...sel], elementsMap, this.appState.current)
+        .length <= 1 ||
+      sel.some((el) => isFrameLikeElement(el))
+    ) {
       return;
     }
-    alignElements([...sel], { position, axis }, this.scene.scene, this.appState.current);
+    alignElements(
+      [...sel],
+      { position, axis },
+      this.scene.scene,
+      this.appState.current,
+    );
     this.scene.scene.triggerUpdate();
     this.#commit();
   }
