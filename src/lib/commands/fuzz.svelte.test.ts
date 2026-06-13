@@ -122,14 +122,23 @@ function runFuzz(seed: number, ops: number): { ops: number; checks: number; seed
 
 describe('§14.3 undo/redo fuzz invariant', () => {
 	const SEEDS = [1, 7, 42, 1337, 90210];
+	// Each case runs a synchronous 500-op fuzz with a deep-equal check after every op, which is
+	// inherently heavier than vitest's 5s default unit-test timeout (it can take several seconds on
+	// a loaded host). Give it an explicit, generous budget so a slow box reports a real failure
+	// rather than a spurious timeout — the op count and assertions are unchanged.
+	const FUZZ_TIMEOUT_MS = 30_000;
 	for (const seed of SEEDS) {
-		it(`do/undo/redo deep-equals at every step (seed=${seed}, 500 ops)`, () => {
-			const res = runFuzz(seed, 500);
-			// eslint-disable-next-line no-console
-			console.log(`[fuzz] seed=${res.seed} ops=${res.ops} assertions=${res.checks} PASS`);
-			expect(res.ops).toBe(500);
-			expect(res.checks).toBeGreaterThan(900);
-		});
+		it(
+			`do/undo/redo deep-equals at every step (seed=${seed}, 500 ops)`,
+			() => {
+				const res = runFuzz(seed, 500);
+				// eslint-disable-next-line no-console
+				console.log(`[fuzz] seed=${res.seed} ops=${res.ops} assertions=${res.checks} PASS`);
+				expect(res.ops).toBe(500);
+				expect(res.checks).toBeGreaterThan(900);
+			},
+			FUZZ_TIMEOUT_MS,
+		);
 	}
 });
 
