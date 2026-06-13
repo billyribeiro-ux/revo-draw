@@ -129,6 +129,35 @@ describe("DrawController — generic-create gesture", () => {
     expect(c.scene.elements.length).toBe(0);
   });
 
+  it("reports selected stats relative to drawing bounds instead of raw negative world coordinates", () => {
+    const c = new DrawController();
+
+    c.setTool("rectangle");
+    c.pointerDown(-200, -120);
+    c.pointerMove(-80, -20);
+    c.pointerUp();
+
+    expect(c.selectedStats).toMatchObject({
+      x: 0,
+      y: 0,
+      width: 120,
+      height: 100,
+    });
+
+    c.setTool("rectangle");
+    c.pointerDown(100, 40);
+    c.pointerMove(220, 140);
+    c.pointerUp();
+
+    expect(c.selectedStats).toMatchObject({
+      x: 300,
+      y: 160,
+      width: 120,
+      height: 100,
+    });
+    expect(c.selectedStats?.y).toBeGreaterThanOrEqual(0);
+  });
+
   it("selection tool hit-tests an element on its outline and clears on a miss", () => {
     const c = new DrawController();
     // draw a transparent rectangle 100,100 → 300,200

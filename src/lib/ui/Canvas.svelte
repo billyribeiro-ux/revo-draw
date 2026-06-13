@@ -137,6 +137,10 @@
 		cv.addEventListener('dblclick', onDoubleClick);
 		cv.addEventListener('contextmenu', onContextMenu);
 		cv.addEventListener('wheel', onWheel, { passive: false });
+		window.addEventListener('pointerdown', onWindowPointerDown, true);
+		window.addEventListener('pointermove', onWindowPointerMove);
+		window.addEventListener('pointerup', onPointerUp);
+		window.addEventListener('pointercancel', onPointerUp);
 		return () => {
 			cv.removeEventListener('pointerdown', onPointerDown);
 			cv.removeEventListener('pointermove', onPointerMove);
@@ -145,6 +149,10 @@
 			cv.removeEventListener('dblclick', onDoubleClick);
 			cv.removeEventListener('contextmenu', onContextMenu);
 			cv.removeEventListener('wheel', onWheel);
+			window.removeEventListener('pointerdown', onWindowPointerDown, true);
+			window.removeEventListener('pointermove', onWindowPointerMove);
+			window.removeEventListener('pointerup', onPointerUp);
+			window.removeEventListener('pointercancel', onPointerUp);
 			// Cancel any in-flight throttled move RAF so it can't fire after unmount (mid-gesture nav).
 			if (rafId !== null) {
 				cancelAnimationFrame(rafId);
@@ -159,6 +167,7 @@
 	}
 
 	let spaceDown = $state(false);
+	let activePointerId: number | null = null;
 
 	function onPointerDown(e: PointerEvent): void {
 		if (e.button !== 0 && e.button !== 1) return;
@@ -169,10 +178,16 @@
 			space: spaceDown,
 			middle: e.button === 1
 		});
+		activePointerId = editor.isInteracting ? e.pointerId : null;
 		// Focus the canvas for keyboard shortcuts — but NOT when a text edit just opened, or we'd
 		// steal focus from (and blur-commit) the inline text editor that pointerDown just started.
 		if (editor.editingTextId === null) canvasEl?.focus();
 		cursor = editor.cursorFor(localPoint(e));
+	}
+
+	function onWindowPointerDown(e: PointerEvent): void {
+		if (!editor.isInteracting || e.target === canvasEl) return;
+		finishPointerGesture(e);
 	}
 
 	// During an active gesture, coalesce pointer moves to one per animation frame (matching
@@ -188,6 +203,7 @@
 	}
 
 	function onPointerMove(e: PointerEvent): void {
+		if (activePointerId !== null && e.pointerId !== activePointerId) return;
 		const p = localPoint(e);
 		if (editor.isInteracting) {
 			pendingMove = { x: p.x, y: p.y, alt: e.altKey, shift: e.shiftKey };
@@ -197,7 +213,17 @@
 		}
 	}
 
-	function onPointerUp(e: PointerEvent): void {
+	function onWindowPointerMove(e: PointerEvent): void {
+		if (!editor.isInteracting) return;
+		if (activePointerId !== null && e.pointerId !== activePointerId) return;
+		if (e.buttons === 0) {
+			finishPointerGesture(e);
+			return;
+		}
+		onPointerMove(e);
+	}
+
+	function finishPointerGesture(e: PointerEvent): void {
 		// Apply any pending (RAF-throttled) move so the gesture ends at the true final position.
 		if (rafId !== null) {
 			cancelAnimationFrame(rafId);
@@ -207,7 +233,19 @@
 		const wasCreating = editor.tool !== 'select';
 		editor.pointerUp();
 		if (wasCreating) editor.finishCreate();
+		activePointerId = null;
 		cursor = editor.cursorFor(localPoint(e));
+	}
+
+	function onPointerUp(e: PointerEvent): void {
+		if (!editor.isInteracting && activePointerId === null) return;
+		if (activePointerId !== null && e.pointerId !== activePointerId) return;
+		finishPointerGesture(e);
+		try {
+			(e.target as globalThis.Element).releasePointerCapture?.(e.pointerId);
+		} catch {
+			// Pointer capture may already be released when the window-level listener sees pointerup.
+		}
 	}
 
 	function onDoubleClick(e: MouseEvent): void {
