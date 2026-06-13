@@ -3,6 +3,7 @@
   // property panel: Font family, Font size (S/M/L/XL), Text align. Mirrors
   // SelectedShapeActions' font section (actionChangeFontFamily / FontSize /
   // TextAlign). No controller imports — purely props in / callback out.
+  import XIcon from '$lib/x/XIcon.svelte';
 
   // Excalidraw's `TextAlign` resolves to `string` (TEXT_ALIGN has no `as const`),
   // so the prop is `string`; the internal option set keeps the real values.
@@ -31,17 +32,17 @@
     {
       value: 5, // Excalifont — hand-drawn
       label: 'Hand-drawn',
-      icon: `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round"><path d="M3 15c2-7 4-9 5-9s1 4 2 4 2-6 3-6 1 9 4 11"/></svg>`,
+      icon: 'font-hand',
     },
     {
       value: 6, // Nunito — normal
       label: 'Normal',
-      icon: `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round"><path d="M5 16V6.5a2.5 2.5 0 0 1 5 0V16M5 11h5M15 6v10"/></svg>`,
+      icon: 'font-normal',
     },
     {
       value: 8, // Comic Shanns — code
       label: 'Code',
-      icon: `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round"><path d="m7 6-4 4 4 4M13 6l4 4-4 4"/></svg>`,
+      icon: 'font-code',
     },
   ];
 
@@ -57,17 +58,17 @@
     {
       value: 'left',
       label: 'Left',
-      icon: `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M4 6h12M4 10h8M4 14h12"/></svg>`,
+      icon: 'align-left',
     },
     {
       value: 'center',
       label: 'Center',
-      icon: `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M4 6h12M6 10h8M4 14h12"/></svg>`,
+      icon: 'align-center',
     },
     {
       value: 'right',
       label: 'Right',
-      icon: `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M4 6h12M8 10h8M4 14h12"/></svg>`,
+      icon: 'align-right',
     },
   ];
 </script>
@@ -86,7 +87,7 @@
           aria-pressed={fontFamily === opt.value}
           onclick={() => onFontFamily(opt.value)}
         >
-          {@html opt.icon}
+          <XIcon name={opt.icon} />
         </button>
       {/each}
     </div>
@@ -124,7 +125,7 @@
           aria-pressed={textAlign === opt.value}
           onclick={() => onTextAlign(opt.value)}
         >
-          {@html opt.icon}
+          <XIcon name={opt.icon} />
         </button>
       {/each}
     </div>

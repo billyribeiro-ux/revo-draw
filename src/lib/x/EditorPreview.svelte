@@ -3,6 +3,7 @@
   // reactive DrawController. Draw shapes by dragging; with the selection tool, click a shape to
   // select it and the interactive overlay paints Excalidraw's selection box + transform handles.
   import rough from 'roughjs/bin/rough';
+  import { SvelteMap } from 'svelte/reactivity';
 
   import '$lib/x/css/theme.css';
 
@@ -29,7 +30,7 @@
   import { CODES, isDarwin, sceneCoordsToViewportCoords } from '@excalidraw/common';
 
   import { DrawController, type Tool } from '$lib/x/draw-controller.svelte.ts';
-  import { ICONS } from '$lib/x/icons.ts';
+  import XIcon from '$lib/x/XIcon.svelte';
   import StyleControls from '$lib/x/StyleControls.svelte';
   import TextControls from '$lib/x/TextControls.svelte';
   import ArrowheadControls from '$lib/x/ArrowheadControls.svelte';
@@ -124,6 +125,33 @@
   function relative(e: PointerEvent): { x: number; y: number } {
     const rect = (e.currentTarget as HTMLCanvasElement).getBoundingClientRect();
     return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+  }
+
+  function attachFileInput(node: HTMLInputElement): () => void {
+    fileInput = node;
+    return () => {
+      if (fileInput === node) {
+        fileInput = undefined;
+      }
+    };
+  }
+
+  function attachStaticCanvas(node: HTMLCanvasElement): () => void {
+    staticCanvas = node;
+    return () => {
+      if (staticCanvas === node) {
+        staticCanvas = undefined;
+      }
+    };
+  }
+
+  function attachInteractiveCanvas(node: HTMLCanvasElement): () => void {
+    interactiveCanvas = node;
+    return () => {
+      if (interactiveCanvas === node) {
+        interactiveCanvas = undefined;
+      }
+    };
   }
 
   function onpointerdown(e: PointerEvent): void {
@@ -299,7 +327,7 @@
     { label: 'Open…', shortcut: '⌘O', action: () => void controller.openFile() },
     { label: 'Save to…', shortcut: '⌘S', action: () => void controller.saveToFile() },
     'separator' as const,
-    { label: 'Reset the canvas', icon: ICONS.trash, action: () => controller.clear() },
+    { label: 'Reset the canvas', icon: 'trash', action: () => controller.clear() },
     { label: 'Zoom to fit', action: () => controller.zoomToFit() },
     { label: 'Scroll back to content', action: () => controller.scrollToContent() },
     { label: 'Reset view', action: () => controller.resetView() },
@@ -538,7 +566,7 @@
       ? scene.elements.filter((element) => element.id !== editingTextId)
       : scene.elements;
     const baseElementsMap = scene.scene.getNonDeletedElementsMap();
-    const elementsMap = editingTextId ? new Map(baseElementsMap) : baseElementsMap;
+    const elementsMap = editingTextId ? new SvelteMap(baseElementsMap) : baseElementsMap;
     if (editingTextId) {
       elementsMap.delete(editingTextId);
     }
@@ -550,7 +578,7 @@
       imageCache: controller.imageCache as unknown as StaticCanvasRenderConfig['imageCache'],
       renderGrid: appState.current.gridModeEnabled,
       isExporting: false,
-      embedsValidationStatus: new Map(),
+      embedsValidationStatus: new SvelteMap() as StaticCanvasRenderConfig['embedsValidationStatus'],
       elementsPendingErasure: new Set(),
       pendingFlowchartNodes: null,
       theme: appState.current.theme
@@ -591,11 +619,11 @@
     } as unknown as AppClassProperties;
 
     const renderConfig: InteractiveCanvasRenderConfig = {
-      remoteSelectedElementIds: new Map(),
-      remotePointerViewportCoords: new Map(),
-      remotePointerUserStates: new Map(),
-      remotePointerUsernames: new Map(),
-      remotePointerButton: new Map(),
+      remoteSelectedElementIds: new SvelteMap() as InteractiveCanvasRenderConfig['remoteSelectedElementIds'],
+      remotePointerViewportCoords: new SvelteMap() as InteractiveCanvasRenderConfig['remotePointerViewportCoords'],
+      remotePointerUserStates: new SvelteMap() as InteractiveCanvasRenderConfig['remotePointerUserStates'],
+      remotePointerUsernames: new SvelteMap() as InteractiveCanvasRenderConfig['remotePointerUsernames'],
+      remotePointerButton: new SvelteMap() as InteractiveCanvasRenderConfig['remotePointerButton'],
       selectionColor: '#6965db',
       lastViewportPosition: { x: 0, y: 0 },
       renderScrollbars: false
@@ -623,11 +651,11 @@
 <svelte:window {onkeydown} {onkeyup} />
 
 <input
-  bind:this={fileInput}
   type="file"
   accept="image/*"
   style="display:none"
   onchange={onImagePicked}
+  {@attach attachFileInput}
 />
 
 <div class="excalidraw" class:theme--dark={controller.theme === 'dark'}>
@@ -650,7 +678,7 @@
           aria-label={TOOL_INFO[tool]?.label ?? tool}
           onclick={() => controller.setTool(tool)}
         >
-          {#if ICONS[tool]}{@html ICONS[tool]}{:else}{tool}{/if}
+          <XIcon name={tool} />
         </button>
       </Tooltip>
     {/each}
@@ -871,9 +899,8 @@
 {/if}
 
 <div class="canvas-wrap">
-  <canvas bind:this={staticCanvas} class="layer"></canvas>
+  <canvas class="layer" {@attach attachStaticCanvas}></canvas>
   <canvas
-    bind:this={interactiveCanvas}
     class="layer"
     class:grab={controller.activeTool === 'hand'}
     {onpointerdown}
@@ -885,6 +912,7 @@
       const { x, y } = relative(e as unknown as PointerEvent);
       controller.doubleClickAt(x, y);
     }}
+    {@attach attachInteractiveCanvas}
   ></canvas>
   <!-- ephemeral laser-pointer trail (SVG; pointer-events:none so the canvas keeps the gesture) -->
   <svg
