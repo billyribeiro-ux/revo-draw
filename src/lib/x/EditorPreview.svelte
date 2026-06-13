@@ -470,6 +470,15 @@
     } else if (e.code === CODES.TWO && e.shiftKey && !e.altKey && !e.metaKey && !e.ctrlKey) {
       controller.zoomToSelection(); // ⇧2 (actionZoomToFitSelection)
       e.preventDefault();
+    } else if (
+      !e.metaKey &&
+      !e.ctrlKey &&
+      !e.altKey &&
+      !e.shiftKey &&
+      (e.key === 'q' || e.key === 'Q')
+    ) {
+      controller.toggleToolLock(); // Q (tool lock / keep selected tool active)
+      e.preventDefault();
     } else if (e.key === '?') {
       helpOpen = true;
     } else if (!e.metaKey && !e.ctrlKey && !e.altKey && TOOL_KEYS[e.key]) {

@@ -277,6 +277,7 @@ export class DrawController {
   readonly scene = new EditorScene();
   readonly appState = new EditorAppState();
   activeTool = $state<Tool>("rectangle");
+  activeToolLocked = $state(false);
   /** The set of selected element ids (reactive — drives the interactive overlay). */
   readonly selectedIds = new SvelteSet<string>();
   editingTextId = $state<string | null>(null);
@@ -454,6 +455,24 @@ export class DrawController {
       this.appState.setState({ selectedLinearElement: null });
     }
     this.activeTool = tool;
+    if (tool === "selection") {
+      this.activeToolLocked = false;
+    }
+  }
+
+  toggleToolLock(): void {
+    if (this.activeToolLocked) {
+      this.activeToolLocked = false;
+      this.setTool("selection");
+    } else {
+      this.activeToolLocked = true;
+    }
+  }
+
+  #resetToolAfterCreation(): void {
+    if (!this.activeToolLocked) {
+      this.activeTool = "selection";
+    }
   }
 
   // --- camera (pan / zoom) ---
@@ -1070,7 +1089,7 @@ export class DrawController {
       this.scene.replaceAllElements(this.#elements);
     }
     this.#commit();
-    this.activeTool = "selection";
+    this.#resetToolAfterCreation();
   }
 
   /** Clear the current selection (and exit any point-editor). */
@@ -1358,7 +1377,7 @@ export class DrawController {
     syncInvalidIndices(this.#elements);
     this.scene.replaceAllElements(this.#elements);
     this.#select(el.id);
-    this.activeTool = "selection";
+    this.#resetToolAfterCreation();
     this.scene.scene.triggerUpdate();
     this.#commit();
   }
@@ -3265,7 +3284,7 @@ export class DrawController {
       this.#select(creating.id);
       this.pendingEmbedId = creating.id;
       this.#commit();
-      this.activeTool = "selection";
+      this.#resetToolAfterCreation();
       return;
     }
 
@@ -3307,7 +3326,8 @@ export class DrawController {
     // one durable history entry per completed gesture (no-op if nothing changed)
     this.#commit();
 
-    // Excalidraw default: revert to selection after drawing one element
-    this.activeTool = "selection";
+    // Excalidraw default: revert to selection after drawing one element unless
+    // the active tool is locked (Q / tool pin).
+    this.#resetToolAfterCreation();
   }
 }
