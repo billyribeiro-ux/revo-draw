@@ -23,24 +23,25 @@ ws.onmessage = (e) => { const m = JSON.parse(e.data.toString()); if (m.id && pen
 await send('Runtime.enable');
 await send('Page.enable');
 const ev = async (x) => { const r = await send('Runtime.evaluate', { expression: x, awaitPromise: true, returnByValue: true }); if (r.exceptionDetails) return 'ERR ' + (r.exceptionDetails.exception?.description ?? JSON.stringify(r.exceptionDetails)); return r.result.value; };
-const mouse = (type, x, y, buttons) => send('Input.dispatchMouseEvent', { type, x, y, button: 'left', buttons, clickCount: 1 });
+const mouse = (type, x, y, buttons) => send('Input.dispatchMouseEvent', { type, x, y, button: type === 'mouseMoved' && buttons === 0 ? 'none' : 'left', buttons, clickCount: 1 });
 const drag = async (x1, y1, x2, y2) => { await mouse('mouseMoved', x1, y1, 0); await mouse('mousePressed', x1, y1, 1); await sleep(30); await mouse('mouseMoved', (x1 + x2) / 2, (y1 + y2) / 2, 1); await sleep(20); await mouse('mouseMoved', x2, y2, 1); await sleep(30); await mouse('mouseReleased', x2, y2, 0); await sleep(50); };
 const click = async (x, y) => { await mouse('mouseMoved', x, y, 0); await mouse('mousePressed', x, y, 1); await sleep(20); await mouse('mouseReleased', x, y, 0); await sleep(40); };
 for (let i = 0; i < 80; i++) { if ((await ev('!!window.__draw')) === true) break; await sleep(250); }
 await ev(`window.__draw.clear(); localStorage.clear(); location.reload()`); await sleep(1500);
 for (let i = 0; i < 80; i++) { if ((await ev('!!window.__draw')) === true) break; await sleep(250); }
+await mouse('mouseMoved', 200, 200, 0);
 
 const off = await ev(`(()=>{const cs=document.querySelectorAll('.canvas-wrap canvas.layer');const r=cs[cs.length-1].getBoundingClientRect();return {left:Math.round(r.left),top:Math.round(r.top)};})()`);
 const vp = (sx, sy) => [sx + off.left, sy + off.top];
 
 // a filled target shape far from the arrow's free end
 await ev(`window.__draw.setTool('rectangle'); window.__draw.setBackgroundColor('#a5d8ff'); window.__draw.setFillStyle('solid');`);
-await drag(...vp(520, 300), ...vp(600, 380));
+await drag(...vp(680, 300), ...vp(760, 380));
 // an arrow whose END (point 1) is in EMPTY space (not bound)
 await ev(`window.__draw.setTool('arrow');`);
-await drag(...vp(250, 340), ...vp(360, 340));
+await drag(...vp(420, 340), ...vp(540, 340));
 await ev(`window.__draw.setTool('selection');`);
-await click(...vp(305, 340)); // select arrow body
+await click(...vp(480, 340)); // select arrow body
 await ev(`window.__draw.enterLineEditor();`); await sleep(30);
 
 const arrowEl = () => `window.__draw.scene.elements.find(e=>e.type==='arrow')`;
@@ -50,14 +51,14 @@ const rectId = await ev(`window.__draw.scene.elements.find(e=>e.type==='rectangl
 
 const bindBefore = await endBindingOf(); // expect null (free end)
 
-// select the END point so the drag moves it, then drag it ONTO the shape (~560,340)
+// select the END point so the drag moves it, then drag it ONTO the shape (~720,340)
 let tip = await tipGlobal();
-await drag(...vp(tip.x, tip.y), ...vp(560, 340)); await sleep(30);
+await drag(...vp(tip.x, tip.y), ...vp(720, 340)); await sleep(30);
 const bindAfterOn = await endBindingOf(); // expect rectId (bound)
 
-// drag the end back OFF the shape into empty space (~360,340)
+// drag the end back OFF the shape into empty space (~540,340)
 tip = await tipGlobal();
-await drag(...vp(tip.x, tip.y), ...vp(360, 340)); await sleep(30);
+await drag(...vp(tip.x, tip.y), ...vp(540, 340)); await sleep(30);
 const bindAfterOff = await endBindingOf(); // expect null (un-bound)
 
 const startedFree = bindBefore === null;

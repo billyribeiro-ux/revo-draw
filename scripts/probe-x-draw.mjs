@@ -43,6 +43,8 @@ const ev = async (x) => {
 };
 
 const drag = async (x1, y1, x2, y2) => {
+  await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: x1, y: y1, button: 'none', buttons: 0 });
+  await sleep(20);
   await send('Input.dispatchMouseEvent', { type: 'mousePressed', x: x1, y: y1, button: 'left', buttons: 1, clickCount: 1 });
   await sleep(30);
   await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: x2, y: y2, button: 'left', buttons: 1 });
@@ -55,12 +57,13 @@ const drag = async (x1, y1, x2, y2) => {
 for (let i = 0; i < 80; i++) { if ((await ev('!!window.__draw')) === true) break; await sleep(250); }
 // fresh scene: clear any element restored from a prior run’s localStorage
 await ev(`window.__draw.clear()`);
+await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 200, y: 200, button: 'none', buttons: 0 });
 
 const results = [];
 const shapes = [
-  { tool: 'rectangle', box: [200, 160, 420, 300] },
-  { tool: 'ellipse', box: [480, 170, 660, 330] },
-  { tool: 'diamond', box: [260, 360, 460, 500] }
+  { tool: 'rectangle', box: [420, 180, 640, 320] },
+  { tool: 'ellipse', box: [720, 190, 900, 350] },
+  { tool: 'diamond', box: [470, 420, 670, 560] }
 ];
 
 for (const s of shapes) {

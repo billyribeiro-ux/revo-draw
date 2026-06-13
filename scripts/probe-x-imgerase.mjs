@@ -15,24 +15,25 @@ await new Promise((r) => (ws.onopen = r));
 ws.onmessage = (e) => { const m = JSON.parse(e.data.toString()); if (m.id && pending.has(m.id)) { pending.get(m.id)(m.result); pending.delete(m.id); } };
 await send('Runtime.enable');
 const ev = async (x) => { const r = await send('Runtime.evaluate', { expression: x, awaitPromise: true, returnByValue: true }); if (r.exceptionDetails) return 'ERR ' + (r.exceptionDetails.exception?.description ?? JSON.stringify(r.exceptionDetails)); return r.result.value; };
-const m2 = (t, x, y, b) => send('Input.dispatchMouseEvent', { type: t, x, y, button: 'left', buttons: b, clickCount: 1 });
+const m2 = (t, x, y, b) => send('Input.dispatchMouseEvent', { type: t, x, y, button: t === 'mouseMoved' && b === 0 ? 'none' : 'left', buttons: b, clickCount: 1 });
 const drag = async (x1, y1, x2, y2) => { await m2('mouseMoved', x1, y1, 0); await sleep(15); await m2('mousePressed', x1, y1, 1); await sleep(25); await m2('mouseMoved', (x1+x2)/2, (y1+y2)/2, 1); await sleep(15); await m2('mouseMoved', x2, y2, 1); await sleep(25); await m2('mouseReleased', x2, y2, 0); await sleep(40); };
 for (let i = 0; i < 80; i++) { if ((await ev('!!window.__draw')) === true) break; await sleep(250); }
 // fresh scene: clear any element restored from a prior run’s localStorage
 await ev(`window.__draw.clear()`);
 await ev(`localStorage.clear(); location.reload()`); await sleep(1500);
 for (let i = 0; i < 80; i++) { if ((await ev('!!window.__draw')) === true) break; await sleep(250); }
+await m2('mouseMoved', 200, 200, 0);
 
 // draw two shapes
 await ev(`window.__draw.setTool('rectangle')`);
-await drag(200, 250, 380, 400);
+await drag(420, 250, 600, 400);
 await ev(`window.__draw.setTool('ellipse')`);
-await drag(460, 250, 620, 400);
+await drag(720, 250, 880, 400);
 const drew = await ev(`window.__draw.scene.elements.length`);
 
-// eraser: drag across the rectangle (around x=290)
+// eraser: drag across the rectangle
 await ev(`window.__draw.setTool('eraser')`);
-await drag(200, 260, 380, 390); // crosses the rect outline
+await drag(420, 260, 600, 390); // crosses the rect outline
 const afterErase = await ev(`window.__draw.scene.elements.length`);
 
 // image: synthesize a PNG File and placeImage directly
