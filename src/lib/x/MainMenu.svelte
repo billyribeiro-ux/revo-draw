@@ -1,6 +1,7 @@
 <script lang="ts">
   // Self-contained, props-driven hamburger main menu styled like Excalidraw's
   // dropdown menu. No controller imports — purely props in / callbacks out.
+  import PhIcon from '$lib/ui/PhIcon.svelte';
 
   type MenuItem =
     | { label: string; icon?: string; action: () => void }
@@ -19,6 +20,15 @@
 
   function isSeparator(item: MenuItem): item is 'separator' {
     return item === 'separator';
+  }
+
+  function attachMenu(node: HTMLElement): () => void {
+    menuEl = node;
+    return () => {
+      if (menuEl === node) {
+        menuEl = null;
+      }
+    };
   }
 
   // Collapse leading/duplicate separators so we never render a dangling rule
@@ -63,7 +73,7 @@
 <svelte:window onkeydown={onWindowKeydown} onpointerdown={onWindowPointerdown} />
 
 {#if open}
-  <div bind:this={menuEl} class="main-menu" role="menu" aria-label="Main menu">
+  <div class="main-menu" role="menu" aria-label="Main menu" {@attach attachMenu}>
     {#each rendered as item, idx (idx)}
       {#if isSeparator(item)}
         <hr class="main-menu-item-separator" />
@@ -75,7 +85,9 @@
           onclick={() => runItem(item)}
         >
           {#if item.icon}
-            <span class="main-menu-item__icon" aria-hidden="true">{@html item.icon}</span>
+            <span class="main-menu-item__icon" aria-hidden="true">
+              <PhIcon name={item.icon} size={16} />
+            </span>
           {:else}
             <span class="main-menu-item__icon main-menu-item__icon--empty" aria-hidden="true"></span>
           {/if}

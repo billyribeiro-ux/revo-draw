@@ -53,15 +53,24 @@
     }
     onClose();
   }
+
+  function attachMenu(node: HTMLElement): () => void {
+    menuEl = node;
+    return () => {
+      if (menuEl === node) {
+        menuEl = null;
+      }
+    };
+  }
 </script>
 
 <svelte:window onkeydown={onWindowKeydown} onpointerdown={onWindowPointerdown} />
 
 <ul
-  bind:this={menuEl}
   class="context-menu"
   style="left: {x}px; top: {y}px;"
   oncontextmenu={(event) => event.preventDefault()}
+  {@attach attachMenu}
 >
   {#each rendered as item, idx (idx)}
     {#if isSeparator(item)}

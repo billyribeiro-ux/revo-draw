@@ -2,6 +2,7 @@
   // Self-contained, props-driven arrowhead controls styled like Excalidraw's
   // property panel (actionChangeArrowhead): a Start and End row, each picking
   // none / arrow / triangle / circle / bar / diamond. No controller imports.
+  import XIcon from '$lib/x/XIcon.svelte';
 
   // Callbacks emit this narrow subset; the live element's arrowhead may be any of
   // Excalidraw's broader set, so the `start`/`end` *input* props are `string|null`
@@ -25,17 +26,17 @@
     {
       value: 'sharp',
       label: 'Sharp',
-      icon: `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 15l7-10 7 10"/></svg>`,
+      icon: 'arrow-type-sharp',
     },
     {
       value: 'round',
       label: 'Curved',
-      icon: `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M3 15c0-6 14-6 14 0"/></svg>`,
+      icon: 'arrow-type-round',
     },
     {
       value: 'elbow',
       label: 'Elbow',
-      icon: `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 15V9h14V3"/></svg>`,
+      icon: 'arrow-type-elbow',
     },
   ];
 
@@ -45,32 +46,32 @@
     {
       value: null,
       label: 'None',
-      icon: `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M3 10h14"/></svg>`,
+      icon: 'arrowhead-none',
     },
     {
       value: 'arrow',
       label: 'Arrow',
-      icon: `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10h13M11 6l5 4-5 4"/></svg>`,
+      icon: 'arrowhead-arrow',
     },
     {
       value: 'triangle',
       label: 'Triangle',
-      icon: `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M3 10h9"/><path d="M11 6l6 4-6 4Z" fill="currentColor"/></svg>`,
+      icon: 'arrowhead-triangle',
     },
     {
       value: 'circle',
       label: 'Circle',
-      icon: `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 10h9" stroke-linecap="round"/><circle cx="14" cy="10" r="3" fill="currentColor"/></svg>`,
+      icon: 'arrowhead-circle',
     },
     {
       value: 'bar',
       label: 'Bar',
-      icon: `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M3 10h12M15 5v10"/></svg>`,
+      icon: 'arrowhead-bar',
     },
     {
       value: 'diamond',
       label: 'Diamond',
-      icon: `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M3 10h8"/><path d="M14 7l3 3-3 3-3-3Z" fill="currentColor"/></svg>`,
+      icon: 'arrowhead-diamond',
     },
   ];
 </script>
@@ -89,7 +90,7 @@
           aria-pressed={arrowType === opt.value}
           onclick={() => onArrowType(opt.value)}
         >
-          {@html opt.icon}
+          <XIcon name={opt.icon} />
         </button>
       {/each}
     </div>
@@ -110,7 +111,7 @@
             aria-pressed={start === opt.value}
             onclick={() => onStart(opt.value)}
           >
-            {@html opt.icon}
+            <XIcon name={opt.icon} />
           </button>
         {/each}
       </div>
@@ -128,7 +129,7 @@
             aria-pressed={end === opt.value}
             onclick={() => onEnd(opt.value)}
           >
-            {@html opt.icon}
+            <XIcon name={opt.icon} />
           </button>
         {/each}
       </div>

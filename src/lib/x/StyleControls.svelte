@@ -3,6 +3,7 @@
   // property panel. Mirrors SelectedShapeActions (Actions.tsx): Fill, Stroke
   // style, Sloppiness, Edges radio groups + an Opacity slider.
   // No controller imports, no external deps — purely props in / callback out.
+  import XIcon from '$lib/x/XIcon.svelte';
 
   type FillStyle = 'hachure' | 'cross-hatch' | 'solid' | 'zigzag';
   type StrokeStyle = 'solid' | 'dashed' | 'dotted';
@@ -34,62 +35,41 @@
     onOpacity,
   }: Props = $props();
 
-  // Inline SVGs (20x20 viewBox, stroke-based) mirroring Excalidraw's icon
-  // language for each option. Kept as small markup strings so {@html} can stamp
-  // them into the square buttons.
-  const fillIcons: Record<FillStyle, string> = {
-    hachure: `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.25" stroke-linecap="round"><path d="M5.879 2.625h8.242a3.254 3.254 0 0 1 3.254 3.254v8.242a3.254 3.254 0 0 1-3.254 3.254H5.88a3.254 3.254 0 0 1-3.254-3.254V5.88a3.254 3.254 0 0 1 3.254-3.254Z"/><path d="m6 12 6-6M8.5 14l5.5-5.5M3 11l5-5M6 16l8-8" stroke-width="1"/></svg>`,
-    'cross-hatch': `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.25" stroke-linecap="round"><path d="M5.879 2.625h8.242a3.254 3.254 0 0 1 3.254 3.254v8.242a3.254 3.254 0 0 1-3.254 3.254H5.88a3.254 3.254 0 0 1-3.254-3.254V5.88a3.254 3.254 0 0 1 3.254-3.254Z"/><g stroke-width="1"><path d="m6 12 6-6M3 11l5-5M6 16l8-8"/><path d="m6 6 6 6M3 7l5 5M6 4l8 8"/></g></svg>`,
-    zigzag: `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round"><path d="M5.879 2.625h8.242a3.254 3.254 0 0 1 3.254 3.254v8.242a3.254 3.254 0 0 1-3.254 3.254H5.88a3.254 3.254 0 0 1-3.254-3.254V5.88a3.254 3.254 0 0 1 3.254-3.254Z"/><path d="m4 14 3-3-3-3 3-3M9 14l3-3-3-3 3-3" stroke-width="1"/></svg>`,
-    solid: `<svg viewBox="0 0 20 20" fill="currentColor" stroke="currentColor" stroke-width="1.25" stroke-linecap="round"><path d="M5.879 2.625h8.242a3.254 3.254 0 0 1 3.254 3.254v8.242a3.254 3.254 0 0 1-3.254 3.254H5.88a3.254 3.254 0 0 1-3.254-3.254V5.88a3.254 3.254 0 0 1 3.254-3.254Z"/></svg>`,
-  };
-
-  const strokeIcons: Record<StrokeStyle, string> = {
-    solid: `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 10h14"/></svg>`,
-    dashed: `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-dasharray="3.5 4"><path d="M3 10h14"/></svg>`,
-    dotted: `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-dasharray="0.5 3.5"><path d="M3 10h14"/></svg>`,
-  };
-
   // roughness 0 | 1 | 2 → Architect (clean) / Artist / Cartoonist (sketchy)
   const sloppinessOptions: ReadonlyArray<{ value: number; label: string; icon: string }> = [
     {
       value: 0,
       label: 'Architect',
-      icon: `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 13.5c2.5-5 5-7.5 13-9"/></svg>`,
+      icon: 'sloppiness-0',
     },
     {
       value: 1,
       label: 'Artist',
-      icon: `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 13.5c2-4 3.8-5.6 6-6.2 1.8-.5 2.4.6 4 .2 1.8-.4 2.4-2 3-3"/></svg>`,
+      icon: 'sloppiness-1',
     },
     {
       value: 2,
       label: 'Cartoonist',
-      icon: `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 14c1.5-2 1.6-4 3-4.4 1.4-.4 1.6 1.6 3 1.4 1.4-.2 1.4-2.4 2.6-3 1.2-.6 2 .6 3.4-1.5"/></svg>`,
+      icon: 'sloppiness-2',
     },
   ];
 
-  const edgeIcons: Record<Edges, string> = {
-    sharp: `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17V8a4 4 0 0 1 4-4h9"/></svg>`,
-    round: `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17v-3a10 10 0 0 1 10-10h3"/></svg>`,
-  };
-
-  const fillOrder: ReadonlyArray<{ value: FillStyle; label: string }> = [
-    { value: 'hachure', label: 'Hachure' },
-    { value: 'cross-hatch', label: 'Cross-hatch' },
-    { value: 'solid', label: 'Solid' },
-    { value: 'zigzag', label: 'Zigzag' },
+  const fillOrder: ReadonlyArray<{ value: FillStyle; label: string; icon: string }> = [
+    { value: 'hachure', label: 'Hachure', icon: 'fill-hachure' },
+    { value: 'cross-hatch', label: 'Cross-hatch', icon: 'fill-cross-hatch' },
+    { value: 'solid', label: 'Solid', icon: 'fill-solid' },
+    { value: 'zigzag', label: 'Zigzag', icon: 'fill-zigzag' },
   ];
 
-  const strokeOrder: ReadonlyArray<{ value: StrokeStyle; label: string }> = [
-    { value: 'solid', label: 'Solid' },
-    { value: 'dashed', label: 'Dashed' },
-    { value: 'dotted', label: 'Dotted' },
+  const strokeOrder: ReadonlyArray<{ value: StrokeStyle; label: string; icon: string }> = [
+    { value: 'solid', label: 'Solid', icon: 'stroke-solid' },
+    { value: 'dashed', label: 'Dashed', icon: 'stroke-dashed' },
+    { value: 'dotted', label: 'Dotted', icon: 'stroke-dotted' },
   ];
 
-  const edgeOrder: ReadonlyArray<{ value: Edges; label: string }> = [
-    { value: 'sharp', label: 'Sharp' },
-    { value: 'round', label: 'Round' },
+  const edgeOrder: ReadonlyArray<{ value: Edges; label: string; icon: string }> = [
+    { value: 'sharp', label: 'Sharp', icon: 'edge-sharp' },
+    { value: 'round', label: 'Round', icon: 'edge-round' },
   ];
 
   function onOpacityInput(event: Event): void {
@@ -112,7 +92,7 @@
           aria-pressed={fillStyle === opt.value}
           onclick={() => onFillStyle(opt.value)}
         >
-          {@html fillIcons[opt.value]}
+          <XIcon name={opt.icon} />
         </button>
       {/each}
     </div>
@@ -131,7 +111,7 @@
           aria-pressed={strokeStyle === opt.value}
           onclick={() => onStrokeStyle(opt.value)}
         >
-          {@html strokeIcons[opt.value]}
+          <XIcon name={opt.icon} />
         </button>
       {/each}
     </div>
@@ -150,7 +130,7 @@
           aria-pressed={sloppiness === opt.value}
           onclick={() => onSloppiness(opt.value)}
         >
-          {@html opt.icon}
+          <XIcon name={opt.icon} />
         </button>
       {/each}
     </div>
@@ -169,7 +149,7 @@
           aria-pressed={edges === opt.value}
           onclick={() => onEdges(opt.value)}
         >
-          {@html edgeIcons[opt.value]}
+          <XIcon name={opt.icon} />
         </button>
       {/each}
     </div>
