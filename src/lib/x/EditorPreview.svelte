@@ -43,6 +43,7 @@
   import HintViewer from '$lib/x/HintViewer.svelte';
   import Tooltip from '$lib/x/Tooltip.svelte';
   import WelcomeScreen from '$lib/x/WelcomeScreen.svelte';
+  import PhIcon from '$lib/ui/PhIcon.svelte';
   import CommandPalette, { type Command } from '$lib/x/CommandPalette.svelte';
   import LibraryPanel from '$lib/x/LibraryPanel.svelte';
   import EmbedDialog from '$lib/x/EmbedDialog.svelte';
@@ -638,7 +639,7 @@
       aria-label="menu"
       onclick={() => (menuOpen = !menuOpen)}
     >
-      ☰
+      <PhIcon name="nav" size={16} />
     </button>
     {#each tools as tool (tool)}
       <Tooltip label={TOOL_INFO[tool]?.label ?? tool} shortcut={TOOL_INFO[tool]?.shortcut}>
@@ -659,7 +660,7 @@
       aria-label="toggle theme"
       onclick={() => controller.toggleTheme()}
     >
-      {controller.theme === 'dark' ? '☀' : '☾'}
+      <PhIcon name={controller.theme === 'dark' ? 'sun' : 'moon'} size={16} />
     </button>
   </div>
 
@@ -973,29 +974,30 @@
   }
 
   .theme-toggle {
-    padding: 6px 10px;
+    padding: 0;
     border: 1px solid transparent;
-    border-radius: 6px;
+    border-radius: var(--border-radius-lg);
     background: transparent;
+    color: var(--icon-fill-color);
     cursor: pointer;
-    font-size: 14px;
   }
 
   .excalidraw.theme--dark .toolbar,
   .excalidraw.theme--dark .properties {
     background: var(--island-bg-color);
-    color: #ced4da;
+    color: var(--color-on-surface);
   }
 
   .excalidraw.theme--dark .toolbar button,
   .excalidraw.theme--dark .widths button {
-    color: #ced4da;
+    color: var(--icon-fill-color);
   }
 
   .excalidraw.theme--dark .toolbar button.active,
   .excalidraw.theme--dark .widths button.active {
-    background: #2d2d38;
-    border-color: #4263eb;
+    background: var(--color-surface-primary-container);
+    border-color: transparent;
+    color: var(--color-on-primary-container);
   }
 
   .excalidraw.theme--dark .prop-label {
@@ -1056,40 +1058,58 @@
 
   .toolbar {
     position: fixed;
-    top: 12px;
+    top: var(--editor-container-padding);
     left: 50%;
     transform: translateX(-50%);
     display: flex;
-    gap: 4px;
-    padding: 6px;
-    background: #fff;
-    border: 1px solid #e0e0e0;
-    border-radius: 10px;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    padding: 4px;
+    background: var(--island-bg-color);
+    border-radius: var(--border-radius-lg);
+    box-shadow: var(--shadow-island);
     z-index: 10;
   }
 
   .toolbar button {
-    padding: 6px 12px;
+    box-sizing: border-box;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: var(--lg-button-size);
+    min-width: var(--lg-button-size);
+    height: var(--lg-button-size);
+    padding: 0;
     border: 1px solid transparent;
-    border-radius: 6px;
+    border-radius: var(--border-radius-lg);
     background: transparent;
-    font-size: 13px;
+    color: var(--icon-fill-color);
     cursor: pointer;
-    text-transform: capitalize;
+    font: inherit;
+    line-height: 0;
+  }
+
+  .toolbar button:hover {
+    background: var(--button-hover-bg);
+  }
+
+  .toolbar button:active {
+    background: var(--button-hover-bg);
+    border-color: var(--button-active-border);
   }
 
   .toolbar button.active {
-    background: #e7f5ff;
-    border-color: #a5d8ff;
+    background: var(--color-surface-primary-container);
+    color: var(--color-on-primary-container);
   }
 
   .tool-btn {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    min-width: 32px;
-    height: 32px;
+    min-width: var(--lg-button-size);
+    height: var(--lg-button-size);
   }
 
   .footer {
@@ -1154,8 +1174,9 @@
   }
 
   .toolbar button :global(svg) {
-    width: 18px;
-    height: 18px;
+    width: var(--lg-icon-size);
+    height: var(--lg-icon-size);
+    color: currentColor;
   }
 
   .properties {

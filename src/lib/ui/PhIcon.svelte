@@ -55,6 +55,8 @@
 	import Rows from '~icons/ph/rows';
 	import Columns from '~icons/ph/columns';
 	import Keyboard from '~icons/ph/keyboard';
+	import Sun from '~icons/ph/sun';
+	import Moon from '~icons/ph/moon';
 
 	const MAP: Record<string, Component> = {
 		select: Cursor,
@@ -108,7 +110,9 @@
 		'flip-v': FlipV,
 		'distribute-h': Columns,
 		'distribute-v': Rows,
-		keyboard: Keyboard
+		keyboard: Keyboard,
+		sun: Sun,
+		moon: Moon
 	};
 
 	let { name, size = 18 }: { name: string; size?: number } = $props();
