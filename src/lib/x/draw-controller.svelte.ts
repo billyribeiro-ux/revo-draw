@@ -265,6 +265,15 @@ export type PointerMods = {
   /** pointer button: 0 = left/primary, 1 = middle (middle-drag pans) */
   button?: number;
 };
+
+export interface SelectedStats {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  angle: number;
+}
+
 const NO_MODS: PointerMods = {
   shiftKey: false,
   altKey: false,
@@ -2631,6 +2640,33 @@ export class DrawController {
     return this.selectedIds.size
       ? this.scene.elements.filter((e) => this.selectedIds.has(e.id))
       : [];
+  }
+
+  /**
+   * Geometry for the stats panel. Excalidraw's scene coordinates may be negative
+   * after pan/import/template placement; the panel should show drawing-relative
+   * bounds so a dashboard inserted above the world origin does not report a
+   * confusing negative Y.
+   */
+  get selectedStats(): SelectedStats | null {
+    const element = this.selectedElements[0];
+    if (!element) {
+      return null;
+    }
+    const elements = this.scene.scene.getNonDeletedElements();
+    if (elements.length === 0) {
+      return null;
+    }
+    const elementsMap = this.scene.scene.getNonDeletedElementsMap();
+    const [sceneMinX, sceneMinY] = getCommonBounds(elements, elementsMap);
+    const [x1, y1, x2, y2] = getElementAbsoluteCoords(element, elementsMap);
+    return {
+      x: Math.max(0, x1 - sceneMinX),
+      y: Math.max(0, y1 - sceneMinY),
+      width: Math.max(0, x2 - x1),
+      height: Math.max(0, y2 - y1),
+      angle: element.angle,
+    };
   }
 
   // --- toast (transient status messages; Excalidraw appState.toast) ---

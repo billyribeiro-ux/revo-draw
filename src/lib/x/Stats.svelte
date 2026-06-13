@@ -1,16 +1,10 @@
 <script lang="ts">
+  import type { SelectedStats } from '$lib/x/draw-controller.svelte.ts';
+
   // Self-contained, props-driven selected-element stats panel styled like an
   // Excalidraw island (top-right). No controller imports, no external deps —
   // purely props in. Read-only display of the selected element's geometry plus
   // the total scene element count.
-
-  interface SelectedStats {
-    x: number;
-    y: number;
-    width: number;
-    height: number;
-    angle: number;
-  }
 
   interface Props {
     element: SelectedStats | null;

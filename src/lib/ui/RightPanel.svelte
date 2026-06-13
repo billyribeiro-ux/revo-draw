@@ -35,6 +35,33 @@
 		return Math.round(v * 100) / 100;
 	}
 
+	function geometryOrigin(target: Element): { x: number; y: number } {
+		const parent = target.parentId ? scene.get(target.parentId) : null;
+		if (parent) return { x: parent.x, y: parent.y };
+		const elements = scene.ordered.filter((item) => !item.hidden);
+		if (elements.length === 0) return { x: 0, y: 0 };
+		return {
+			x: Math.min(...elements.map((item) => item.x)),
+			y: Math.min(...elements.map((item) => item.y))
+		};
+	}
+
+	function displayX(target: Element): number {
+		return target.x - geometryOrigin(target).x;
+	}
+
+	function displayY(target: Element): number {
+		return target.y - geometryOrigin(target).y;
+	}
+
+	function patchDisplayX(target: Element, value: number): void {
+		patch({ x: geometryOrigin(target).x + value }, 'Move');
+	}
+
+	function patchDisplayY(target: Element, value: number): void {
+		patch({ y: geometryOrigin(target).y + value }, 'Move');
+	}
+
 	// ---- icon attachment ---------------------------------------------------------------------
 	// `BaseElement.icon` is supported on every element type EXCEPT the standalone IconElement,
 	// whose body IS the icon (changing the icon there uses `Change icon` via onPickIcon instead).
@@ -171,11 +198,11 @@
 				<div class="grid-2">
 					<label class="field">
 						<span class="label">X</span>
-						<input name="rightpanel-f3" autocomplete="off" type="number" value={num(e.x)} oninput={(ev) => patch({ x: +(ev.currentTarget as HTMLInputElement).value }, 'Move')} />
+						<input name="rightpanel-f3" autocomplete="off" type="number" value={num(displayX(e))} oninput={(ev) => patchDisplayX(e, +(ev.currentTarget as HTMLInputElement).value)} />
 					</label>
 					<label class="field">
 						<span class="label">Y</span>
-						<input name="rightpanel-f4" autocomplete="off" type="number" value={num(e.y)} oninput={(ev) => patch({ y: +(ev.currentTarget as HTMLInputElement).value }, 'Move')} />
+						<input name="rightpanel-f4" autocomplete="off" type="number" value={num(displayY(e))} oninput={(ev) => patchDisplayY(e, +(ev.currentTarget as HTMLInputElement).value)} />
 					</label>
 					<label class="field">
 						<span class="label">W</span>

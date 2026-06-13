@@ -195,6 +195,7 @@
       return;
     }
     pointerGestureActive = true;
+    activePointerId = e.pointerId;
     controller.pointerDown(x, y, {
       shiftKey: e.shiftKey,
       altKey: e.altKey,
@@ -217,11 +218,29 @@
 
   let lastPointer = { x: 0, y: 0 };
   let pointerGestureActive = false;
+  let activePointerId: number | null = null;
   // Space-held → temporary pan (Excalidraw); tracked globally, plain let (not $state —
   // it only gates pointer handlers, never rendered).
   let spaceHeld = false;
 
+  function finishPointerGesture(): void {
+    if (!pointerGestureActive) {
+      return;
+    }
+    pointerGestureActive = false;
+    activePointerId = null;
+    controller.pointerUp();
+  }
+
+  function stopCanvasGestureForUi(e: PointerEvent): void {
+    finishPointerGesture();
+    e.stopPropagation();
+  }
+
   function movePointer(e: PointerEvent): void {
+    if (activePointerId !== null && e.pointerId !== activePointerId) {
+      return;
+    }
     const point = canvasRelative(e.clientX, e.clientY);
     if (!point) {
       return;
@@ -238,21 +257,31 @@
 
   function onWindowPointerMove(e: PointerEvent): void {
     if (pointerGestureActive) {
+      if (e.buttons === 0) {
+        finishPointerGesture();
+        return;
+      }
       movePointer(e);
     }
   }
 
-  function onpointerup(): void {
-    pointerGestureActive = false;
-    controller.pointerUp();
-  }
-
-  function onWindowPointerUp(): void {
-    if (!pointerGestureActive) {
+  function onpointerup(e: PointerEvent): void {
+    if (activePointerId !== null && e.pointerId !== activePointerId) {
       return;
     }
-    pointerGestureActive = false;
-    controller.pointerUp();
+    finishPointerGesture();
+    try {
+      interactiveCanvas?.releasePointerCapture(e.pointerId);
+    } catch {
+      // releasePointerCapture may throw if the browser already released it.
+    }
+  }
+
+  function onWindowPointerUp(e: PointerEvent): void {
+    if (activePointerId !== null && e.pointerId !== activePointerId) {
+      return;
+    }
+    finishPointerGesture();
   }
 
   function onwheel(e: WheelEvent): void {
@@ -711,7 +740,13 @@
 />
 
 <div class="excalidraw" class:theme--dark={controller.theme === 'dark'}>
-  <div class="toolbar">
+  <div
+    class="toolbar"
+    role="toolbar"
+    aria-label="Tools"
+    tabindex="-1"
+    onpointerdown={stopCanvasGestureForUi}
+  >
     <button
       type="button"
       class="tool-btn"
@@ -744,7 +779,13 @@
     </button>
   </div>
 
-<div class="properties" class:hidden={!controller.showProperties}>
+<div
+  class="properties"
+  class:hidden={!controller.showProperties}
+  role="group"
+  aria-label="Properties"
+  onpointerdown={stopCanvasGestureForUi}
+>
   <div class="prop-group">
     <span class="prop-label">Stroke</span>
     <div class="swatches">
@@ -896,7 +937,7 @@
 
 {#if controller.statsOpen && !controller.zenMode}
   <Stats
-    element={controller.selectedElements[0] ?? null}
+    element={controller.selectedStats}
     sceneCount={controller.scene.elements.length}
   />
 {/if}
@@ -958,6 +999,7 @@
     {onpointerdown}
     {onpointermove}
     {onpointerup}
+    onpointercancel={onWindowPointerUp}
     {onwheel}
     {oncontextmenu}
     ondblclick={(e) => {
