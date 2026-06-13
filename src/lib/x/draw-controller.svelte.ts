@@ -2512,6 +2512,13 @@ export class DrawController {
       null;
     let container = this.#textBindableContainerAtPosition(x, y);
 
+    if (isTextElement(hitElement) && !hitElement.containerId) {
+      this.#setSelection([hitElement.id]);
+      this.editingTextId = hitElement.id;
+      this.#resetToolAfterCreation();
+      return;
+    }
+
     if (isTextElement(hitElement) && hitElement.containerId) {
       container = getContainerElement(hitElement, elementsMap);
     } else if (
@@ -2866,7 +2873,14 @@ export class DrawController {
         }
       }
     }
+    const wasLineEditing = this.isLineEditing;
     this.enterLineEditor();
+    if (!wasLineEditing && this.isLineEditing) {
+      return;
+    }
+    if (!this.isLineEditing && this.activeTool === "selection") {
+      this.#startTextToolEditing(x, y, NO_MODS);
+    }
   }
 
   /** Scope selection into `groupId`, selecting only `elementId` within it. */
