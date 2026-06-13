@@ -3397,14 +3397,20 @@ export class DrawController {
             y - this.#resizeOffsetY,
             mods.ctrlKey || mods.metaKey ? null : this.#effectiveGridSize(),
           );
+      const selectedElements = this.selectedElements;
+      const shouldMaintainAspectRatio = selectedElements.some((element) =>
+        isImageElement(element),
+      )
+        ? !this.#shiftKey
+        : this.#shiftKey;
       transformElements(
         this.#resizeOriginals,
         this.#resizeHandle,
-        this.selectedElements,
+        selectedElements,
         this.scene.scene,
         this.#shiftKey, // shouldRotateWithDiscreteAngle (shift → 15° rotation snap)
         this.#altKey, // shouldResizeFromCenter (alt → resize anchored at center)
-        this.#shiftKey, // shouldMaintainAspectRatio (shift → aspect-locked resize)
+        shouldMaintainAspectRatio,
         resizeX,
         resizeY,
         this.#resizeCenterX,
