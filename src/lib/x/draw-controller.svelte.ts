@@ -1653,14 +1653,59 @@ export class DrawController {
     this.appState.setState({ stats: { ...stats, open: !stats.open } });
   }
 
+  /**
+   * Initial on-canvas size (scene units) for a freshly inserted image, ported from
+   * Excalidraw's `initializeImageDimensions` (App.tsx): the height is capped at roughly
+   * half the canvas height (clamped so it never dominates a small canvas), with the
+   * width derived from the natural aspect ratio. We add a usability floor — Excalidraw's
+   * image placeholder default is 100px — so a tiny icon (e.g. a 24px SVG) is inserted at a
+   * grabbable size instead of an unselectable speck. All caps are divided by the current
+   * zoom so the *screen* size is stable regardless of zoom level.
+   */
+  #initialImageDimensions(
+    naturalWidth: number,
+    naturalHeight: number,
+  ): { width: number; height: number } {
+    const a = this.appState.current;
+    const zoom = a.zoom.value || 1;
+    const viewportHeight = a.height || 800;
+    const viewportWidth = a.width || 1200;
+    const aspect =
+      naturalWidth > 0 && naturalHeight > 0 ? naturalWidth / naturalHeight : 1;
+
+    const minHeight = Math.max(viewportHeight - 120, 160);
+    const maxHeight = Math.min(minHeight, Math.floor(viewportHeight * 0.5)) / zoom;
+    const maxWidth = Math.floor(viewportWidth * 0.5) / zoom;
+    const minLargestSide = 100 / zoom;
+
+    let height = naturalHeight > 0 ? naturalHeight : 100;
+    let width = height * aspect;
+
+    const largest = Math.max(width, height);
+    if (largest < minLargestSide) {
+      const scale = minLargestSide / largest;
+      width *= scale;
+      height *= scale;
+    }
+    if (height > maxHeight) {
+      const scale = maxHeight / height;
+      width *= scale;
+      height *= scale;
+    }
+    if (width > maxWidth) {
+      const scale = maxWidth / width;
+      width *= scale;
+      height *= scale;
+    }
+    return { width, height };
+  }
+
   /** Load an image file and place it centered at a viewport point. */
   async placeImage(file: File, clientX: number, clientY: number): Promise<void> {
     const { fileId, mimeType, width, height, image } = await loadImageFile(file);
     this.imageCache.set(fileId, { image, mimeType });
     const { x, y } = this.#toScene(clientX, clientY);
-    const fit = Math.min(1, 400 / Math.max(width, height));
-    const w = width * fit;
-    const h = height * fit;
+    const { width: w, height: h } = this.#initialImageDimensions(width, height);
     const el = createImageElement({ fileId, x: x - w / 2, y: y - h / 2, width: w, height: h });
     this.#elements.push(el);
     syncInvalidIndices(this.#elements);

@@ -80,6 +80,12 @@
   let staticCanvas = $state<HTMLCanvasElement>();
   let interactiveCanvas = $state<HTMLCanvasElement>();
 
+  // Bumped whenever the canvas host resizes (window resize, devtools, sidebar, browser zoom).
+  // The two render effects read it so they re-size the canvases and refresh the viewport — without
+  // this, the canvases stay frozen at their first-paint size and the scene visibly shifts/clips
+  // relative to the (viewport-anchored) toolbar and panels when the window changes size.
+  let viewportNonce = $state(0);
+
   const tools: Tool[] = [
     'hand',
     'selection',
@@ -174,6 +180,15 @@
         interactiveCanvas = undefined;
       }
     };
+  }
+
+  // Observe the canvas host so a resize re-runs the render effects (which re-measure + redraw).
+  function attachCanvasWrap(node: HTMLElement): () => void {
+    const observer = new ResizeObserver(() => {
+      viewportNonce += 1;
+    });
+    observer.observe(node);
+    return () => observer.disconnect();
   }
 
   function onpointerdown(e: PointerEvent): void {
@@ -613,12 +628,16 @@
   };
 
   function sizeCanvas(el: HTMLCanvasElement, scale: number): { width: number; height: number } {
-    const width = el.clientWidth;
-    const height = el.clientHeight;
+    // Measure the canvas-wrap (parent), NOT the canvas itself: sizeCanvas pins the canvas to an
+    // explicit inline width/height, so reading el.clientWidth would echo that stale pinned value
+    // and the canvas could never track a window resize. The parent is sized to the viewport.
+    const host = el.parentElement ?? el;
+    const width = host.clientWidth;
+    const height = host.clientHeight;
     el.style.width = `${width}px`;
     el.style.height = `${height}px`;
-    el.width = width * scale;
-    el.height = height * scale;
+    el.width = Math.round(width * scale);
+    el.height = Math.round(height * scale);
     return { width, height };
   }
 
@@ -628,6 +647,7 @@
 
   // Static scene
   $effect(() => {
+    void viewportNonce; // re-run on host resize so the canvas tracks the viewport
     const el = staticCanvas;
     if (!el) {
       return;
@@ -676,6 +696,7 @@
 
   // Interactive overlay (selection box, transform handles, marquee)
   $effect(() => {
+    void viewportNonce; // re-run on host resize so the overlay tracks the viewport
     const el = interactiveCanvas;
     if (!el) {
       return;
@@ -991,7 +1012,7 @@
   />
 {/if}
 
-<div class="canvas-wrap">
+<div class="canvas-wrap" {@attach attachCanvasWrap}>
   <canvas class="layer" {@attach attachStaticCanvas}></canvas>
   <canvas
     class="layer"

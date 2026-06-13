@@ -18,6 +18,28 @@
   // The menu's own root element — used to distinguish inside vs. outside clicks.
   let menuEl = $state<HTMLElement | null>(null);
 
+  // Clamp the menu inside the viewport so it never gets cut off near an edge.
+  // Mirrors Excalidraw's Popover fitInViewport (Popover.tsx): if the menu would
+  // overflow the right/bottom edge, shift it back by its own size (10px gutter).
+  // The menu's rendered size is measured once on attach (its size is independent of
+  // where we place it), so re-clamping from the raw click point (x, y) is stable.
+  let measured = $state<{ width: number; height: number } | null>(null);
+
+  const placement = $derived.by(() => {
+    let left = x;
+    let top = y;
+    if (measured) {
+      const margin = 10;
+      if (left + measured.width > window.innerWidth) {
+        left = Math.max(margin, window.innerWidth - measured.width - margin);
+      }
+      if (top + measured.height > window.innerHeight) {
+        top = Math.max(margin, window.innerHeight - measured.height - margin);
+      }
+    }
+    return { left, top };
+  });
+
   function isSeparator(item: MenuItem): item is 'separator' {
     return item === 'separator';
   }
@@ -56,6 +78,9 @@
 
   function attachMenu(node: HTMLElement): () => void {
     menuEl = node;
+    // Measure once the menu is in the DOM so `placement` can clamp it into view.
+    const rect = node.getBoundingClientRect();
+    measured = { width: rect.width, height: rect.height };
     return () => {
       if (menuEl === node) {
         menuEl = null;
@@ -68,7 +93,7 @@
 
 <ul
   class="context-menu"
-  style="left: {x}px; top: {y}px;"
+  style="left: {placement.left}px; top: {placement.top}px;"
   oncontextmenu={(event) => event.preventDefault()}
   {@attach attachMenu}
 >
@@ -105,6 +130,10 @@
     font-size: 0.8125rem;
     font-family: inherit;
     min-width: 9.5rem;
+    /* If the menu is taller than the viewport, scroll within it rather than
+       spilling off-screen (Excalidraw Popover full-height + overflow case). */
+    max-height: calc(100vh - 20px);
+    overflow-y: auto;
   }
 
   .context-menu li {
