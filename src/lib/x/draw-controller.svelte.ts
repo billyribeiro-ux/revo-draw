@@ -11,6 +11,7 @@ import {
   distributeElements,
   addElementsToFrame,
   bindBindingElement,
+  calculateFixedPointForElbowArrowBinding,
   getElementsInNewFrame,
   getElementsWithinSelection,
   getFrameChildren,
@@ -139,6 +140,7 @@ import type { TransformHandleType } from "@excalidraw/element";
 
 import type {
   Arrowhead,
+  ExcalidrawBindableElement,
   ExcalidrawElement,
   ExcalidrawFreeDrawElement,
   ExcalidrawFrameLikeElement,
@@ -146,14 +148,16 @@ import type {
   ExcalidrawLinearElement,
   ExcalidrawTextElement,
   FontFamilyValues,
+  NonDeleted,
   NonDeletedExcalidrawElement,
   NonDeletedSceneElementsMap,
+  Ordered,
   OrderedExcalidrawElement,
   PointsPositionUpdates,
   SceneElementsMap,
   TextAlign,
 } from "@excalidraw/element/types";
-import type { GlobalPoint, LocalPoint } from "@excalidraw/math";
+import type { GlobalPoint, LocalPoint, Radians } from "@excalidraw/math";
 import type { EditorInterface } from "@excalidraw/common";
 import type {
   App,
@@ -1017,44 +1021,200 @@ export class DrawController {
    */
   setArrowType(type: "sharp" | "round" | "elbow"): void {
     this.appState.setState({ currentItemArrowType: type });
-    const map = this.scene.scene.getNonDeletedElementsMap();
     let changed = false;
-    for (const el of this.selectedElements) {
-      if (!isArrowElement(el)) {
-        continue;
-      }
-      const roundness =
-        type === "round"
-          ? ({ type: ROUNDNESS.PROPORTIONAL_RADIUS } as ExcalidrawElement["roundness"])
-          : null;
-      if (type === "elbow" && !el.elbowed) {
-        const elbow = el as ExcalidrawElbowArrowElement;
-        mutateElement(elbow, map, {
-          elbowed: true,
-          roundness: null,
-          fixedSegments: [],
-        });
-        mutateElement(
-          elbow,
-          map,
-          updateElbowArrowPoints(
-            elbow,
-            map as unknown as NonDeletedSceneElementsMap,
-            { points: elbow.points },
-            { isBindingEnabled: this.appState.current.isBindingEnabled },
-          ),
-        );
-      } else if (type !== "elbow" && el.elbowed) {
-        mutateElement(el, map, { elbowed: false, roundness });
-      } else {
-        mutateElement(el, map, { roundness });
+    const selectedArrowIds = new Set(
+      this.selectedElements.filter(isArrowElement).map((el) => el.id),
+    );
+
+    if (!selectedArrowIds.size) {
+      return;
+    }
+
+    const elementsMap = this.scene.scene.getNonDeletedElementsMap();
+    this.#elements = this.#elements.map((element) => {
+      if (!selectedArrowIds.has(element.id) || !isArrowElement(element)) {
+        return element;
       }
       changed = true;
-    }
+      return this.#changeArrowTypeElement(element, type, elementsMap);
+    });
+
     if (changed) {
+      syncInvalidIndices(this.#elements);
+      this.scene.replaceAllElements(this.#elements);
+      const selectedLinearElement = this.appState.current.selectedLinearElement;
+      if (selectedLinearElement) {
+        const nextMap = this.scene.scene.getNonDeletedElementsMap();
+        const selected = LinearElementEditor.getElement(
+          selectedLinearElement.elementId,
+          nextMap,
+        );
+        if (selected) {
+          this.appState.setState({
+            selectedLinearElement: new LinearElementEditor(
+              selected,
+              nextMap,
+              selectedLinearElement.isEditing,
+            ),
+          });
+        }
+      }
       this.scene.scene.triggerUpdate();
       this.#commit();
     }
+  }
+
+  #changeArrowTypeElement(
+    el: NonDeleted<ExcalidrawArrowElement>,
+    type: "sharp" | "round" | "elbow",
+    elementsMap: NonDeletedSceneElementsMap,
+  ): NonDeleted<ExcalidrawArrowElement> {
+    const startPoint = LinearElementEditor.getPointAtIndexGlobalCoordinates(
+      el,
+      0,
+      elementsMap,
+    );
+    const endPoint = LinearElementEditor.getPointAtIndexGlobalCoordinates(
+      el,
+      -1,
+      elementsMap,
+    );
+    const unrotatedElement = {
+      ...el,
+      x: startPoint[0],
+      y: startPoint[1],
+      angle: 0 as Radians,
+    };
+    let next = newElementWith(el, {
+      x: type === "elbow" ? startPoint[0] : el.x,
+      y: type === "elbow" ? startPoint[1] : el.y,
+      roundness:
+        type === "round"
+          ? {
+              type: ROUNDNESS.PROPORTIONAL_RADIUS,
+            }
+          : null,
+      elbowed: type === "elbow",
+      angle: type === "elbow" ? (0 as Radians) : el.angle,
+      points:
+        type === "elbow" || el.elbowed
+          ? [
+              LinearElementEditor.pointFromAbsoluteCoords(
+                unrotatedElement,
+                startPoint,
+                elementsMap,
+              ),
+              LinearElementEditor.pointFromAbsoluteCoords(
+                unrotatedElement,
+                endPoint,
+                elementsMap,
+              ),
+            ]
+          : el.points,
+    }) as NonDeleted<ExcalidrawArrowElement>;
+
+    if (isElbowArrow(next)) {
+      next.fixedSegments = null;
+      const nextElementsMap = new Map(elementsMap);
+      nextElementsMap.set(
+        next.id,
+        next as Ordered<NonDeletedExcalidrawElement>,
+      );
+      const nextMap = nextElementsMap as NonDeletedSceneElementsMap;
+      const startGlobalPoint =
+        LinearElementEditor.getPointAtIndexGlobalCoordinates(
+          next,
+          0,
+          nextMap,
+        );
+      const endGlobalPoint =
+        LinearElementEditor.getPointAtIndexGlobalCoordinates(
+          next,
+          -1,
+          nextMap,
+        );
+      const startElement =
+        next.startBinding &&
+        (nextMap.get(
+          next.startBinding.elementId,
+        ) as ExcalidrawBindableElement | undefined);
+      const endElement =
+        next.endBinding &&
+        (nextMap.get(
+          next.endBinding.elementId,
+        ) as ExcalidrawBindableElement | undefined);
+      const startBinding =
+        startElement && next.startBinding
+          ? {
+              ...next.startBinding,
+              ...calculateFixedPointForElbowArrowBinding(
+                next,
+                startElement,
+                "start",
+                nextMap,
+                this.appState.current.isBindingEnabled,
+              ),
+            }
+          : null;
+      const endBinding =
+        endElement && next.endBinding
+          ? {
+              ...next.endBinding,
+              ...calculateFixedPointForElbowArrowBinding(
+                next,
+                endElement,
+                "end",
+                nextMap,
+                this.appState.current.isBindingEnabled,
+              ),
+            }
+          : null;
+
+      next = {
+        ...next,
+        startBinding,
+        endBinding,
+        ...updateElbowArrowPoints(next, nextMap, {
+          points: [startGlobalPoint, endGlobalPoint].map((point) =>
+            pointFrom<LocalPoint>(point[0] - next.x, point[1] - next.y),
+          ),
+          startBinding,
+          endBinding,
+          fixedSegments: null,
+        }),
+      };
+    } else {
+      if (next.startBinding) {
+        const startElement = elementsMap.get(
+          next.startBinding.elementId,
+        ) as ExcalidrawBindableElement | undefined;
+        if (startElement) {
+          bindBindingElement(
+            next,
+            startElement,
+            this.appState.current.bindMode === "inside" ? "inside" : "orbit",
+            "start",
+            this.scene.scene,
+          );
+        }
+      }
+      if (next.endBinding) {
+        const endElement = elementsMap.get(
+          next.endBinding.elementId,
+        ) as ExcalidrawBindableElement | undefined;
+        if (endElement) {
+          bindBindingElement(
+            next,
+            endElement,
+            this.appState.current.bindMode === "inside" ? "inside" : "orbit",
+            "end",
+            this.scene.scene,
+          );
+        }
+      }
+    }
+
+    return next;
   }
 
   /** The text element currently being edited (drives the textarea overlay), if any. */
