@@ -528,8 +528,15 @@
     const { width, height } = sizeCanvas(el, scale);
     // keep appState's viewport size current so snapping/visibility checks work
     controller.setViewport(width, height);
-    const visibleElements = scene.elements;
-    const elementsMap = scene.scene.getNonDeletedElementsMap();
+    const editingTextId = controller.editingTextId;
+    const visibleElements = editingTextId
+      ? scene.elements.filter((element) => element.id !== editingTextId)
+      : scene.elements;
+    const baseElementsMap = scene.scene.getNonDeletedElementsMap();
+    const elementsMap = editingTextId ? new Map(baseElementsMap) : baseElementsMap;
+    if (editingTextId) {
+      elementsMap.delete(editingTextId);
+    }
 
     const renderConfig: StaticCanvasRenderConfig = {
       canvasBackgroundColor: appState.current.viewBackgroundColor,
