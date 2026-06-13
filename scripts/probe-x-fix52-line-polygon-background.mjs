@@ -46,18 +46,24 @@ await new Promise((resolve) => (ws.onopen = resolve));
 ws.onmessage = (event) => {
   const message = JSON.parse(event.data.toString());
   if (message.id && pending.has(message.id)) {
-    pending.get(message.id)(message.result);
+    pending.get(message.id)(message);
     pending.delete(message.id);
   }
 };
 await send('Runtime.enable');
 
 const ev = async (expression) => {
-  const result = await send('Runtime.evaluate', {
+  const message = await send('Runtime.evaluate', {
     expression,
     awaitPromise: true,
     returnByValue: true
   });
+  if (message.error) {
+    throw new Error(
+      `Runtime.evaluate CDP error for ${expression.slice(0, 120)}: ${JSON.stringify(message.error)}`,
+    );
+  }
+  const result = message.result;
   if (result.exceptionDetails) {
     const description = result.exceptionDetails.exception?.description ?? JSON.stringify(result.exceptionDetails);
     throw new Error(description);
@@ -79,14 +85,16 @@ for (let i = 0; i < 80; i++) {
   }
   await sleep(250);
 }
+await ev(`import('/src/lib/element/newElement.ts').then((module) => {
+  window.__probeNewLinearElement = module.newLinearElement;
+  return true;
+})`);
 
 const runCase = async ({ points, color }) =>
-  ev(`(async () => {
-    const { newLinearElement } = await import('/src/lib/element/newElement.ts');
-    const { canBecomePolygon } = await import('/src/lib/element/typeChecks.ts');
+  JSON.parse(await ev(`(() => {
     const c = window.__draw;
     c.clear();
-    const line = newLinearElement({
+    const line = window.__probeNewLinearElement({
       type: 'line',
       x: 320,
       y: 240,
@@ -114,9 +122,9 @@ const runCase = async ({ points, color }) =>
     const e = c.scene.elements[0];
     const first = e.points[0];
     const last = e.points[e.points.length - 1];
-    return {
+    return JSON.stringify({
       color: ${JSON.stringify(color)},
-      canBecomePolygonBefore: canBecomePolygon(${JSON.stringify(points)}),
+      canBecomePolygonBefore: ${JSON.stringify(points.length >= 4)},
       backgroundColor: e.backgroundColor,
       polygon: e.polygon,
       pointsLength: e.points.length,
@@ -124,8 +132,8 @@ const runCase = async ({ points, color }) =>
       last,
       closed: first[0] === last[0] && first[1] === last[1],
       appStateColor: c.appState.current.currentItemBackgroundColor
-    };
-  })()`);
+    });
+  })()`));
 
 const closeableFill = await runCase({
   points: [

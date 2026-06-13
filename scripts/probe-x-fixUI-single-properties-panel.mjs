@@ -1,22 +1,12 @@
 // Tier-5 visual verification: selected shape properties render as one continuous
 // island. The style controls must not draw their own nested card/shadow.
-import { spawn } from 'node:child_process';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { writeFileSync } from 'node:fs';
+import { launchChrome } from './cdp-probe-utils.mjs';
 
-const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
-const PORT = 9336;
 const URL = 'http://localhost:1420/x';
 
-const chrome = spawn(CHROME, [
-  '--headless',
-  '--disable-gpu',
-  '--no-sandbox',
-  `--remote-debugging-port=${PORT}`,
-  '--user-data-dir=/tmp/lf-ui-single-props',
-  '--window-size=1440,900',
-  URL,
-]);
+const { port: PORT, cleanup } = await launchChrome({ url: URL, prefix: 'lf-ui-single-props' });
 
 async function discover() {
   for (let i = 0; i < 60; i++) {
@@ -83,7 +73,7 @@ for (let i = 0; i < 80; i++) {
   await sleep(250);
 }
 
-const result = await ev(`(() => {
+await ev(`(() => {
   const draw = window.__draw;
   draw.appState.setState({ scrollX: 0, scrollY: 0, zoom: { value: 1 } });
   draw.clear();
@@ -93,10 +83,11 @@ const result = await ev(`(() => {
   draw.pointerDown(320, 260, {});
   draw.pointerMove(460, 360, {});
   draw.pointerUp();
-  draw.setTool('selection');
-  draw.pointerDown(360, 300, {});
-  draw.pointerUp();
+  draw.selectAll();
+})()`);
+await sleep(80);
 
+const result = await ev(`(() => {
   const panel = document.querySelector('.properties');
   const styleControls = document.querySelector('.style-controls');
   if (!panel || !styleControls) {
@@ -147,5 +138,5 @@ console.log(
     : 'FAIL',
 );
 ws.close();
-chrome.kill();
+cleanup();
 process.exit(ok ? 0 : 1);

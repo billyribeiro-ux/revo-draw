@@ -9,6 +9,7 @@ import {
   resizeMultipleElements,
   alignElements,
   distributeElements,
+  dragNewElement,
   addElementsToFrame,
   bindBindingElement,
   calculateFixedPointForElbowArrowBinding,
@@ -60,6 +61,7 @@ import {
   duplicateElements,
   getFreedrawOutlineAsSegments,
   getFreedrawOutlinePoints,
+  getLockedLinearCursorAlignSize,
   getElementsInGroup,
   getSelectedElementsByGroup,
   getSelectedElements,
@@ -110,6 +112,7 @@ import {
   DEFAULT_GRID_SIZE,
   DEFAULT_TEXT_ALIGN,
   DEFAULT_VERTICAL_ALIGN,
+  FRAME_STYLE,
   LINE_CONFIRM_THRESHOLD,
   MAX_ZOOM,
   MINIMUM_ARROW_SIZE,
@@ -322,7 +325,7 @@ function zoomValueToFitBoundsOnViewport(
 export class DrawController {
   readonly scene = new EditorScene();
   readonly appState = new EditorAppState();
-  activeTool = $state<Tool>("rectangle");
+  activeTool = $state<Tool>("selection");
   activeToolLocked = $state(false);
   /** The set of selected element ids (reactive — drives the interactive overlay). */
   readonly selectedIds = new SvelteSet<string>();
@@ -3817,7 +3820,15 @@ export class DrawController {
       });
       this.#mode = "linear";
     } else if (this.activeTool === "frame") {
-      this.#creating = newFrameElement({ x, y, width: 0, height: 0 });
+      this.#creating = newFrameElement({
+        x,
+        y,
+        width: 0,
+        height: 0,
+        opacity: this.appState.current.currentItemOpacity,
+        locked: false,
+        ...FRAME_STYLE,
+      });
       this.#mode = "generic";
     } else if (this.activeTool === "embeddable") {
       this.#creating = newEmbeddableElement({
@@ -3825,6 +3836,7 @@ export class DrawController {
         x,
         y,
         frameId,
+        ...this.#createStyle(),
       });
       this.#mode = "generic";
     } else {
@@ -4032,15 +4044,32 @@ export class DrawController {
       if (this.#multiPointCommittedCount > 0) {
         this.#updateMultiLinearPreview(x, y);
       } else {
+        const [gridX, gridY] = getGridPoint(
+          x,
+          y,
+          mods.ctrlKey || mods.metaKey ? null : this.#effectiveGridSize(),
+        );
+        let targetX = gridX;
+        let targetY = gridY;
+        if (mods.shiftKey) {
+          const locked = getLockedLinearCursorAlignSize(
+            this.#originX,
+            this.#originY,
+            gridX,
+            gridY,
+          );
+          targetX = this.#originX + locked.width;
+          targetY = this.#originY + locked.height;
+        }
         // 2-point linear element: second point tracks the pointer (local coords)
         const nextPoints = [
           pointFrom<LocalPoint>(0, 0),
-          pointFrom<LocalPoint>(x - this.#originX, y - this.#originY),
+          pointFrom<LocalPoint>(targetX - this.#originX, targetY - this.#originY),
         ];
         if (
           pointDistance(
             pointFrom<GlobalPoint>(this.#creationStartX, this.#creationStartY),
-            pointFrom<GlobalPoint>(x, y),
+            pointFrom<GlobalPoint>(targetX, targetY),
           ) *
             this.appState.current.zoom.value >=
           MINIMUM_ARROW_SIZE
@@ -4051,16 +4080,28 @@ export class DrawController {
         // binding-highlight: if this is an arrow whose end hovers a bindable shape,
         // highlight that shape (Excalidraw suggestedBinding overlay)
         if (isArrowElement(el)) {
-          this.#updateBindingHighlight(pointFrom<GlobalPoint>(x, y));
+          this.#updateBindingHighlight(pointFrom<GlobalPoint>(targetX, targetY));
         }
       }
     } else {
-      // negative-direction aware: position at the min corner, size is the abs delta
-      mutateElement(this.#creating, map, {
-        x: Math.min(this.#originX, x),
-        y: Math.min(this.#originY, y),
-        width: Math.abs(x - this.#originX),
-        height: Math.abs(y - this.#originY),
+      const [gridX, gridY] = getGridPoint(
+        x,
+        y,
+        mods.ctrlKey || mods.metaKey ? null : this.#effectiveGridSize(),
+      );
+      dragNewElement({
+        newElement: this.#creating as NonDeletedExcalidrawElement,
+        elementType: this.activeTool,
+        originX: this.#originX,
+        originY: this.#originY,
+        x: gridX,
+        y: gridY,
+        width: Math.abs(gridX - this.#originX),
+        height: Math.abs(gridY - this.#originY),
+        shouldMaintainAspectRatio: mods.shiftKey,
+        shouldResizeFromCenter: mods.altKey,
+        zoom: this.appState.current.zoom.value,
+        scene: this.scene.scene,
       });
     }
     // mutateElement invalidates ShapeCache; bump the reactive signal to repaint
@@ -4236,8 +4277,7 @@ export class DrawController {
     // discard an accidental click (no drag → zero size) for shapes
     const discarded =
       mode === "generic" &&
-      creating.width < 1 &&
-      creating.height < 1;
+      isInvisiblySmallElement(creating);
     if (discarded) {
       this.#elements = this.#elements.filter((e) => e !== creating);
       syncInvalidIndices(this.#elements);
@@ -4253,6 +4293,9 @@ export class DrawController {
       this.#elements = addElementsToFrame(this.#elements, inside, creating);
       syncInvalidIndices(this.#elements);
       this.scene.replaceAllElements(this.#elements);
+      this.#select(creating.id);
+    } else {
+      this.#select(creating.id);
     }
 
     // one durable history entry per completed gesture (no-op if nothing changed)

@@ -127,6 +127,28 @@
     return { x: e.clientX - rect.left, y: e.clientY - rect.top };
   }
 
+  function canvasRelative(clientX: number, clientY: number): { x: number; y: number } | null {
+    const rect = interactiveCanvas?.getBoundingClientRect();
+    if (!rect) {
+      return null;
+    }
+    return { x: clientX - rect.left, y: clientY - rect.top };
+  }
+
+  function pointerMods(e: PointerEvent): {
+    shiftKey: boolean;
+    altKey: boolean;
+    ctrlKey: boolean;
+    metaKey: boolean;
+  } {
+    return {
+      shiftKey: e.shiftKey,
+      altKey: e.altKey,
+      ctrlKey: e.ctrlKey,
+      metaKey: e.metaKey
+    };
+  }
+
   function attachFileInput(node: HTMLInputElement): () => void {
     fileInput = node;
     return () => {
@@ -155,6 +177,9 @@
   }
 
   function onpointerdown(e: PointerEvent): void {
+    if (e.button !== 0 && e.button !== 1) {
+      return;
+    }
     // pointer capture keeps move/up events flowing if the pointer leaves the canvas; guard it
     // because it can throw for non-active pointer ids (and must not block the gesture).
     try {
@@ -169,6 +194,7 @@
       fileInput?.click();
       return;
     }
+    pointerGestureActive = true;
     controller.pointerDown(x, y, {
       shiftKey: e.shiftKey,
       altKey: e.altKey,
@@ -190,22 +216,42 @@
   }
 
   let lastPointer = { x: 0, y: 0 };
+  let pointerGestureActive = false;
   // Space-held → temporary pan (Excalidraw); tracked globally, plain let (not $state —
   // it only gates pointer handlers, never rendered).
   let spaceHeld = false;
 
+  function movePointer(e: PointerEvent): void {
+    const point = canvasRelative(e.clientX, e.clientY);
+    if (!point) {
+      return;
+    }
+    lastPointer = point;
+    controller.pointerMove(point.x, point.y, pointerMods(e));
+  }
+
   function onpointermove(e: PointerEvent): void {
-    lastPointer = relative(e);
-    const { x, y } = lastPointer;
-    controller.pointerMove(x, y, {
-      shiftKey: e.shiftKey,
-      altKey: e.altKey,
-      ctrlKey: e.ctrlKey,
-      metaKey: e.metaKey
-    });
+    if (!pointerGestureActive) {
+      movePointer(e);
+    }
+  }
+
+  function onWindowPointerMove(e: PointerEvent): void {
+    if (pointerGestureActive) {
+      movePointer(e);
+    }
   }
 
   function onpointerup(): void {
+    pointerGestureActive = false;
+    controller.pointerUp();
+  }
+
+  function onWindowPointerUp(): void {
+    if (!pointerGestureActive) {
+      return;
+    }
+    pointerGestureActive = false;
     controller.pointerUp();
   }
 
@@ -648,7 +694,13 @@
   });
 </script>
 
-<svelte:window {onkeydown} {onkeyup} />
+<svelte:window
+  {onkeydown}
+  {onkeyup}
+  onpointermove={onWindowPointerMove}
+  onpointerup={onWindowPointerUp}
+  onpointercancel={onWindowPointerUp}
+/>
 
 <input
   type="file"
@@ -1324,12 +1376,12 @@
   }
 
   .swatch.active {
-    outline: 2px solid #4263eb;
+    outline: 2px solid var(--color-primary);
     outline-offset: 1px;
   }
 
   .swatch.custom {
-    border: 2px solid #4263eb;
+    border: 2px solid var(--color-primary);
     margin-left: 4px;
   }
 

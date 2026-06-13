@@ -22,6 +22,25 @@ describe("DrawController — generic-create gesture", () => {
     c.pointerUp();
     expect(c.activeTool).toBe("selection");
     expect(c.scene.elements.length).toBe(1);
+    expect(c.selectedId).toBe(el.id);
+    expect(c.showProperties).toBe(true);
+  });
+
+  it("starts new drawings with a transparent background, not a blue fill", () => {
+    const c = new DrawController();
+
+    expect(c.strokeColor).toBe("#1e1e1e");
+    expect(c.backgroundColor).toBe("transparent");
+
+    c.setTool("rectangle");
+    c.pointerDown(100, 100);
+    c.pointerMove(200, 180);
+    c.pointerUp();
+
+    const rect = c.scene.elements[0]!;
+    expect(rect.strokeColor).toBe("#1e1e1e");
+    expect(rect.backgroundColor).toBe("transparent");
+    expect(rect.backgroundColor).not.toBe("#a5d8ff");
   });
 
   it("handles negative-direction drag (origin becomes the min corner)", () => {
@@ -38,6 +57,41 @@ describe("DrawController — generic-create gesture", () => {
     expect(el.height).toBe(150);
   });
 
+  it("honors Excalidraw Shift and Alt modifiers while creating generic shapes", () => {
+    const c = new DrawController();
+
+    c.setTool("rectangle");
+    c.pointerDown(100, 100);
+    c.pointerMove(180, 140, {
+      shiftKey: true,
+      altKey: false,
+      ctrlKey: false,
+      metaKey: false,
+    });
+    c.pointerUp();
+
+    const square = c.scene.elements[0]!;
+    expect(Math.round(square.width)).toBe(80);
+    expect(Math.round(square.height)).toBe(80);
+
+    c.clear();
+    c.setTool("rectangle");
+    c.pointerDown(200, 200);
+    c.pointerMove(250, 230, {
+      shiftKey: false,
+      altKey: true,
+      ctrlKey: false,
+      metaKey: false,
+    });
+    c.pointerUp();
+
+    const centered = c.scene.elements[0]!;
+    expect(Math.round(centered.x)).toBe(150);
+    expect(Math.round(centered.y)).toBe(170);
+    expect(Math.round(centered.width)).toBe(100);
+    expect(Math.round(centered.height)).toBe(60);
+  });
+
   it("discards a zero-size click (no drag)", () => {
     const c = new DrawController();
     c.setTool("diamond");
@@ -47,6 +101,21 @@ describe("DrawController — generic-create gesture", () => {
 
     expect(c.scene.elements.length).toBe(0);
     expect(c.activeTool).toBe("selection");
+    expect(c.selectedId).toBeNull();
+  });
+
+  it("keeps deliberate subpixel generic shapes, matching upstream invisible-size semantics", () => {
+    const c = new DrawController();
+    c.setTool("rectangle");
+
+    c.pointerDown(50, 50);
+    c.pointerMove(50.5, 50.5);
+    c.pointerUp();
+
+    expect(c.scene.elements.length).toBe(1);
+    expect(c.scene.elements[0]!.width).toBe(0.5);
+    expect(c.scene.elements[0]!.height).toBe(0.5);
+    expect(c.selectedId).toBe(c.scene.elements[0]!.id);
   });
 
   it("the selection tool does not create elements", () => {
@@ -265,6 +334,42 @@ describe("DrawController — generic-create gesture", () => {
     const arrow = c.scene.elements[1]! as { type: string; endArrowhead: string | null };
     expect(arrow.type).toBe("arrow");
     expect(arrow.endArrowhead).toBe("arrow");
+  });
+
+  it("Shift-locks the first line segment to Excalidraw's discrete angle grid", () => {
+    const c = new DrawController();
+    c.setTool("line");
+
+    c.pointerDown(100, 100);
+    c.pointerMove(200, 130, {
+      shiftKey: true,
+      altKey: false,
+      ctrlKey: false,
+      metaKey: false,
+    });
+    c.pointerUp();
+
+    const line = c.scene.elements[0]! as { points: readonly (readonly [number, number])[] };
+    const end = line.points[1]!;
+    const angle = Math.atan2(end[1], end[0]);
+    const lockedAngle = Math.round(angle / (Math.PI / 12)) * (Math.PI / 12);
+    expect(Math.abs(angle - lockedAngle)).toBeLessThan(0.000001);
+  });
+
+  it("creates frames with upstream frame style defaults", () => {
+    const c = new DrawController();
+    c.setTool("frame");
+
+    c.pointerDown(100, 100);
+    c.pointerMove(220, 180);
+    c.pointerUp();
+
+    const frame = c.scene.elements[0]!;
+    expect(frame.type).toBe("frame");
+    expect(frame.strokeColor).toBe("#bbb");
+    expect(frame.strokeWidth).toBe(2);
+    expect(frame.backgroundColor).toBe("transparent");
+    expect(frame.roughness).toBe(0);
   });
 
   it("freedraw accumulates local points along the stroke", () => {

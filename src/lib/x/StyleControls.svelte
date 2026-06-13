@@ -225,14 +225,14 @@
   }
 
   .square:focus-visible {
-    outline: 2px solid #6965db;
+    outline: 2px solid var(--color-primary);
     outline-offset: 1px;
   }
 
   .square.active {
-    color: #ffffff;
-    background: #6965db;
-    border-color: #6965db;
+    color: var(--color-on-primary-container);
+    background: var(--color-surface-primary-container);
+    border-color: transparent;
   }
 
   .square :global(svg) {
@@ -244,7 +244,7 @@
     width: 100%;
     min-width: 0;
     margin: 2px 0 0;
-    accent-color: #6965db;
+    accent-color: var(--color-primary);
     cursor: pointer;
   }
 </style>

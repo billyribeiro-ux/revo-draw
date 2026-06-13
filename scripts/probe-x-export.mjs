@@ -2,18 +2,12 @@
 // Draw 2 shapes, then exercise the controller's export methods:
 //  - exportToPngBlob() → a valid, non-trivial PNG (magic bytes + size)
 //  - exportToSvgString() → a real <svg> with a viewBox and rendered shape paths
-import { spawn } from 'node:child_process';
 import { setTimeout as sleep } from 'node:timers/promises';
+import { launchChrome } from './cdp-probe-utils.mjs';
 
-const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
-const PORT = 9270;
 const URL = 'http://localhost:1420/x';
 
-const chrome = spawn(CHROME, [
-  '--headless', '--disable-gpu', '--no-sandbox',
-  `--remote-debugging-port=${PORT}`, '--user-data-dir=/tmp/lf-xexport',
-  '--window-size=1440,900', URL
-]);
+const { port: PORT, cleanup } = await launchChrome({ url: URL, prefix: 'lf-xexport' });
 
 async function discover() {
   for (let i = 0; i < 60; i++) {
@@ -50,6 +44,7 @@ await ev(`(() => {
   const d = window.__draw;
   d.setStrokeColor('#e03131');
   d.setTool('rectangle'); d.pointerDown(300, 200); d.pointerMove(460, 320); d.pointerUp();
+  d.deselect();
   d.setStrokeColor('#1971c2');
   d.setTool('ellipse');   d.pointerDown(520, 220); d.pointerMove(680, 360); d.pointerUp();
 })()`);
@@ -91,5 +86,5 @@ const svgOk = svg && svg.hasSvg && svg.hasViewBox && svg.pathCount >= 2 && svg.h
 const ok = count === 2 && pngOk && svgOk;
 console.log(ok ? 'PASS: PNG (valid magic + sized) and SVG (viewBox + paths) exported' : 'FAIL');
 ws.close();
-chrome.kill();
+cleanup();
 process.exit(ok ? 0 : 1);

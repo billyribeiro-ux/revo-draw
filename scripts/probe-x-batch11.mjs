@@ -16,22 +16,22 @@ await new Promise((r) => (ws.onopen = r));
 ws.onmessage = (e) => { const m = JSON.parse(e.data.toString()); if (m.id && pending.has(m.id)) { pending.get(m.id)(m.result); pending.delete(m.id); } };
 await send('Runtime.enable');
 const ev = async (x) => { const r = await send('Runtime.evaluate', { expression: x, awaitPromise: true, returnByValue: true }); if (r.exceptionDetails) return 'ERR ' + (r.exceptionDetails.exception?.description ?? JSON.stringify(r.exceptionDetails)); return r.result.value; };
-const m2 = (t, x, y, b) => send('Input.dispatchMouseEvent', { type: t, x, y, button: 'left', buttons: b, clickCount: 1 });
+const m2 = (t, x, y, b) => send('Input.dispatchMouseEvent', { type: t, x, y, button: t === 'mouseMoved' && b === 0 ? 'none' : 'left', buttons: b, clickCount: 1 });
 for (let i = 0; i < 80; i++) { if ((await ev('!!window.__draw')) === true) break; await sleep(250); }
 await ev(`window.__draw.clear(); localStorage.clear(); location.reload()`); await sleep(1500);
 for (let i = 0; i < 80; i++) { if ((await ev('!!window.__draw')) === true) break; await sleep(250); }
 await m2('mouseMoved', 200, 200, 0);
 
 // --- binding highlight: draw a rect, then start an arrow whose end hovers the rect
-await ev(`window.__draw.setTool('rectangle')`); await m2('mouseMoved', 500, 300, 0); await sleep(15); await m2('mousePressed', 500, 300, 1); await sleep(20); await m2('mouseMoved', 620, 400, 1); await sleep(20); await m2('mouseReleased', 620, 400, 0); await sleep(40);
+await ev(`window.__draw.setTool('rectangle')`); await m2('mouseMoved', 600, 300, 0); await sleep(15); await m2('mousePressed', 600, 300, 1); await sleep(20); await m2('mouseMoved', 720, 400, 1); await sleep(20); await m2('mouseReleased', 720, 400, 0); await sleep(40);
 await ev(`window.__draw.setTool('arrow')`);
 // start arrow far from the rect, drag its end ONTO the rect → suggestedBinding set
-await m2('mouseMoved', 250, 350, 0); await sleep(15);
-await m2('mousePressed', 250, 350, 1); await sleep(20);
-await m2('mouseMoved', 400, 350, 1); await sleep(20);
-await m2('mouseMoved', 560, 350, 1); await sleep(30); // now over the rect
+await m2('mouseMoved', 420, 350, 0); await sleep(15);
+await m2('mousePressed', 420, 350, 1); await sleep(20);
+await m2('mouseMoved', 520, 350, 1); await sleep(20);
+await m2('mouseMoved', 660, 350, 1); await sleep(30); // now over the rect
 const highlightWhileDrawing = await ev(`!!window.__draw.appState.current.suggestedBinding`);
-await m2('mouseReleased', 560, 350, 0); await sleep(40);
+await m2('mouseReleased', 660, 350, 0); await sleep(40);
 const highlightAfterRelease = await ev(`window.__draw.appState.current.suggestedBinding`);
 // the arrow should have bound to the rect
 const boundEnd = await ev(`(() => { const a = window.__draw.scene.elements.find(e => e.type === 'arrow'); return a ? !!a.endBinding : null; })()`);
