@@ -654,7 +654,11 @@ export class DrawController {
   }
 
   setStrokeColor(color: string): void {
-    this.#applyStyle({ strokeColor: color }, { currentItemStrokeColor: color });
+    this.#applyStyle(
+      { strokeColor: color },
+      { currentItemStrokeColor: color },
+      { includeBoundText: true },
+    );
   }
   setBackgroundColor(color: string): void {
     const selected = this.selectedElements;
@@ -701,7 +705,11 @@ export class DrawController {
   }
 
   setOpacity(opacity: number): void {
-    this.#applyStyle({ opacity }, { currentItemOpacity: opacity });
+    this.#applyStyle(
+      { opacity },
+      { currentItemOpacity: opacity },
+      { includeBoundText: true },
+    );
   }
   setFillStyle(fillStyle: AppState["currentItemFillStyle"]): void {
     this.#applyStyle({ fillStyle }, { currentItemFillStyle: fillStyle });
@@ -783,9 +791,12 @@ export class DrawController {
       roughness?: number;
     },
     appStatePatch: Partial<AppState>,
+    opts: { includeBoundText?: boolean } = {},
   ): void {
     this.appState.setState(appStatePatch);
-    const selected = this.selectedElements;
+    const selected = opts.includeBoundText
+      ? this.#selectedElementsWithBoundText()
+      : this.selectedElements;
     if (!selected.length) {
       return;
     }
@@ -800,6 +811,31 @@ export class DrawController {
     }
     this.scene.scene.triggerUpdate();
     this.#commit();
+  }
+
+  #selectedElementsWithBoundText(): readonly NonDeletedExcalidrawElement[] {
+    const selected = this.selectedElements;
+    if (!selected.length) {
+      return selected;
+    }
+
+    const map = this.scene.scene.getNonDeletedElementsMap();
+    const selectedWithBoundText = [...selected];
+    const ids = new Set(selected.map((element) => element.id));
+
+    for (const element of selected) {
+      const boundText = getBoundTextElement(element, map);
+      if (boundText && !ids.has(boundText.id)) {
+        selectedWithBoundText.push(boundText);
+        ids.add(boundText.id);
+      }
+    }
+
+    return selectedWithBoundText;
+  }
+
+  #selectedTextElementsWithBoundText(): readonly ExcalidrawTextElement[] {
+    return this.#selectedElementsWithBoundText().filter(isTextElement);
   }
 
   /** Style props applied to newly-created elements, from the current item defaults. */
@@ -859,12 +895,10 @@ export class DrawController {
   #applyTextStyle(updates: Partial<ExcalidrawTextElement>): void {
     const map = this.scene.scene.getNonDeletedElementsMap();
     let changed = false;
-    for (const el of this.selectedElements) {
-      if (isTextElement(el)) {
-        mutateElement(el, map, updates);
-        redrawTextBoundingBox(el, null, this.scene.scene);
-        changed = true;
-      }
+    for (const el of this.#selectedTextElementsWithBoundText()) {
+      mutateElement(el, map, updates);
+      redrawTextBoundingBox(el, getContainerElement(el, map), this.scene.scene);
+      changed = true;
     }
     if (changed) {
       this.scene.scene.triggerUpdate();
@@ -899,7 +933,10 @@ export class DrawController {
   }
 
   get showTextProperties(): boolean {
-    return this.activeTool === "text" || this.selectedElements.some(isTextElement);
+    return (
+      this.activeTool === "text" ||
+      this.#selectedTextElementsWithBoundText().length > 0
+    );
   }
 
   /** Show the welcome screen on an empty canvas (Excalidraw WelcomeScreen). */
@@ -914,19 +951,19 @@ export class DrawController {
 
   /** Current font family for the properties panel (selected text wins, else the app default). */
   get currentFontFamily(): FontFamilyValues {
-    const text = this.selectedElements.find(isTextElement);
+    const text = this.#selectedTextElementsWithBoundText()[0];
     return text ? text.fontFamily : this.appState.current.currentItemFontFamily;
   }
 
   /** Current font size for the properties panel. */
   get currentFontSize(): number {
-    const text = this.selectedElements.find(isTextElement);
+    const text = this.#selectedTextElementsWithBoundText()[0];
     return text ? text.fontSize : this.appState.current.currentItemFontSize;
   }
 
   /** Current text alignment for the properties panel. */
   get currentTextAlign(): TextAlign {
-    const text = this.selectedElements.find(isTextElement);
+    const text = this.#selectedTextElementsWithBoundText()[0];
     return text ? text.textAlign : this.appState.current.currentItemTextAlign;
   }
 
@@ -941,10 +978,7 @@ export class DrawController {
     this.appState.setState({ currentItemFontSize: fontSize });
     const map = this.scene.scene.getNonDeletedElementsMap();
     let changed = false;
-    for (const el of this.selectedElements) {
-      if (!isTextElement(el)) {
-        continue;
-      }
+    for (const el of this.#selectedTextElementsWithBoundText()) {
       const prevWidth = el.width;
       const prevHeight = el.height;
       const prevX = el.x;
