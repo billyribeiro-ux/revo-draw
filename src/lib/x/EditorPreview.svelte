@@ -223,30 +223,58 @@
   // it only gates pointer handlers, never rendered).
   let spaceHeld = false;
 
-  function finishPointerGesture(): void {
+  function isCanvasUiHit(clientX: number, clientY: number): boolean {
+    const hit = document.elementFromPoint(clientX, clientY);
+    return (
+      hit instanceof Element &&
+      hit.closest('[data-canvas-ui], .properties, .toolbar, .color-picker, .style-controls') !==
+        null
+    );
+  }
+
+  function releasePointerCapture(pointerId: number | null): void {
+    if (pointerId === null) {
+      return;
+    }
+    try {
+      interactiveCanvas?.releasePointerCapture(pointerId);
+    } catch {
+      // releasePointerCapture may throw if the browser already released it.
+    }
+  }
+
+  function finishPointerGesture(opts: { releaseCapture?: boolean } = {}): void {
     if (!pointerGestureActive) {
       return;
     }
+    const pointerId = activePointerId;
     pointerGestureActive = false;
     activePointerId = null;
+    if (opts.releaseCapture) {
+      releasePointerCapture(pointerId);
+    }
     controller.pointerUp();
   }
 
   function stopCanvasGestureForUi(e: PointerEvent): void {
-    finishPointerGesture();
+    finishPointerGesture({ releaseCapture: true });
     e.stopPropagation();
   }
 
-  function movePointer(e: PointerEvent): void {
+  function movePointer(e: PointerEvent): boolean {
     if (activePointerId !== null && e.pointerId !== activePointerId) {
-      return;
+      return false;
+    }
+    if (isCanvasUiHit(e.clientX, e.clientY)) {
+      return false;
     }
     const point = canvasRelative(e.clientX, e.clientY);
     if (!point) {
-      return;
+      return false;
     }
     lastPointer = point;
     controller.pointerMove(point.x, point.y, pointerMods(e));
+    return true;
   }
 
   function onpointermove(e: PointerEvent): void {
@@ -258,7 +286,11 @@
   function onWindowPointerMove(e: PointerEvent): void {
     if (pointerGestureActive) {
       if (e.buttons === 0) {
-        finishPointerGesture();
+        finishPointerGesture({ releaseCapture: true });
+        return;
+      }
+      if (isCanvasUiHit(e.clientX, e.clientY)) {
+        finishPointerGesture({ releaseCapture: true });
         return;
       }
       movePointer(e);
@@ -269,19 +301,14 @@
     if (activePointerId !== null && e.pointerId !== activePointerId) {
       return;
     }
-    finishPointerGesture();
-    try {
-      interactiveCanvas?.releasePointerCapture(e.pointerId);
-    } catch {
-      // releasePointerCapture may throw if the browser already released it.
-    }
+    finishPointerGesture({ releaseCapture: true });
   }
 
   function onWindowPointerUp(e: PointerEvent): void {
     if (activePointerId !== null && e.pointerId !== activePointerId) {
       return;
     }
-    finishPointerGesture();
+    finishPointerGesture({ releaseCapture: true });
   }
 
   function onwheel(e: WheelEvent): void {
@@ -745,6 +772,8 @@
     role="toolbar"
     aria-label="Tools"
     tabindex="-1"
+    data-canvas-ui="true"
+    data-prevent-outside-click="true"
     onpointerdown={stopCanvasGestureForUi}
   >
     <button
@@ -784,6 +813,8 @@
   class:hidden={!controller.showProperties}
   role="group"
   aria-label="Properties"
+  data-canvas-ui="true"
+  data-prevent-outside-click="true"
   onpointerdown={stopCanvasGestureForUi}
 >
   <div class="prop-group">
