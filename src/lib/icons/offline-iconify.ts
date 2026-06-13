@@ -74,7 +74,10 @@ function resolveFrom(set: IconifyIconSet, name: string): ResolvedIcon | null {
 }
 
 export function iconToSvgString(icon: ResolvedIcon, size = 24, color = 'currentColor'): string {
-	return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="${icon.viewBox}" fill="${color}">${icon.body}</svg>`;
+	// Phosphor/Iconify bodies paint with `fill="currentColor"`, which ignores the root `fill`
+	// attribute and resolves to the CSS `color`. So set BOTH: `style="color"` recolours the
+	// currentColor paths, and `fill` covers any path that specifies an explicit fill.
+	return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="${icon.viewBox}" fill="${color}" style="color:${color}">${icon.body}</svg>`;
 }
 
 /** Search the set; resolves to short names ranked by relevance, up to `limit`. */

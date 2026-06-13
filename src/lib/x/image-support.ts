@@ -85,6 +85,8 @@ export const loadImageFile = async (
 /**
  * Build a "saved" `ExcalidrawImageElement` bound to an already-loaded `fileId`.
  * Stroke/background default to `"transparent"` (matching the source factory).
+ * `customData` is passed through so callers (e.g. the icon feature) can tag the
+ * element — the icon path stores `{ kind: 'icon', iconName, iconColor }` there.
  */
 export const createImageElement = (opts: {
   fileId: FileId;
@@ -94,6 +96,7 @@ export const createImageElement = (opts: {
   height: number;
   strokeColor?: string;
   backgroundColor?: string;
+  customData?: Record<string, unknown>;
 }): ExcalidrawImageElement =>
   newImageElement({
     type: "image",
@@ -105,6 +108,7 @@ export const createImageElement = (opts: {
     height: opts.height,
     strokeColor: opts.strokeColor ?? "transparent",
     backgroundColor: opts.backgroundColor ?? "transparent",
+    customData: opts.customData,
   });
 
 /** Create the empty image cache map passed to `renderConfig.imageCache`. */

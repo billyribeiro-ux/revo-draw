@@ -49,6 +49,7 @@
   import LibraryPanel from '$lib/x/LibraryPanel.svelte';
   import EmbedDialog from '$lib/x/EmbedDialog.svelte';
   import MermaidDialog from '$lib/x/MermaidDialog.svelte';
+  import IconPicker from '$lib/x/IconPicker.svelte';
 
   // tool → human label + keyboard shortcut, for the styled toolbar tooltips
   const TOOL_INFO: Record<string, { label: string; shortcut?: string }> = {
@@ -106,7 +107,7 @@
 
   let fileInput = $state<HTMLInputElement>();
   let pendingImageAt: { x: number; y: number } | null = null;
-  let pickerOpen = $state<'stroke' | 'background' | 'canvas' | null>(null);
+  let pickerOpen = $state<'stroke' | 'background' | 'canvas' | 'icon' | null>(null);
 
   // Excalidraw's default palettes
   const strokeColors = ['#1e1e1e', '#e03131', '#2f9e44', '#1971c2', '#f08c00'];
@@ -312,6 +313,7 @@
 
   // menus / dialogs / right-click
   let menuOpen = $state(false);
+  let iconPickerOpen = $state(false);
   let helpOpen = $state(false);
   let exportOpen = $state(false);
   let cmdpOpen = $state(false);
@@ -790,6 +792,16 @@
         </button>
       </Tooltip>
     {/each}
+    <Tooltip label="Insert icon">
+      <button
+        type="button"
+        class="tool-btn"
+        aria-label="Insert icon"
+        onclick={() => (iconPickerOpen = true)}
+      >
+        <PhIcon name="icon" size={16} />
+      </button>
+    </Tooltip>
     <button
       type="button"
       class="theme-toggle"
@@ -807,6 +819,59 @@
   aria-label="Properties"
   onpointerdown={stopCanvasGestureForUi}
 >
+  {#if controller.showIconProperties}
+    <div class="prop-group">
+      <span class="prop-label">Icon color</span>
+      <div class="swatches">
+        {#each strokeColors as c (c)}
+          <button
+            type="button"
+            class="swatch"
+            class:active={controller.iconColor === c}
+            style="background:{c}"
+            aria-label="icon color {c}"
+            onclick={() => void controller.setIconColor(c)}
+          ></button>
+        {/each}
+        <button
+          type="button"
+          class="swatch custom"
+          style="background:{controller.iconColor}"
+          aria-label="custom icon color"
+          onclick={() => (pickerOpen = pickerOpen === 'icon' ? null : 'icon')}
+        ></button>
+      </div>
+      {#if pickerOpen === 'icon'}
+        <ColorPicker
+          value={controller.iconColor}
+          palette={strokeColors}
+          showShades
+          onPick={(c) => {
+            void controller.setIconColor(c);
+            pickerOpen = null;
+          }}
+        />
+      {/if}
+    </div>
+    <div class="prop-group">
+      <span class="prop-label">Icon size</span>
+      <div class="icon-size-row">
+        <input
+          class="icon-size"
+          type="range"
+          min="16"
+          max="320"
+          step="1"
+          value={controller.iconSize}
+          oninput={(e) => controller.setIconSize(e.currentTarget.valueAsNumber)}
+          aria-label="icon size"
+        />
+        <span class="icon-size-value">{controller.iconSize}</span>
+      </div>
+    </div>
+  {/if}
+
+  {#if !controller.isImageSelected}
   <div class="prop-group">
     <span class="prop-label">Stroke</span>
     <div class="swatches">
@@ -873,6 +938,7 @@
       />
     {/if}
   </div>
+  {/if}
   <div class="prop-group">
     <span class="prop-label">Canvas</span>
     <div class="swatches">
@@ -905,6 +971,7 @@
       />
     {/if}
   </div>
+  {#if !controller.isImageSelected}
   <div class="prop-group">
     <span class="prop-label">Stroke width</span>
     <div class="widths">
@@ -919,7 +986,9 @@
       {/each}
     </div>
   </div>
+  {/if}
 
+  {#if !controller.isImageSelected}
   <StyleControls
     fillStyle={controller.fillStyle}
     strokeStyle={controller.strokeStyle}
@@ -932,6 +1001,7 @@
     onEdges={(v) => controller.setEdges(v)}
     onOpacity={(v) => controller.setOpacity(v)}
   />
+  {/if}
 
   {#if controller.showTextProperties}
     <TextControls
@@ -982,6 +1052,17 @@
   <MermaidDialog
     onInsert={(src) => controller.insertMermaid(src)}
     onClose={() => (mermaidOpen = false)}
+  />
+{/if}
+
+{#if iconPickerOpen}
+  <IconPicker
+    previewColor={controller.theme === 'dark' ? '#e9ecef' : '#1e1e1e'}
+    onSelect={(name) => {
+      void controller.insertIcon(name);
+      iconPickerOpen = false;
+    }}
+    onClose={() => (iconPickerOpen = false)}
   />
 {/if}
 
@@ -1470,5 +1551,23 @@
   .widths button.active {
     background: var(--color-primary-light);
     border-color: var(--color-primary);
+  }
+
+  .icon-size-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .icon-size {
+    flex: 1;
+    accent-color: var(--color-primary, #6965db);
+  }
+
+  .icon-size-value {
+    min-width: 2.5ch;
+    color: var(--text-primary-color);
+    font-variant-numeric: tabular-nums;
+    text-align: right;
   }
 </style>

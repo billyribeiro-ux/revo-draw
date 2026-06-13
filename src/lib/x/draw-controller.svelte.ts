@@ -180,6 +180,7 @@ import type {
   ExcalidrawLinearElement,
   ExcalidrawTextElement,
   ExcalidrawTextContainer,
+  FileId,
   FontFamilyValues,
   NonDeleted,
   NonDeletedExcalidrawElement,
@@ -217,6 +218,11 @@ import {
   loadImageFile,
   makeImageCache,
 } from "$lib/x/image-support.ts";
+import {
+  resolveIcon,
+  iconToSvgString,
+  type ResolvedIcon,
+} from "$lib/icons/offline-iconify.ts";
 // export-image pulls in rough + the SVG renderer (DOM-only). Import the value side lazily
 // (dynamic import inside the export methods) so the controller stays loadable in node tests;
 // the type-only import below is erased at runtime and triggers no module load.
@@ -339,6 +345,9 @@ export class DrawController {
   /** The set of selected element ids (reactive — drives the interactive overlay). */
   readonly selectedIds = new SvelteSet<string>();
   editingTextId = $state<string | null>(null);
+  /** Defaults for the next inserted icon (and the Icon panel controls when none is selected). */
+  #defaultIconColor = $state("#1e1e1e");
+  #defaultIconSize = $state(48);
   /** An embeddable awaiting its URL (drives the embed-link dialog), if any. */
   pendingEmbedId = $state<string | null>(null);
   /** Persisted library items (reactive — drives the library panel). */
@@ -1712,6 +1721,131 @@ export class DrawController {
     this.scene.replaceAllElements(this.#elements);
     this.#select(el.id);
     this.#resetToolAfterCreation();
+    this.scene.scene.triggerUpdate();
+    this.#commit();
+  }
+
+  // --- Phosphor icon feature -------------------------------------------------
+  // An "icon" is an Excalidraw image whose source is a single-color Phosphor SVG, tagged via
+  // customData ({ kind: 'icon', iconName, iconColor }) so its colour and size can be changed
+  // independently of the regular shape styles. The SVG is generated at a fixed canonical
+  // resolution; the element's width/height drives the on-canvas size, so recolouring never
+  // disturbs the size and resizing never disturbs the colour.
+
+  /** The single selected icon element, or null. */
+  #selectedIcon(): ExcalidrawImageElement | null {
+    const sel = this.selectedElements;
+    if (
+      sel.length === 1 &&
+      isImageElement(sel[0]) &&
+      (sel[0].customData as { kind?: string } | undefined)?.kind === "icon"
+    ) {
+      return sel[0] as ExcalidrawImageElement;
+    }
+    return null;
+  }
+
+  /** True when exactly one icon is selected — drives the Icon properties section. */
+  get showIconProperties(): boolean {
+    return this.#selectedIcon() !== null;
+  }
+
+  /** True when the single selection is an image (icon or photo) — hides inapplicable shape styles. */
+  get isImageSelected(): boolean {
+    const sel = this.selectedElements;
+    return sel.length === 1 && isImageElement(sel[0]);
+  }
+
+  /** Icon colour for the panel: the selected icon's colour, else the insert default. */
+  get iconColor(): string {
+    const cd = this.#selectedIcon()?.customData as
+      | { iconColor?: string }
+      | undefined;
+    return cd?.iconColor ?? this.#defaultIconColor;
+  }
+
+  /** Icon size for the panel: the selected icon's size, else the insert default. */
+  get iconSize(): number {
+    const el = this.#selectedIcon();
+    return el ? Math.round(el.width) : this.#defaultIconSize;
+  }
+
+  /** Load a colour-baked icon SVG into the image cache, returning its fresh fileId. */
+  async #loadIconImage(icon: ResolvedIcon, color: string): Promise<FileId> {
+    const ICON_SVG_RESOLUTION = 256;
+    const svg = iconToSvgString(icon, ICON_SVG_RESOLUTION, color);
+    const file = new File([svg], `${icon.name}.svg`, { type: "image/svg+xml" });
+    const { fileId, mimeType, image } = await loadImageFile(file);
+    this.imageCache.set(fileId, { image, mimeType });
+    return fileId;
+  }
+
+  /** Insert a Phosphor icon at the viewport centre, in the current default colour/size. */
+  async insertIcon(iconName: string): Promise<void> {
+    const icon = await resolveIcon(iconName);
+    if (!icon) {
+      return;
+    }
+    const color = this.#defaultIconColor;
+    const size = this.#defaultIconSize;
+    const fileId = await this.#loadIconImage(icon, color);
+    const a = this.appState.current;
+    const center = this.#toScene(a.width / 2, a.height / 2);
+    const el = createImageElement({
+      fileId,
+      x: center.x - size / 2,
+      y: center.y - size / 2,
+      width: size,
+      height: size,
+      customData: { kind: "icon", iconName: icon.name, iconColor: color },
+    });
+    this.#elements.push(el);
+    syncInvalidIndices(this.#elements);
+    this.scene.replaceAllElements(this.#elements);
+    this.#select(el.id);
+    this.setTool("selection");
+    this.scene.scene.triggerUpdate();
+    this.#commit();
+  }
+
+  /** Recolour the selected icon (and remember the colour for the next insert). */
+  async setIconColor(color: string): Promise<void> {
+    this.#defaultIconColor = color;
+    const el = this.#selectedIcon();
+    if (!el) {
+      return;
+    }
+    const icon = await resolveIcon((el.customData as { iconName: string }).iconName);
+    if (!icon) {
+      return;
+    }
+    const fileId = await this.#loadIconImage(icon, color);
+    const map = this.scene.scene.getNonDeletedElementsMap();
+    mutateElement(el, map, {
+      fileId,
+      customData: { ...el.customData, iconColor: color },
+    });
+    this.scene.scene.triggerUpdate();
+    this.#commit();
+  }
+
+  /** Resize the selected icon to a centred `px` square, remembering it for the next insert. */
+  setIconSize(px: number): void {
+    const size = Math.max(8, Math.round(px));
+    this.#defaultIconSize = size;
+    const el = this.#selectedIcon();
+    if (!el) {
+      return;
+    }
+    const map = this.scene.scene.getNonDeletedElementsMap();
+    const cx = el.x + el.width / 2;
+    const cy = el.y + el.height / 2;
+    mutateElement(el, map, {
+      x: cx - size / 2,
+      y: cy - size / 2,
+      width: size,
+      height: size,
+    });
     this.scene.scene.triggerUpdate();
     this.#commit();
   }
