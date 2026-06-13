@@ -5,6 +5,23 @@ Newest first. "Done" = committed on this branch with tests green; "Pending" = no
 
 ## Done
 
+### Web-editor (`/x`) Phase 2 Tier 2 text completion — 2026-06-12 (branch `feat/excalidraw-parity-gaps`)
+
+Completed and pushed the Tier 2 text-editor wiring cluster from `PARITY_REMAINING_WORK.md`, one bug
+per commit with dedicated headless-Chrome probes:
+
+- **#7** Text tool now binds to text-bindable containers and reopens existing bound text (`3b0380a`,
+  `probe-x-fix07-text-container-binding.mjs`).
+- **#8** Selection-mode double-click now edits existing text, creates free text on canvas, or opens
+  bound text on containers (`0b63fd0`, `probe-x-fix08-double-click-text.mjs`).
+- **#9** The in-place text editor now follows camera pan/zoom using viewport coordinates and scaled
+  dimensions/font size (`33dff27`, `probe-x-fix09-text-editor-camera.mjs`).
+- **#10** Actively edited text is hidden from the static canvas render while the textarea is active
+  (`f0c4c70`, `probe-x-fix10-hide-editing-text-render.mjs`).
+
+Verification: each commit passed `pnpm check` 0/0, `pnpm test` 172/172, its new probe, and the
+relevant existing text regression probes named in the commit body.
+
 ### Web-editor (`/x`) Phase 2 Tier 1 wiring completion — 2026-06-12 (branch `feat/excalidraw-parity-gaps`)
 
 Completed and pushed the remaining Tier 1 wiring fixes from `PARITY_REMAINING_WORK.md`, one bug per
