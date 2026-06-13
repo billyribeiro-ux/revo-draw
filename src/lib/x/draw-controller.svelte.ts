@@ -45,11 +45,14 @@ import {
   getElementsInGroup,
   getSelectedElements,
   getSelectedGroupIdForElement,
+  getVisibleSceneBounds,
   isBoundToContainer,
   isCursorInFrame,
   isExcalidrawElement,
   isImageElement,
   isUsingAdaptiveRadius,
+  getLineHeightInPx,
+  measureText,
   newArrowElement,
   newElement,
   newElementWith,
@@ -58,6 +61,7 @@ import {
   newFreeDrawElement,
   newLinearElement,
   newTextElement,
+  normalizeText,
   orderByFractionalIndex,
   updateElbowArrowPoints,
   redrawTextBoundingBox,
@@ -70,6 +74,7 @@ import {
   syncMovedIndices,
   transformElements,
   updateBoundElements,
+  wrapText,
 } from "@excalidraw/element";
 
 import type {
@@ -85,6 +90,7 @@ import {
   DEFAULT_TEXT_ALIGN,
   MAX_ZOOM,
   MIN_ZOOM,
+  getFontString,
   getGridPoint,
   getLineHeight,
   randomId,
@@ -1702,7 +1708,7 @@ export class DrawController {
     // OS clipboard had non-Excalidraw text → paste it as text (unless plain-paste
     // is explicitly requested elsewhere); else fall back to the in-memory mirror.
     if (text.trim()) {
-      this.#pasteTextElement(text, clientX, clientY);
+      this.#pasteTextElement(text, clientX, clientY, false);
       return;
     }
     if (this.#clipboard.length) {
@@ -1717,7 +1723,7 @@ export class DrawController {
     if (fromOS?.length) {
       this.#pasteElements(fromOS, clientX, clientY);
     } else if (text) {
-      this.#pasteTextElement(text, clientX, clientY);
+      this.#pasteTextElement(text, clientX, clientY, true);
     }
   }
 
@@ -1752,8 +1758,13 @@ export class DrawController {
     this.#commit();
   }
 
-  /** Create a text element from pasted plaintext at the point (or 100,100). */
-  #pasteTextElement(text: string, clientX?: number, clientY?: number): void {
+  /** Create text element(s) from pasted text at the point (or 100,100). */
+  #pasteTextElement(
+    text: string,
+    clientX?: number,
+    clientY?: number,
+    isPlainPaste = false,
+  ): void {
     let x = 100;
     let y = 100;
     if (clientX != null && clientY != null) {
@@ -1761,19 +1772,64 @@ export class DrawController {
       x = p.x;
       y = p.y;
     }
-    const el = newTextElement({
-      text,
-      originalText: text,
-      x,
-      y,
-      ...this.#createStyle(),
-      ...this.#textStyle(),
+
+    const textStyle = this.#textStyle();
+    const fontString = getFontString({
+      fontSize: textStyle.fontSize,
+      fontFamily: textStyle.fontFamily,
     });
-    redrawTextBoundingBox(el, null, this.scene.scene);
-    this.#elements.push(el);
+    const lineHeight = getLineHeight(textStyle.fontFamily);
+    const [x1, , x2] = getVisibleSceneBounds(this.appState.current);
+    const maxTextWidth = Math.max(Math.min((x2 - x1) * 0.5, 800), 200);
+    const lineGap = 10;
+    let currentY = y;
+    const lines = isPlainPaste ? [text] : text.split("\n");
+    const elements: ExcalidrawTextElement[] = [];
+
+    for (const [idx, line] of lines.entries()) {
+      const originalText = normalizeText(line).trim();
+      if (originalText.length) {
+        let metrics = measureText(originalText, fontString, lineHeight);
+        const isTextUnwrapped = metrics.width > maxTextWidth;
+        const wrappedText = isTextUnwrapped
+          ? wrapText(originalText, fontString, maxTextWidth)
+          : originalText;
+        metrics = isTextUnwrapped
+          ? measureText(wrappedText, fontString, lineHeight)
+          : metrics;
+        const topLayerFrame = this.#topLayerFrameAtSceneCoords({
+          x,
+          y: currentY,
+        });
+
+        const element = newTextElement({
+          text: wrappedText,
+          originalText,
+          x: x - metrics.width / 2,
+          y: currentY - metrics.height / 2,
+          ...this.#createStyle(),
+          fontFamily: textStyle.fontFamily,
+          fontSize: textStyle.fontSize,
+          textAlign: DEFAULT_TEXT_ALIGN,
+          lineHeight,
+          autoResize: !isTextUnwrapped,
+          frameId: topLayerFrame ? topLayerFrame.id : null,
+        });
+        elements.push(element);
+        currentY += element.height + lineGap;
+      } else if (lines[idx - 1]?.trim()) {
+        currentY += getLineHeightInPx(textStyle.fontSize, lineHeight) + lineGap;
+      }
+    }
+
+    if (!elements.length) {
+      return;
+    }
+
+    this.#elements.push(...elements);
     syncInvalidIndices(this.#elements);
     this.scene.replaceAllElements(this.#elements);
-    this.#setSelection([el.id]);
+    this.#setSelection(elements.map((element) => element.id));
     this.activeTool = "selection";
     this.#commit();
   }
