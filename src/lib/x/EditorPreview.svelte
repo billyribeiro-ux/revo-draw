@@ -983,8 +983,7 @@
 
   .excalidraw.theme--dark .toolbar,
   .excalidraw.theme--dark .properties {
-    background: #232329;
-    border-color: #31313a;
+    background: var(--island-bg-color);
     color: #ced4da;
   }
 
@@ -1166,13 +1165,18 @@
     z-index: 10;
     display: flex;
     flex-direction: column;
-    gap: 12px;
-    width: 180px;
-    padding: 12px;
-    background: #fff;
-    border: 1px solid #e0e0e0;
-    border-radius: 12px;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    gap: 10px;
+    width: max-content;
+    min-width: 180px;
+    max-width: calc(100vw - 24px);
+    max-height: calc(100vh - 166px);
+    box-sizing: border-box;
+    overflow: auto;
+    padding: calc(2 * var(--space-factor));
+    color: var(--color-on-surface);
+    background: var(--island-bg-color);
+    border-radius: var(--border-radius-lg);
+    box-shadow: var(--shadow-island);
     font-size: 12px;
   }
 
@@ -1183,7 +1187,7 @@
   }
 
   .prop-label {
-    color: #495057;
+    color: var(--text-primary-color);
   }
 
   .swatches {
@@ -1224,12 +1228,13 @@
     padding: 6px 0;
     border: 1px solid transparent;
     border-radius: 6px;
-    background: #f1f3f5;
+    color: var(--color-on-surface);
+    background: var(--button-hover-bg);
     cursor: pointer;
   }
 
   .widths button.active {
-    background: #e7f5ff;
-    border-color: #a5d8ff;
+    background: var(--color-primary-light);
+    border-color: var(--color-primary);
   }
 </style>
