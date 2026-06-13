@@ -43,6 +43,7 @@ passed `pnpm check` 0/0 + 172 unit tests + the relevant existing regression prob
 | Bug | Commit | Fix (wired the ported fn) | Evidence probe |
 |---|---|---|---|
 | #1 stale shape-cache on style edit | `3731960` | `ShapeCache.delete` per style mutation (= upstream `newElementWith` fresh ref) | `probe-x-fix01-stylecache.mjs` |
+| #2 multi-point linear creation | `f1a2dde` | click starts `multiElement`-style line/arrow creation; move rubber-bands; clicks commit; Enter/Escape/dbl-click finalize | `probe-x-fix02-multipoint-linear.mjs` |
 | #3/#4 roundness ignored at create | `39db1ff` | `#getCurrentItemRoundness` (App.tsx:9500) into line+generic create | `probe-x-fix03-roundness-create.mjs` |
 | #5 frame parenting on create | `7156bcc` | `#topLayerFrameAtSceneCoords` at pointerDown → new elements get `frameId` | `probe-x-fix05-frame-parenting.mjs` |
 | #6 creation origin not grid-snapped | `b19ecfa` | `getGridPoint(x,y, ctrl?null:effectiveGridSize)` | `probe-x-fix06-gridsnap-create.mjs` |
@@ -103,7 +104,6 @@ passed `pnpm check` 0/0 + 172 unit tests + the relevant existing regression prob
 
 | Bug | Scope | Notes |
 |---|---|---|
-| **#2** | multi-point line/arrow creation state machine (click-to-add-points, rubber-band preview, Esc/Enter/dbl-click finalize) | App.tsx:10884-10925 `multiElement`. Largest single item. |
 | **#17** | eraser trail (segment-intersection over the drag path, accumulate delete set) | App.tsx:8114 + eraser trail. Current: 1 element per discrete sample. |
 | **#48–72** | the 6 stub modules — replace placeholders with real (or re-exported) impls | `src/lib/excalidraw/clipboard.ts`, `clients.ts`, `i18n.ts`, `data/library.ts`, `data/types.ts`, `actions/types.ts`. These are `[k: string]: unknown` / `declare class` stubs today. |
 

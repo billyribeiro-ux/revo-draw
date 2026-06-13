@@ -5,6 +5,20 @@ Newest first. "Done" = committed on this branch with tests green; "Pending" = no
 
 ## Done
 
+### Web-editor (`/x`) Phase 2 Tier 4 heavy port — #2 multi-point linears — 2026-06-12 (branch `feat/excalidraw-parity-gaps`)
+
+Completed and pushed the multi-point line/arrow creation state machine (`f1a2dde`):
+
+- Click starts multi-point linear creation instead of discarding a zero-size line/arrow.
+- Pointer move rubber-bands the active segment; subsequent clicks commit points.
+- Enter, Escape, and double-click finalize through the existing selected `LinearElementEditor` flow.
+- Drag-created two-point lines/arrows keep the prior finalize behavior and endpoint binding path.
+
+Verification: `pnpm check` 0/0, `pnpm test` 172/172,
+`probe-x-fix02-multipoint-linear.mjs`, `probe-x-linear.mjs`, `probe-x-lineedit.mjs`,
+`probe-x-fix22-linear-finalize-selection.mjs`, `probe-x-fix23-linear-modifiers.mjs`,
+`probe-x-fix18-endpoint-rebind.mjs`, and `probe-x-binding.mjs`.
+
 ### Web-editor (`/x`) Phase 2 Tier 3 property partial completion — 2026-06-12 (branch `feat/excalidraw-parity-gaps`)
 
 Completed and pushed the Tier 3 property partials from `PARITY_REMAINING_WORK.md`, one bug per
