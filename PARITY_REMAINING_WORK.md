@@ -35,7 +35,7 @@ Dev server: `pnpm dev` (http://localhost:1420/x). Probes: `node scripts/probe-x-
 
 ---
 
-## 1. DONE — Tier 1 + Tier 2 + Tier 3 wiring complete, all entries probe-verified & pushed
+## 1. DONE — Tier 1 + Tier 2 + Tier 3 + Tier 4 complete, all entries probe-verified & pushed
 
 Each completed row below landed as an isolated commit with a dedicated probe. Every commit also
 passed `pnpm check` 0/0 + 172 unit tests + the relevant existing regression probes.
@@ -77,6 +77,7 @@ passed `pnpm check` 0/0 + 172 unit tests + the relevant existing regression prob
 | #41 zoom-to-fit uses 0.85 multiplier | `95b632e` | `zoomValueToFitBoundsOnViewport` cap + `roundToStep` floor | `probe-x-fix41-zoom-to-fit.mjs` |
 | #44 Shift+wheel vertical-pans | `156e7cd` | Shift branch pans X by `(deltaY || deltaX) / zoom` | `probe-x-fix44-shift-wheel-horizontal.mjs` |
 | #52 line→polygon background fill | `50c6083` | non-transparent background on selected closeable lines applies `toggleLinePolygonState(line, true)` | `probe-x-fix52-line-polygon-background.mjs` |
+| #48–72 stub modules | `d3f6ac9` | replaced six Excalidraw stubs with concrete local-safe clipboard, clients, i18n, library, data, and action surfaces | `probe-x-fix48-72-stub-modules.mjs` |
 | #bound-text style propagation | `ea946ea` | stroke/opacity/text-style actions expand selected containers to their bound text labels | `probe-x-fix-bound-text-style-propagation.mjs` |
 | UI empty-canvas panels | `e4731d5` | `showProperties` (= `showSelectedShapeActions`) + `statsOpen` gate; Alt+/ toggles stats | `probe-x-fixUI-panel-visibility.mjs` |
 
@@ -103,9 +104,7 @@ passed `pnpm check` 0/0 + 172 unit tests + the relevant existing regression prob
 
 ### Tier 4 — Heavy ports (real work, NOT wiring — do last)
 
-| Bug | Scope | Notes |
-|---|---|---|
-| **#48–72** | the 6 stub modules — replace placeholders with real (or re-exported) impls | `src/lib/excalidraw/clipboard.ts`, `clients.ts`, `i18n.ts`, `data/library.ts`, `data/types.ts`, `actions/types.ts`. These are `[k: string]: unknown` / `declare class` stubs today. |
+✅ Complete. All Tier 4 rows are now in the DONE table above.
 
 ### Tier 5 — Visual / layout fidelity (the `/x` page "looks off" vs Excalidraw)
 
@@ -155,16 +154,14 @@ run as regression). Audit: `PARITY_E2E_AUDIT.md`, `PARITY_E2E_FINDINGS.json`.
 
 > Continue the Excalidraw web-editor parity campaign on branch `feat/excalidraw-parity-gaps`. Read
 > `PARITY_REMAINING_WORK.md` first — it has the principle, the done-list with evidence, and the
-> remaining bugs with the exact ported function to wire for each.
+> remaining visual-fidelity items.
 >
-> Work through the remaining bugs **one per commit**, in this order: Tier 4 (heavy: #48–72 stub
-> modules). For EACH bug follow the verification recipe in §0: read the upstream reference and cite
-> file:line; wire the **already-ported, byte-identical** helper in `src/lib/x/draw-controller.svelte.ts`
-> or `EditorPreview.svelte` (never re-author ported logic); run `pnpm check` (must be 0/0) and the
-> svelte autofixer on touched files; write a **differential** probe `scripts/probe-x-fixNN-*.mjs`
-> that asserts our output equals what the upstream rule computes (drive `window.__draw` /
-> `window.__shapeCache` via headless Chrome); run `pnpm test` (172) + relevant existing probes for
-> no-regression; then commit + push citing the rule and the runtime evidence.
+> Tier 1–4 behavioral parity is complete. Work through the Tier 5 visual-fidelity table one item per
+> commit. For EACH item: screenshot `/x` headless, compare against the relevant upstream Excalidraw
+> CSS/component source, adjust `EditorPreview.svelte` / `src/lib/x/*.svelte` / `theme.css`, run
+> `pnpm check` (must be 0/0) and the svelte autofixer on touched files, add or update a visual probe,
+> run `pnpm test` (172) + relevant existing probes for no-regression, then commit + push citing the
+> runtime evidence.
 >
 > 1000% precision: if the audit's wording differs from `excalidraw-master` source, the source wins —
 > verify the real contract (e.g. box-selection "contain" mode). Start the dev server with `pnpm dev`.
