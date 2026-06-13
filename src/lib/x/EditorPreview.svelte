@@ -333,6 +333,10 @@
       e.preventDefault();
       return;
     }
+    if ((e.key === 'Enter' || e.key === 'Escape') && controller.finalizeLinearCreation()) {
+      e.preventDefault();
+      return;
+    }
     if ((e.key === 'Backspace' || e.key === 'Delete') && !e.metaKey && !e.ctrlKey) {
       controller.deleteSelected();
       e.preventDefault();

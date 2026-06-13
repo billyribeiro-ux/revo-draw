@@ -23,12 +23,14 @@ import {
   hitElementItself,
   embeddableURLValidator,
   getEmbedLink,
+  isInvisiblySmallElement,
   isArrowElement,
   isElbowArrow,
   isEmbeddableElement,
   isFrameLikeElement,
   isLinearElement,
   isLineElement,
+  isPathALoop,
   isTextElement,
   hasBoundTextElement,
   isTextBindableContainer,
@@ -98,7 +100,9 @@ import {
   DEFAULT_GRID_SIZE,
   DEFAULT_TEXT_ALIGN,
   DEFAULT_VERTICAL_ALIGN,
+  LINE_CONFIRM_THRESHOLD,
   MAX_ZOOM,
+  MINIMUM_ARROW_SIZE,
   MIN_ZOOM,
   VERTICAL_ALIGN,
   getFontString,
@@ -136,6 +140,7 @@ import {
 
 import {
   clamp,
+  pointDistance,
   pointFrom,
   polygonFromPoints,
   polygonIncludesPoint,
@@ -321,6 +326,10 @@ export class DrawController {
   #mode: CreateMode | null = null;
   #originX = 0;
   #originY = 0;
+  #creationStartX = 0;
+  #creationStartY = 0;
+  #creationMoved = false;
+  #multiPointCommittedCount = 0;
 
   // move-drag state
   #dragging = false;
@@ -2866,6 +2875,208 @@ export class DrawController {
 
   // --- multi-point linear (line/arrow) editor ---
 
+  get isCreatingLinearElement(): boolean {
+    return this.#multiLinearElement() !== null && this.#multiPointCommittedCount > 0;
+  }
+
+  #multiLinearElement(): ExcalidrawLinearElement | null {
+    const creating = this.#creating;
+    return this.#mode === "linear" && creating && isLinearElement(creating)
+      ? creating
+      : null;
+  }
+
+  #linearLocalPoint(
+    element: ExcalidrawLinearElement,
+    x: number,
+    y: number,
+  ): LocalPoint {
+    return pointFrom<LocalPoint>(x - element.x, y - element.y);
+  }
+
+  #mutateLinearPoints(
+    element: ExcalidrawLinearElement,
+    points: readonly LocalPoint[],
+  ): void {
+    const map = this.scene.scene.getNonDeletedElementsMap();
+    if (isElbowArrow(element)) {
+      mutateElement(
+        element,
+        map,
+        updateElbowArrowPoints(
+          element,
+          map as unknown as NonDeletedSceneElementsMap,
+          { points: [...points] },
+          { isBindingEnabled: this.appState.current.isBindingEnabled },
+        ),
+      );
+    } else {
+      mutateElement(element, map, { points: [...points] });
+    }
+  }
+
+  #linearCreationEditor(
+    element: ExcalidrawLinearElement,
+    committedCount: number,
+    isEditing: boolean,
+  ): LinearElementEditor {
+    const map = this.scene.scene.getNonDeletedElementsMap();
+    const editor = new LinearElementEditor(element, map, isEditing);
+    const lastCommittedIndex = Math.max(0, committedCount - 1);
+    return {
+      ...editor,
+      selectedPointsIndices: [Math.min(lastCommittedIndex + 1, element.points.length - 1)],
+      lastCommittedPoint: element.points[lastCommittedIndex] ?? null,
+      initialState: {
+        ...editor.initialState,
+        lastClickedPoint: Math.min(lastCommittedIndex + 1, element.points.length - 1),
+      },
+    };
+  }
+
+  #enterMultiLinearCreation(element: ExcalidrawLinearElement): void {
+    this.#multiPointCommittedCount = 1;
+    const firstPoint = element.points[0] ?? pointFrom<LocalPoint>(0, 0);
+    this.#mutateLinearPoints(element, [firstPoint, firstPoint]);
+    this.#setSelection([element.id]);
+    this.appState.setState({
+      selectedLinearElement: this.#linearCreationEditor(element, 1, true),
+    });
+    this.scene.scene.triggerUpdate();
+  }
+
+  #updateMultiLinearPreview(x: number, y: number): void {
+    const element = this.#multiLinearElement();
+    if (!element || this.#multiPointCommittedCount === 0) {
+      return;
+    }
+    const committed = element.points.slice(0, this.#multiPointCommittedCount);
+    const preview = this.#linearLocalPoint(element, x, y);
+    this.#mutateLinearPoints(element, [...committed, preview]);
+    if (isArrowElement(element)) {
+      this.#updateBindingHighlight(pointFrom<GlobalPoint>(x, y));
+    }
+    this.scene.scene.triggerUpdate();
+  }
+
+  #commitMultiLinearPoint(x: number, y: number): void {
+    const element = this.#multiLinearElement();
+    if (!element || this.#multiPointCommittedCount === 0) {
+      return;
+    }
+
+    const committed = element.points.slice(0, this.#multiPointCommittedCount);
+    const nextPoint = this.#linearLocalPoint(element, x, y);
+    const lastCommitted = committed[committed.length - 1];
+    const zoom = this.appState.current.zoom.value;
+
+    if (
+      lastCommitted &&
+      committed.length > 1 &&
+      pointDistance(lastCommitted, nextPoint) * zoom < LINE_CONFIRM_THRESHOLD
+    ) {
+      this.finalizeLinearCreation();
+      return;
+    }
+
+    const firstPoint = committed[0];
+    if (
+      firstPoint &&
+      isLineElement(element) &&
+      committed.length >= 3 &&
+      pointDistance(firstPoint, nextPoint) * zoom <= LINE_CONFIRM_THRESHOLD
+    ) {
+      this.#mutateLinearPoints(element, [...committed, pointFrom(firstPoint[0], firstPoint[1])]);
+      this.#multiPointCommittedCount = committed.length + 1;
+      this.finalizeLinearCreation();
+      return;
+    }
+
+    if (isElbowArrow(element)) {
+      this.#mutateLinearPoints(element, [committed[0] ?? pointFrom<LocalPoint>(0, 0), nextPoint]);
+      this.#multiPointCommittedCount = 2;
+      this.finalizeLinearCreation();
+      return;
+    }
+
+    const nextCommitted = [...committed, nextPoint];
+    this.#multiPointCommittedCount = nextCommitted.length;
+    this.#mutateLinearPoints(element, [...nextCommitted, nextPoint]);
+    this.#setSelection([element.id]);
+    this.appState.setState({
+      selectedLinearElement: this.#linearCreationEditor(
+        element,
+        this.#multiPointCommittedCount,
+        true,
+      ),
+    });
+    this.scene.scene.triggerUpdate();
+  }
+
+  finalizeLinearCreation(): boolean {
+    const element = this.#multiLinearElement();
+    if (!element) {
+      return false;
+    }
+
+    const map = this.scene.scene.getNonDeletedElementsMap();
+    if (
+      this.#multiPointCommittedCount > 0 &&
+      element.points.length > this.#multiPointCommittedCount
+    ) {
+      this.#mutateLinearPoints(
+        element,
+        element.points.slice(0, this.#multiPointCommittedCount),
+      );
+    }
+
+    if (isLineElement(element) && isPathALoop(element.points, this.appState.current.zoom.value)) {
+      const firstPoint = element.points[0]!;
+      const points = element.points.map((point, index) =>
+        index === element.points.length - 1
+          ? pointFrom<LocalPoint>(firstPoint[0], firstPoint[1])
+          : point,
+      );
+      mutateElement(element, map, {
+        points,
+        ...(isLineElement(element) ? { polygon: true } : {}),
+      });
+    } else if (isLineElement(element) && element.polygon) {
+      mutateElement(element, map, { polygon: false });
+    }
+
+    const shouldDiscard =
+      element.points.length < 2 || isInvisiblySmallElement(element);
+    if (shouldDiscard) {
+      this.#elements = this.#elements.filter((candidate) => candidate.id !== element.id);
+      syncInvalidIndices(this.#elements);
+      this.scene.replaceAllElements(this.#elements);
+      this.#clearBindingHighlight();
+      this.#select(null);
+    } else {
+      if (isArrowElement(element)) {
+        this.#bindArrowEndpoints(element as ExcalidrawArrowElement);
+      }
+      this.#clearBindingHighlight();
+      this.#setSelection([element.id]);
+      this.appState.setState({
+        selectedLinearElement: new LinearElementEditor(
+          element,
+          this.scene.scene.getNonDeletedElementsMap(),
+        ),
+      });
+      this.scene.scene.triggerUpdate();
+    }
+
+    this.#creating = null;
+    this.#mode = null;
+    this.#multiPointCommittedCount = 0;
+    this.#creationMoved = false;
+    this.#commit();
+    this.#resetToolAfterCreation();
+    return true;
+  }
+
   /** True while a line/arrow is in point-editing mode (point handles shown). */
   get isLineEditing(): boolean {
     return this.appState.current.selectedLinearElement?.isEditing === true;
@@ -2911,6 +3122,11 @@ export class DrawController {
    */
   doubleClickAt(clientX: number, clientY: number): void {
     const { x, y } = this.#toScene(clientX, clientY);
+    if (this.isCreatingLinearElement) {
+      this.#commitMultiLinearPoint(x, y);
+      this.finalizeLinearCreation();
+      return;
+    }
     const id = this.#hitTest(x, y);
     if (id) {
       const el = this.scene.scene.getNonDeletedElementsMap().get(id);
@@ -3288,6 +3504,17 @@ export class DrawController {
       return;
     }
 
+    if (
+      (this.activeTool === "line" || this.activeTool === "arrow") &&
+      this.isCreatingLinearElement
+    ) {
+      const gridSize =
+        mods.ctrlKey || mods.metaKey ? null : this.#effectiveGridSize();
+      const [gx, gy] = getGridPoint(x, y, gridSize);
+      this.#commitMultiLinearPoint(gx, gy);
+      return;
+    }
+
     // starting a new shape clears any current selection
     this.#select(null);
     // Snap the creation origin to the grid (Ctrl/Cmd bypasses), mirroring
@@ -3300,6 +3527,10 @@ export class DrawController {
     y = gy;
     this.#originX = x;
     this.#originY = y;
+    this.#creationStartX = x;
+    this.#creationStartY = y;
+    this.#creationMoved = false;
+    this.#multiPointCommittedCount = 0;
     const topLayerFrame = this.#topLayerFrameAtSceneCoords({ x, y });
     const frameId = topLayerFrame ? topLayerFrame.id : null;
 
@@ -3552,31 +3783,31 @@ export class DrawController {
       }
       mutateElement(el, map, { points: [...el.points, pointFrom<LocalPoint>(dx, dy)] });
     } else if (this.#mode === "linear") {
-      // 2-point linear element: second point tracks the pointer (local coords)
       const el = this.#creating as ExcalidrawLinearElement;
-      const nextPoints = [
-        pointFrom<LocalPoint>(0, 0),
-        pointFrom<LocalPoint>(x - this.#originX, y - this.#originY),
-      ];
-      if (isElbowArrow(el)) {
-        // elbow arrows route their points orthogonally via the elbow solver
-        mutateElement(
-          el,
-          map,
-          updateElbowArrowPoints(
-            el,
-            map as unknown as NonDeletedSceneElementsMap,
-            { points: nextPoints },
-            { isBindingEnabled: this.appState.current.isBindingEnabled },
-          ),
-        );
+      if (this.#multiPointCommittedCount > 0) {
+        this.#updateMultiLinearPreview(x, y);
       } else {
-        mutateElement(el, map, { points: nextPoints });
-      }
-      // binding-highlight: if this is an arrow whose end hovers a bindable shape,
-      // highlight that shape (Excalidraw suggestedBinding overlay)
-      if (isArrowElement(el)) {
-        this.#updateBindingHighlight(pointFrom<GlobalPoint>(x, y));
+        // 2-point linear element: second point tracks the pointer (local coords)
+        const nextPoints = [
+          pointFrom<LocalPoint>(0, 0),
+          pointFrom<LocalPoint>(x - this.#originX, y - this.#originY),
+        ];
+        if (
+          pointDistance(
+            pointFrom<GlobalPoint>(this.#creationStartX, this.#creationStartY),
+            pointFrom<GlobalPoint>(x, y),
+          ) *
+            this.appState.current.zoom.value >=
+          MINIMUM_ARROW_SIZE
+        ) {
+          this.#creationMoved = true;
+        }
+        this.#mutateLinearPoints(el, nextPoints);
+        // binding-highlight: if this is an arrow whose end hovers a bindable shape,
+        // highlight that shape (Excalidraw suggestedBinding overlay)
+        if (isArrowElement(el)) {
+          this.#updateBindingHighlight(pointFrom<GlobalPoint>(x, y));
+        }
       }
     } else {
       // negative-direction aware: position at the min corner, size is the abs delta
@@ -3713,6 +3944,31 @@ export class DrawController {
     if (!creating) {
       return;
     }
+
+    if (mode === "linear" && isLinearElement(creating)) {
+      if (this.#multiPointCommittedCount > 0) {
+        return;
+      }
+
+      const secondPoint = creating.points[1] ?? pointFrom<LocalPoint>(0, 0);
+      const dragDistance =
+        pointDistance(
+          pointFrom<GlobalPoint>(creating.x, creating.y),
+          pointFrom<GlobalPoint>(
+            creating.x + secondPoint[0],
+            creating.y + secondPoint[1],
+          ),
+        ) * this.appState.current.zoom.value;
+
+      if (!this.#creationMoved && dragDistance < MINIMUM_ARROW_SIZE) {
+        this.#enterMultiLinearCreation(creating);
+        return;
+      }
+
+      this.finalizeLinearCreation();
+      return;
+    }
+
     this.#creating = null;
     this.#mode = null;
 
@@ -3731,9 +3987,9 @@ export class DrawController {
       return;
     }
 
-    // discard an accidental click (no drag → zero size) for shapes and linear elements
+    // discard an accidental click (no drag → zero size) for shapes
     const discarded =
-      (mode === "generic" || mode === "linear") &&
+      mode === "generic" &&
       creating.width < 1 &&
       creating.height < 1;
     if (discarded) {
@@ -3741,19 +3997,6 @@ export class DrawController {
       syncInvalidIndices(this.#elements);
       this.scene.replaceAllElements(this.#elements);
       this.#clearBindingHighlight();
-    } else if (mode === "linear" && isLinearElement(creating)) {
-      if (isArrowElement(creating)) {
-        this.#bindArrowEndpoints(creating as ExcalidrawArrowElement);
-      }
-      this.#clearBindingHighlight();
-      this.#setSelection([creating.id]);
-      this.appState.setState({
-        selectedLinearElement: new LinearElementEditor(
-          creating,
-          this.scene.scene.getNonDeletedElementsMap(),
-        ),
-      });
-      this.scene.scene.triggerUpdate();
     } else if (isFrameLikeElement(creating)) {
       // a freshly-drawn frame adopts the elements enclosed within it (they then clip to it)
       const inside = getElementsInNewFrame(
