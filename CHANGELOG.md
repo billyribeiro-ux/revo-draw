@@ -5,6 +5,51 @@ Newest first. "Done" = committed on this branch with tests green; "Pending" = no
 
 ## Done
 
+### Web-editor (`/x`) Tier 5 visual fidelity — color picker layout — 2026-06-13 (branch `feat/excalidraw-parity-gaps`)
+
+Completed and pushed the color picker/shade-ramp layout fix (`850133c`):
+
+- Reworked `ColorPicker.svelte` around an Excalidraw-style top-picks row, large shade buttons,
+  active outline layer, popup surface token, and full-width hex input row.
+- Preserved the existing full shade-ramp behavior and `.hex-input` contract used by regression
+  probes.
+- Added a dedicated layout probe that measures top-picks, shade-grid, and hex-input dimensions.
+
+Verification: `pnpm check` 0/0, `pnpm test` 172/172,
+`probe-x-fixUI-colorpicker-layout.mjs`, `probe-x-batch12.mjs`, and
+`probe-x-colorpicker.mjs`.
+Screenshot: `/tmp/x-colorpicker-layout.png`.
+
+### Web-editor (`/x`) Tier 5 visual fidelity — footer zoom cluster — 2026-06-13 (branch `feat/excalidraw-parity-gaps`)
+
+Completed and pushed the footer/zoom cluster visual fix (`90ecdbc`):
+
+- Rebuilt the bottom-left controls as separate `zoom-actions` and `undo-redo-buttons` groups,
+  matching Excalidraw's footer structure.
+- Zoom, reset, undo, and redo now use `--lg-button-size`, `--lg-icon-size`,
+  `--color-surface-low`, and `--border-radius-lg` instead of hard-coded sizes and a separator.
+- Replaced plus/minus/undo/redo text/raw HTML in the footer with the shared Phosphor icon
+  component while keeping zoom click behavior intact.
+
+Verification: `pnpm check` 0/0, `pnpm test` 172/172, and
+`probe-x-fixUI-footer-zoom.mjs`.
+Screenshot: `/tmp/x-footer-zoom.png`.
+
+### Web-editor (`/x`) Tier 5 visual fidelity — toolbar island sizing — 2026-06-13 (branch `feat/excalidraw-parity-gaps`)
+
+Completed and pushed the toolbar/island spacing audit fix (`667337c`):
+
+- Toolbar buttons now use Excalidraw's `--lg-button-size` square sizing, `--lg-icon-size` glyph
+  sizing, 4px island padding, and 2px gaps.
+- The toolbar surface now uses `--island-bg-color`, `--shadow-island`, and
+  `--border-radius-lg` instead of hard-coded borders/shadows.
+- Active/hover states now use Excalidraw surface tokens, and the menu/theme buttons use the shared
+  Phosphor icon component instead of text glyphs.
+
+Verification: `pnpm check` 0/0, `pnpm test` 172/172,
+`probe-x-fixUI-toolbar-island.mjs`, and `probe-x-nav.mjs`.
+Screenshot: `/tmp/x-toolbar-island.png`.
+
 ### Web-editor (`/x`) Tier 5 visual fidelity — welcome screen — 2026-06-13 (branch `feat/excalidraw-parity-gaps`)
 
 Completed and pushed the empty-canvas welcome screen visual fix (`f27a498`):
