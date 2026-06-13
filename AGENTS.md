@@ -15,7 +15,7 @@ No auth, no cloud, no collaboration. The user's own machine.
 | Tauri plugins | plugin-fs / plugin-sql / plugin-dialog | 2.5.1 / 2.4.0 / 2.7.1 |
 | Framework | svelte | `5.55.0` |
 | Framework | @sveltejs/kit | `2.57.1` |
-| Adapter | @sveltejs/adapter-static | 3.0.10 |
+| Adapter | @sveltejs/adapter-vercel | 6.3.3 |
 | Vite/Svelte glue | @sveltejs/vite-plugin-svelte | 7.1.2 (v7 = Vite 8 support) |
 | Language | typescript | `6.0.3` (strict) |
 | Build | vite | `8.0.14` (Rolldown bundler) |
@@ -97,7 +97,7 @@ src-tauri/                  Rust shell: lib.rs (plugin registration + SQL migrat
 3. pnpm exclusively.
 4. Complete code — no stubs/TODOs.
 5. Icons: Phosphor via unplugin-icons only (never Lucide). Build-time inlined; offline.
-6. adapter-static, `ssr = false`. Tauri SPA, no SSR.
+6. adapter-vercel, `ssr = false`. Web SPA, no SSR.
 7. No external state library — runes in `.svelte.ts` modules.
 8. Canvas is hand-rolled Canvas 2D — no Konva/Fabric/Pixi.
 

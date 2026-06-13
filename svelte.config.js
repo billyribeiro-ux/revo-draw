@@ -1,18 +1,13 @@
-import adapter from '@sveltejs/adapter-static';
+import adapter from '@sveltejs/adapter-vercel';
 import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';
 
 /** @type {import('@sveltejs/kit').Config} */
 const config = {
 	preprocess: vitePreprocess(),
 	kit: {
-		// Tauri ships a static SPA: no Node server, no SSR at runtime.
-		// adapter-static with a SPA fallback turns the build into a single index.html
-		// that boots the client router. ssr=false + prerender=true is set in +layout.ts.
-		adapter: adapter({
-			fallback: 'index.html',
-			precompress: false,
-			strict: false
-		}),
+		// Vercel hosts the web app. Runtime rendering stays disabled; ssr=false +
+		// prerender=true is set in +layout.ts so routes build as a client-rendered shell.
+		adapter: adapter(),
 		alias: {
 			$lib: 'src/lib',
 			// Vendored Excalidraw monorepo packages — ported near-verbatim under src/lib/ so

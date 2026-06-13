@@ -1,7 +1,7 @@
 /*
  * Runtime platform detection.
  *
- * LayoutForge ships two distinct shells from one SvelteKit (adapter-static, ssr=false) codebase:
+ * LayoutForge ships two distinct shells from one SvelteKit (adapter-vercel, ssr=false) codebase:
  *   - WEB    — running in a plain browser. Pixel-faithful Excalidraw clone: full-bleed canvas with
  *              floating Islands, no native window chrome.
  *   - TAURI  — running inside the macOS desktop app. Keeps the native title bar / tool rail / status
