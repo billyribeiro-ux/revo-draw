@@ -5,6 +5,20 @@ Newest first. "Done" = committed on this branch with tests green; "Pending" = no
 
 ## Done
 
+### Web-editor (`/x`) Tier 5 visual fidelity — welcome screen — 2026-06-13 (branch `feat/excalidraw-parity-gaps`)
+
+Completed and pushed the empty-canvas welcome screen visual fix (`f27a498`):
+
+- Replaced the sparse emoji/text-arrow overlay with Excalidraw-style SVG hint arrows around the
+  menu, toolbar, and shortcuts/help regions.
+- Added the centered `revo-draw` mark, "All your data is saved locally on this Mac." copy, and a
+  richer two-row welcome menu with Phosphor icons and shortcut columns.
+- Added `keyboard` to the shared Phosphor icon map for the shortcuts menu item.
+
+Verification: `pnpm check` 0/0, `pnpm test` 172/172,
+`probe-x-fixUI-welcome-screen.mjs`, and `probe-x-batch14.mjs`.
+Screenshot: `/tmp/x-welcome-screen.png`.
+
 ### Web-editor (`/x`) Tier 5 visual fidelity — single selected-properties panel — 2026-06-13 (branch `feat/excalidraw-parity-gaps`)
 
 Completed and pushed the selected-shape properties panel visual fix (`5be217c`):
