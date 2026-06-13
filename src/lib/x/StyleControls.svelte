@@ -196,18 +196,11 @@
     flex-direction: column;
     gap: 10px;
     box-sizing: border-box;
-    width: max-content;
-    padding: 12px;
-    background: #ffffff;
-    border: 1px solid #e9ecef;
-    border-radius: 10px;
-    box-shadow:
-      0 1px 4px rgba(0, 0, 0, 0.06),
-      0 4px 12px rgba(0, 0, 0, 0.08);
-    color: #1b1b1f;
-    font-family:
-      'Assistant', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
-    font-size: 13px;
+    width: 100%;
+    min-width: 0;
+    padding: 0;
+    color: inherit;
+    font: inherit;
   }
 
   .group {
@@ -219,13 +212,14 @@
   legend {
     margin: 0 0 5px;
     padding: 0;
-    color: #495057;
+    color: var(--text-primary-color);
     font-size: 12px;
     font-weight: 400;
   }
 
   .button-list {
     display: flex;
+    flex-wrap: wrap;
     gap: 6px;
   }
 
@@ -236,9 +230,9 @@
     width: 30px;
     height: 30px;
     padding: 0;
-    color: #1b1b1f;
-    background: #ffffff;
-    border: 1px solid #e9ecef;
+    color: var(--color-on-surface);
+    background: var(--island-bg-color);
+    border: 1px solid var(--default-border-color);
     border-radius: 8px;
     cursor: pointer;
     transition:
@@ -247,7 +241,7 @@
   }
 
   .square:hover {
-    background: #f1f3f5;
+    background: var(--button-hover-bg);
   }
 
   .square:focus-visible {
@@ -268,7 +262,7 @@
 
   .opacity {
     width: 100%;
-    min-width: 152px;
+    min-width: 0;
     margin: 2px 0 0;
     accent-color: #6965db;
     cursor: pointer;

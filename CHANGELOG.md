@@ -5,6 +5,19 @@ Newest first. "Done" = committed on this branch with tests green; "Pending" = no
 
 ## Done
 
+### Web-editor (`/x`) Tier 5 visual fidelity — single selected-properties panel — 2026-06-13 (branch `feat/excalidraw-parity-gaps`)
+
+Completed and pushed the selected-shape properties panel visual fix (`5be217c`):
+
+- The parent `.properties` surface is now the only Excalidraw-style island.
+- `StyleControls`, `TextControls`, and `ArrowheadControls` now render as transparent internal
+  property groups instead of nested cards with their own shadows.
+- The panel uses Excalidraw theme variables for island background, shadow, radius, text, and button
+  states.
+
+Verification: `pnpm check` 0/0, `pnpm test` 172/172,
+`probe-x-fixUI-single-properties-panel.mjs`, and `probe-x-fixUI-panel-visibility.mjs`.
+
 ### Web-editor (`/x`) Phase 2 Tier 4 heavy port — #48–72 stub modules — 2026-06-13 (branch `feat/excalidraw-parity-gaps`)
 
 Completed and pushed replacement of the six Excalidraw stub modules (`d3f6ac9`):

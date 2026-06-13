@@ -115,7 +115,7 @@ markup/CSS, re-screenshot. Drive via `/tmp/shot.mjs` pattern (headless Chrome �
 | Item | Symptom | Where | Status |
 |---|---|---|---|
 | **Empty-canvas panels** | properties + stats panels showed on empty canvas | `EditorPreview.svelte` + `showProperties`/`statsOpen` getters | ✅ **DONE** (`e4731d5`, probe `probe-x-fixUI-panel-visibility.mjs`) |
-| **Panel is two detached islands** | Stroke/width is one floating box, Fill/Sloppiness/Edges/Opacity a separate detached box below — should be ONE continuous rounded panel | `EditorPreview.svelte` `.properties` markup + `StyleControls.svelte`; check `theme.css` `.properties`/`.prop-group` | ⬜ TODO |
+| **Panel is two detached islands** | Stroke/width was one floating box, Fill/Sloppiness/Edges/Opacity a separate detached box below — now one continuous rounded panel | `EditorPreview.svelte` `.properties` + transparent internal controls in `StyleControls.svelte` / `TextControls.svelte` / `ArrowheadControls.svelte` | ✅ **DONE** (`5be217c`, probe `probe-x-fixUI-single-properties-panel.mjs`) |
 | **Welcome screen sparse** | only title + 2 links; upstream centers logo + "All your data is saved locally" + richer menu-hint cluster | `WelcomeScreen.svelte` vs `welcome-screen/` | ⬜ TODO |
 | **Toolbar/island spacing & sizing** | verify glyph size, island padding, gaps, active-state vs upstream `.Island`/`.App-toolbar` CSS | `Toolbar`/`EditorPreview.svelte` + `theme.css` | ⬜ TODO (audit) |
 | **Footer / zoom cluster** | confirm position, separators, undo/redo styling vs upstream `.footer` | `EditorPreview.svelte` footer + `theme.css` | ⬜ TODO (audit) |
