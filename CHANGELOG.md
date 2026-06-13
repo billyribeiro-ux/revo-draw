@@ -5,6 +5,21 @@ Newest first. "Done" = committed on this branch with tests green; "Pending" = no
 
 ## Done
 
+### Web-editor (`/x`) Tier 5 visual fidelity — toolbar island sizing — 2026-06-13 (branch `feat/excalidraw-parity-gaps`)
+
+Completed and pushed the toolbar/island spacing audit fix (`667337c`):
+
+- Toolbar buttons now use Excalidraw's `--lg-button-size` square sizing, `--lg-icon-size` glyph
+  sizing, 4px island padding, and 2px gaps.
+- The toolbar surface now uses `--island-bg-color`, `--shadow-island`, and
+  `--border-radius-lg` instead of hard-coded borders/shadows.
+- Active/hover states now use Excalidraw surface tokens, and the menu/theme buttons use the shared
+  Phosphor icon component instead of text glyphs.
+
+Verification: `pnpm check` 0/0, `pnpm test` 172/172,
+`probe-x-fixUI-toolbar-island.mjs`, and `probe-x-nav.mjs`.
+Screenshot: `/tmp/x-toolbar-island.png`.
+
 ### Web-editor (`/x`) Tier 5 visual fidelity — welcome screen — 2026-06-13 (branch `feat/excalidraw-parity-gaps`)
 
 Completed and pushed the empty-canvas welcome screen visual fix (`f27a498`):
