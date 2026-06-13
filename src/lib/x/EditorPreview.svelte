@@ -937,15 +937,53 @@
   {/if}
   </div>
 
-  <div class="footer">
-    <button type="button" aria-label="zoom out" onclick={() => controller.zoomAt(1 / 1.1, window.innerWidth / 2, window.innerHeight / 2)}>−</button>
-    <button type="button" class="zoom-label" title="reset zoom" onclick={() => controller.resetView()}>
-      {Math.round(controller.zoom * 100)}%
-    </button>
-    <button type="button" aria-label="zoom in" onclick={() => controller.zoomAt(1.1, window.innerWidth / 2, window.innerHeight / 2)}>+</button>
-    <span class="footer-sep"></span>
-    <button type="button" class="icon-btn" aria-label="undo" disabled={!controller.canUndo} onclick={() => controller.undo()}>{@html ICONS.undo}</button>
-    <button type="button" class="icon-btn" aria-label="redo" disabled={!controller.canRedo} onclick={() => controller.redo()}>{@html ICONS.redo}</button>
+  <div class="footer" role="contentinfo">
+    <div class="zoom-actions" aria-label="Zoom controls">
+      <button
+        type="button"
+        class="footer-button zoom-button zoom-out-button"
+        aria-label="zoom out"
+        onclick={() => controller.zoomAt(1 / 1.1, window.innerWidth / 2, window.innerHeight / 2)}
+      >
+        <PhIcon name="zoom-out" size={16} />
+      </button>
+      <button
+        type="button"
+        class="footer-button zoom-button reset-zoom-button"
+        title="reset zoom"
+        onclick={() => controller.resetView()}
+      >
+        {Math.round(controller.zoom * 100)}%
+      </button>
+      <button
+        type="button"
+        class="footer-button zoom-button zoom-in-button"
+        aria-label="zoom in"
+        onclick={() => controller.zoomAt(1.1, window.innerWidth / 2, window.innerHeight / 2)}
+      >
+        <PhIcon name="zoom-in" size={16} />
+      </button>
+    </div>
+    <div class="undo-redo-buttons" aria-label="Undo and redo">
+      <button
+        type="button"
+        class="footer-button undo-button"
+        aria-label="undo"
+        disabled={!controller.canUndo}
+        onclick={() => controller.undo()}
+      >
+        <PhIcon name="undo" size={16} />
+      </button>
+      <button
+        type="button"
+        class="footer-button redo-button"
+        aria-label="redo"
+        disabled={!controller.canRedo}
+        onclick={() => controller.redo()}
+      >
+        <PhIcon name="redo" size={16} />
+      </button>
+    </div>
   </div>
 
   {#if contextAt}
@@ -1114,63 +1152,95 @@
 
   .footer {
     position: fixed;
-    bottom: 12px;
-    left: 12px;
+    bottom: var(--editor-container-padding);
+    left: var(--editor-container-padding);
     z-index: 10;
     display: flex;
     align-items: center;
-    gap: 4px;
-    padding: 6px;
-    background: #fff;
-    border: 1px solid #e0e0e0;
-    border-radius: 10px;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    gap: calc(var(--space-factor) * 2);
+    padding: 0;
+    pointer-events: auto;
+    background: transparent;
+    border: 0;
+    box-shadow: none;
   }
 
-  .footer button {
-    min-width: 28px;
-    height: 28px;
+  .zoom-actions,
+  .undo-redo-buttons {
+    display: flex;
+    align-items: center;
+    overflow: hidden;
+    background-color: var(--island-bg-color);
+    border-radius: var(--border-radius-lg);
+    box-shadow: 0 0 0 1px var(--color-surface-lowest);
+  }
+
+  .footer-button {
+    box-sizing: border-box;
     display: inline-flex;
     align-items: center;
     justify-content: center;
+    width: var(--lg-button-size);
+    height: var(--lg-button-size);
+    padding: 0;
     border: 1px solid transparent;
-    border-radius: 6px;
-    background: transparent;
+    border-radius: 0;
+    background: var(--color-surface-low);
+    color: var(--icon-fill-color);
     cursor: pointer;
-    font-size: 14px;
+    font: inherit;
+    font-size: 0.875rem;
+    line-height: 1;
   }
 
-  .footer button:hover {
-    background: #f1f3f5;
+  .footer-button:hover {
+    background: var(--button-hover-bg);
   }
 
-  .footer button:disabled {
-    opacity: 0.4;
+  .footer-button:active {
+    border-color: var(--button-active-border);
+  }
+
+  .footer-button:disabled {
+    color: var(--color-disabled);
     cursor: default;
   }
 
-  .footer .zoom-label {
-    min-width: 48px;
-    font-variant-numeric: tabular-nums;
-    font-size: 12px;
+  .footer-button:disabled:hover,
+  .footer-button:disabled:active {
+    background: var(--color-surface-low);
+    border-color: transparent;
   }
 
-  .footer .footer-sep {
-    width: 1px;
-    height: 18px;
-    background: #e0e0e0;
-    margin: 0 2px;
+  .reset-zoom-button {
+    width: 3.75rem;
+    padding: 0 0.625rem;
+    color: var(--text-primary-color);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  .zoom-out-button,
+  .undo-button {
+    border-top-left-radius: var(--border-radius-lg);
+    border-bottom-left-radius: var(--border-radius-lg);
+    border-right: 0;
+  }
+
+  .zoom-in-button,
+  .redo-button {
+    border-top-right-radius: var(--border-radius-lg);
+    border-bottom-right-radius: var(--border-radius-lg);
   }
 
   .footer :global(svg) {
-    width: 16px;
-    height: 16px;
+    width: var(--lg-icon-size);
+    height: var(--lg-icon-size);
+    color: currentColor;
   }
 
   .excalidraw.theme--dark .footer {
-    background: #232329;
-    border-color: #31313a;
-    color: #ced4da;
+    color: var(--color-on-surface);
   }
 
   .toolbar button :global(svg) {
