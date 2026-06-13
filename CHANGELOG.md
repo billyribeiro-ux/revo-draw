@@ -5,6 +5,79 @@ Newest first. "Done" = committed on this branch with tests green; "Pending" = no
 
 ## Done
 
+### Web-editor (`/x`) Phase 2 Tier 4 heavy port — #2 multi-point linears — 2026-06-12 (branch `feat/excalidraw-parity-gaps`)
+
+Completed and pushed the multi-point line/arrow creation state machine (`f1a2dde`):
+
+- Click starts multi-point linear creation instead of discarding a zero-size line/arrow.
+- Pointer move rubber-bands the active segment; subsequent clicks commit points.
+- Enter, Escape, and double-click finalize through the existing selected `LinearElementEditor` flow.
+- Drag-created two-point lines/arrows keep the prior finalize behavior and endpoint binding path.
+
+Verification: `pnpm check` 0/0, `pnpm test` 172/172,
+`probe-x-fix02-multipoint-linear.mjs`, `probe-x-linear.mjs`, `probe-x-lineedit.mjs`,
+`probe-x-fix22-linear-finalize-selection.mjs`, `probe-x-fix23-linear-modifiers.mjs`,
+`probe-x-fix18-endpoint-rebind.mjs`, and `probe-x-binding.mjs`.
+
+### Web-editor (`/x`) Phase 2 Tier 3 property partial completion — 2026-06-12 (branch `feat/excalidraw-parity-gaps`)
+
+Completed and pushed the Tier 3 property partials from `PARITY_REMAINING_WORK.md`, one bug per
+commit with dedicated headless-Chrome probes:
+
+- **#11** Image resize now keeps aspect ratio by default and uses Shift to free distortion
+  (`63dc6f7`, `probe-x-fix11-image-aspect-lock.mjs`).
+- **#52** Non-transparent background color on a selected closeable line now enables polygon fill
+  (`50c6083`, `probe-x-fix52-line-polygon-background.mjs`).
+- **Bound text** Stroke color, opacity, and text-style controls now propagate from selected
+  containers to their bound text labels (`ea946ea`,
+  `probe-x-fix-bound-text-style-propagation.mjs`).
+
+Verification: each commit passed `pnpm check` 0/0, `pnpm test` 172/172, its new probe, and the
+relevant existing regression probes named in the commit body.
+
+### Web-editor (`/x`) Phase 2 Tier 2 text completion — 2026-06-12 (branch `feat/excalidraw-parity-gaps`)
+
+Completed and pushed the Tier 2 text-editor wiring cluster from `PARITY_REMAINING_WORK.md`, one bug
+per commit with dedicated headless-Chrome probes:
+
+- **#7** Text tool now binds to text-bindable containers and reopens existing bound text (`3b0380a`,
+  `probe-x-fix07-text-container-binding.mjs`).
+- **#8** Selection-mode double-click now edits existing text, creates free text on canvas, or opens
+  bound text on containers (`0b63fd0`, `probe-x-fix08-double-click-text.mjs`).
+- **#9** The in-place text editor now follows camera pan/zoom using viewport coordinates and scaled
+  dimensions/font size (`33dff27`, `probe-x-fix09-text-editor-camera.mjs`).
+- **#10** Actively edited text is hidden from the static canvas render while the textarea is active
+  (`f0c4c70`, `probe-x-fix10-hide-editing-text-render.mjs`).
+
+Verification: each commit passed `pnpm check` 0/0, `pnpm test` 172/172, its new probe, and the
+relevant existing text regression probes named in the commit body.
+
+### Web-editor (`/x`) Phase 2 Tier 1 wiring completion — 2026-06-12 (branch `feat/excalidraw-parity-gaps`)
+
+Completed and pushed the remaining Tier 1 wiring fixes from `PARITY_REMAINING_WORK.md`, one bug per
+commit with a dedicated headless-Chrome differential probe:
+
+- **#5** New elements created inside frames now receive `frameId` (`7156bcc`,
+  `probe-x-fix05-frame-parenting.mjs`).
+- **#23** Linear editor point-drag events now forward real Cmd/Ctrl modifiers (`684e2ae`,
+  `probe-x-fix23-linear-modifiers.mjs`).
+- **#22** Newly drawn line/arrow elements finalize selected with `LinearElementEditor` state
+  (`e120372`, `probe-x-fix22-linear-finalize-selection.mjs`).
+- **#25** Tool lock / Q is honored across element creation (`283bdba`,
+  `probe-x-fix25-tool-lock.mjs`).
+- **#26** `pasteAsPlaintext` parses Excalidraw clipboard envelopes before text fallback (`fbdbd1a`,
+  `probe-x-fix26-plain-paste-envelope.mjs`).
+- **#27/#28** Text paste now matches upstream split/plain/center/wrap behavior (`248f736`,
+  `probe-x-fix27-28-text-paste.mjs`).
+- **#39** Align selection guard now uses selected groups and excludes frame-like elements (`b709f03`,
+  `probe-x-fix39-align-guard.mjs`).
+- **#21** Arrow type conversion now rebuilds from absolute endpoints, resets elbow origin/angle,
+  reroutes, and preserves/rebinds endpoint bindings (`663fe6e`,
+  `probe-x-fix21-arrow-type-conversion.mjs`).
+
+Verification: each commit passed `pnpm check` 0/0, `pnpm test` 172/172, its new probe, and the
+relevant existing regression probes named in the commit body.
+
 ### Web-editor (`/x`) Phase 1 parity continuation — 2026-06-12 (branch `feat/excalidraw-parity-gaps`)
 
 Completed and pushed four isolated Tier 1 wiring fixes from `PARITY_REMAINING_WORK.md`, one bug per

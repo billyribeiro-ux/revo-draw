@@ -26,7 +26,7 @@
     AppClassProperties
   } from '@excalidraw/excalidraw/types';
   import type { EditorInterface } from '@excalidraw/common';
-  import { CODES, isDarwin } from '@excalidraw/common';
+  import { CODES, isDarwin, sceneCoordsToViewportCoords } from '@excalidraw/common';
 
   import { DrawController, type Tool } from '$lib/x/draw-controller.svelte.ts';
   import { ICONS } from '$lib/x/icons.ts';
@@ -333,6 +333,10 @@
       e.preventDefault();
       return;
     }
+    if ((e.key === 'Enter' || e.key === 'Escape') && controller.finalizeLinearCreation()) {
+      e.preventDefault();
+      return;
+    }
     if ((e.key === 'Backspace' || e.key === 'Delete') && !e.metaKey && !e.ctrlKey) {
       controller.deleteSelected();
       e.preventDefault();
@@ -470,6 +474,15 @@
     } else if (e.code === CODES.TWO && e.shiftKey && !e.altKey && !e.metaKey && !e.ctrlKey) {
       controller.zoomToSelection(); // ⇧2 (actionZoomToFitSelection)
       e.preventDefault();
+    } else if (
+      !e.metaKey &&
+      !e.ctrlKey &&
+      !e.altKey &&
+      !e.shiftKey &&
+      (e.key === 'q' || e.key === 'Q')
+    ) {
+      controller.toggleToolLock(); // Q (tool lock / keep selected tool active)
+      e.preventDefault();
     } else if (e.key === '?') {
       helpOpen = true;
     } else if (!e.metaKey && !e.ctrlKey && !e.altKey && TOOL_KEYS[e.key]) {
@@ -519,8 +532,15 @@
     const { width, height } = sizeCanvas(el, scale);
     // keep appState's viewport size current so snapping/visibility checks work
     controller.setViewport(width, height);
-    const visibleElements = scene.elements;
-    const elementsMap = scene.scene.getNonDeletedElementsMap();
+    const editingTextId = controller.editingTextId;
+    const visibleElements = editingTextId
+      ? scene.elements.filter((element) => element.id !== editingTextId)
+      : scene.elements;
+    const baseElementsMap = scene.scene.getNonDeletedElementsMap();
+    const elementsMap = editingTextId ? new Map(baseElementsMap) : baseElementsMap;
+    if (editingTextId) {
+      elementsMap.delete(editingTextId);
+    }
 
     const renderConfig: StaticCanvasRenderConfig = {
       canvasBackgroundColor: appState.current.viewBackgroundColor,
@@ -894,9 +914,13 @@
 
   {#if controller.editingText}
     {@const t = controller.editingText}
+    {@const a = controller.appState.current}
+    {@const textViewport = sceneCoordsToViewportCoords({ sceneX: t.x, sceneY: t.y }, a)}
     <textarea
       class="text-editor"
-      style="left:{t.x}px; top:{t.y}px; font-size:{t.fontSize}px; line-height:{t.lineHeight};"
+      style="left:{textViewport.x}px; top:{textViewport.y}px; width:{t.width *
+        a.zoom.value}px; height:{t.height * a.zoom.value}px; font-size:{t.fontSize *
+        a.zoom.value}px; line-height:{t.lineHeight};"
       value={t.text}
       oninput={(e) => controller.setEditingText(e.currentTarget.value)}
       onblur={() => controller.commitText()}

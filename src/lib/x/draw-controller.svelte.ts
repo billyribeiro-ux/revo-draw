@@ -11,20 +11,29 @@ import {
   distributeElements,
   addElementsToFrame,
   bindBindingElement,
+  calculateFixedPointForElbowArrowBinding,
+  canBecomePolygon,
   getElementsInNewFrame,
   getElementsWithinSelection,
+  getElementAbsoluteCoords,
   getFrameChildren,
+  getBoundTextElement,
   getHoveredElementForBinding,
   getTransformHandleTypeFromCoords,
   hitElementItself,
   embeddableURLValidator,
   getEmbedLink,
+  isInvisiblySmallElement,
   isArrowElement,
   isElbowArrow,
   isEmbeddableElement,
   isFrameLikeElement,
   isLinearElement,
+  isLineElement,
+  isPathALoop,
   isTextElement,
+  hasBoundTextElement,
+  isTextBindableContainer,
   maybeParseEmbedSrc,
   LinearElementEditor,
   moveAllLeft,
@@ -43,12 +52,17 @@ import {
   getDefaultRoundnessTypeForElement,
   duplicateElements,
   getElementsInGroup,
+  getSelectedElementsByGroup,
   getSelectedElements,
   getSelectedGroupIdForElement,
+  getVisibleSceneBounds,
   isBoundToContainer,
+  isCursorInFrame,
   isExcalidrawElement,
   isImageElement,
   isUsingAdaptiveRadius,
+  getLineHeightInPx,
+  measureText,
   newArrowElement,
   newElement,
   newElementWith,
@@ -57,6 +71,7 @@ import {
   newFreeDrawElement,
   newLinearElement,
   newTextElement,
+  normalizeText,
   orderByFractionalIndex,
   updateElbowArrowPoints,
   redrawTextBoundingBox,
@@ -67,8 +82,10 @@ import {
   Store,
   syncInvalidIndices,
   syncMovedIndices,
+  toggleLinePolygonState,
   transformElements,
   updateBoundElements,
+  wrapText,
 } from "@excalidraw/element";
 
 import type {
@@ -82,10 +99,16 @@ import {
   DEFAULT_FONT_SIZE,
   DEFAULT_GRID_SIZE,
   DEFAULT_TEXT_ALIGN,
+  DEFAULT_VERTICAL_ALIGN,
+  LINE_CONFIRM_THRESHOLD,
   MAX_ZOOM,
+  MINIMUM_ARROW_SIZE,
   MIN_ZOOM,
+  VERTICAL_ALIGN,
+  getFontString,
   getGridPoint,
   getLineHeight,
+  isTransparent,
   randomId,
   randomInteger,
   ROUNDNESS,
@@ -117,6 +140,7 @@ import {
 
 import {
   clamp,
+  pointDistance,
   pointFrom,
   polygonFromPoints,
   polygonIncludesPoint,
@@ -131,20 +155,25 @@ import type { TransformHandleType } from "@excalidraw/element";
 
 import type {
   Arrowhead,
+  ExcalidrawBindableElement,
   ExcalidrawElement,
   ExcalidrawFreeDrawElement,
+  ExcalidrawFrameLikeElement,
   ExcalidrawImageElement,
   ExcalidrawLinearElement,
   ExcalidrawTextElement,
+  ExcalidrawTextContainer,
   FontFamilyValues,
+  NonDeleted,
   NonDeletedExcalidrawElement,
   NonDeletedSceneElementsMap,
+  Ordered,
   OrderedExcalidrawElement,
   PointsPositionUpdates,
   SceneElementsMap,
   TextAlign,
 } from "@excalidraw/element/types";
-import type { GlobalPoint, LocalPoint } from "@excalidraw/math";
+import type { GlobalPoint, LocalPoint, Radians } from "@excalidraw/math";
 import type { EditorInterface } from "@excalidraw/common";
 import type {
   App,
@@ -275,6 +304,7 @@ export class DrawController {
   readonly scene = new EditorScene();
   readonly appState = new EditorAppState();
   activeTool = $state<Tool>("rectangle");
+  activeToolLocked = $state(false);
   /** The set of selected element ids (reactive — drives the interactive overlay). */
   readonly selectedIds = new SvelteSet<string>();
   editingTextId = $state<string | null>(null);
@@ -296,6 +326,10 @@ export class DrawController {
   #mode: CreateMode | null = null;
   #originX = 0;
   #originY = 0;
+  #creationStartX = 0;
+  #creationStartY = 0;
+  #creationMoved = false;
+  #multiPointCommittedCount = 0;
 
   // move-drag state
   #dragging = false;
@@ -452,6 +486,24 @@ export class DrawController {
       this.appState.setState({ selectedLinearElement: null });
     }
     this.activeTool = tool;
+    if (tool === "selection") {
+      this.activeToolLocked = false;
+    }
+  }
+
+  toggleToolLock(): void {
+    if (this.activeToolLocked) {
+      this.activeToolLocked = false;
+      this.setTool("selection");
+    } else {
+      this.activeToolLocked = true;
+    }
+  }
+
+  #resetToolAfterCreation(): void {
+    if (!this.activeToolLocked) {
+      this.activeTool = "selection";
+    }
   }
 
   // --- camera (pan / zoom) ---
@@ -611,10 +663,38 @@ export class DrawController {
   }
 
   setStrokeColor(color: string): void {
-    this.#applyStyle({ strokeColor: color }, { currentItemStrokeColor: color });
+    this.#applyStyle(
+      { strokeColor: color },
+      { currentItemStrokeColor: color },
+      { includeBoundText: true },
+    );
   }
   setBackgroundColor(color: string): void {
-    this.#applyStyle({ backgroundColor: color }, { currentItemBackgroundColor: color });
+    const selected = this.selectedElements;
+    const shouldEnablePolygon =
+      selected.length > 0 &&
+      !isTransparent(color) &&
+      selected.every((el) => isLineElement(el) && canBecomePolygon(el.points));
+
+    if (!shouldEnablePolygon) {
+      this.#applyStyle({ backgroundColor: color }, { currentItemBackgroundColor: color });
+      return;
+    }
+
+    this.appState.setState({ currentItemBackgroundColor: color });
+    const map = this.scene.scene.getNonDeletedElementsMap();
+    for (const el of selected) {
+      if (!isLineElement(el)) {
+        continue;
+      }
+      mutateElement(el, map, {
+        backgroundColor: color,
+        ...(toggleLinePolygonState(el, true) ?? {}),
+      });
+      ShapeCache.delete(el);
+    }
+    this.scene.scene.triggerUpdate();
+    this.#commit();
   }
   setStrokeWidth(width: number): void {
     this.#applyStyle({ strokeWidth: width }, { currentItemStrokeWidth: width });
@@ -634,7 +714,11 @@ export class DrawController {
   }
 
   setOpacity(opacity: number): void {
-    this.#applyStyle({ opacity }, { currentItemOpacity: opacity });
+    this.#applyStyle(
+      { opacity },
+      { currentItemOpacity: opacity },
+      { includeBoundText: true },
+    );
   }
   setFillStyle(fillStyle: AppState["currentItemFillStyle"]): void {
     this.#applyStyle({ fillStyle }, { currentItemFillStyle: fillStyle });
@@ -716,9 +800,12 @@ export class DrawController {
       roughness?: number;
     },
     appStatePatch: Partial<AppState>,
+    opts: { includeBoundText?: boolean } = {},
   ): void {
     this.appState.setState(appStatePatch);
-    const selected = this.selectedElements;
+    const selected = opts.includeBoundText
+      ? this.#selectedElementsWithBoundText()
+      : this.selectedElements;
     if (!selected.length) {
       return;
     }
@@ -733,6 +820,31 @@ export class DrawController {
     }
     this.scene.scene.triggerUpdate();
     this.#commit();
+  }
+
+  #selectedElementsWithBoundText(): readonly NonDeletedExcalidrawElement[] {
+    const selected = this.selectedElements;
+    if (!selected.length) {
+      return selected;
+    }
+
+    const map = this.scene.scene.getNonDeletedElementsMap();
+    const selectedWithBoundText = [...selected];
+    const ids = new Set(selected.map((element) => element.id));
+
+    for (const element of selected) {
+      const boundText = getBoundTextElement(element, map);
+      if (boundText && !ids.has(boundText.id)) {
+        selectedWithBoundText.push(boundText);
+        ids.add(boundText.id);
+      }
+    }
+
+    return selectedWithBoundText;
+  }
+
+  #selectedTextElementsWithBoundText(): readonly ExcalidrawTextElement[] {
+    return this.#selectedElementsWithBoundText().filter(isTextElement);
   }
 
   /** Style props applied to newly-created elements, from the current item defaults. */
@@ -792,12 +904,10 @@ export class DrawController {
   #applyTextStyle(updates: Partial<ExcalidrawTextElement>): void {
     const map = this.scene.scene.getNonDeletedElementsMap();
     let changed = false;
-    for (const el of this.selectedElements) {
-      if (isTextElement(el)) {
-        mutateElement(el, map, updates);
-        redrawTextBoundingBox(el, null, this.scene.scene);
-        changed = true;
-      }
+    for (const el of this.#selectedTextElementsWithBoundText()) {
+      mutateElement(el, map, updates);
+      redrawTextBoundingBox(el, getContainerElement(el, map), this.scene.scene);
+      changed = true;
     }
     if (changed) {
       this.scene.scene.triggerUpdate();
@@ -832,7 +942,10 @@ export class DrawController {
   }
 
   get showTextProperties(): boolean {
-    return this.activeTool === "text" || this.selectedElements.some(isTextElement);
+    return (
+      this.activeTool === "text" ||
+      this.#selectedTextElementsWithBoundText().length > 0
+    );
   }
 
   /** Show the welcome screen on an empty canvas (Excalidraw WelcomeScreen). */
@@ -847,19 +960,19 @@ export class DrawController {
 
   /** Current font family for the properties panel (selected text wins, else the app default). */
   get currentFontFamily(): FontFamilyValues {
-    const text = this.selectedElements.find(isTextElement);
+    const text = this.#selectedTextElementsWithBoundText()[0];
     return text ? text.fontFamily : this.appState.current.currentItemFontFamily;
   }
 
   /** Current font size for the properties panel. */
   get currentFontSize(): number {
-    const text = this.selectedElements.find(isTextElement);
+    const text = this.#selectedTextElementsWithBoundText()[0];
     return text ? text.fontSize : this.appState.current.currentItemFontSize;
   }
 
   /** Current text alignment for the properties panel. */
   get currentTextAlign(): TextAlign {
-    const text = this.selectedElements.find(isTextElement);
+    const text = this.#selectedTextElementsWithBoundText()[0];
     return text ? text.textAlign : this.appState.current.currentItemTextAlign;
   }
 
@@ -874,10 +987,7 @@ export class DrawController {
     this.appState.setState({ currentItemFontSize: fontSize });
     const map = this.scene.scene.getNonDeletedElementsMap();
     let changed = false;
-    for (const el of this.selectedElements) {
-      if (!isTextElement(el)) {
-        continue;
-      }
+    for (const el of this.#selectedTextElementsWithBoundText()) {
       const prevWidth = el.width;
       const prevHeight = el.height;
       const prevX = el.x;
@@ -989,44 +1099,200 @@ export class DrawController {
    */
   setArrowType(type: "sharp" | "round" | "elbow"): void {
     this.appState.setState({ currentItemArrowType: type });
-    const map = this.scene.scene.getNonDeletedElementsMap();
     let changed = false;
-    for (const el of this.selectedElements) {
-      if (!isArrowElement(el)) {
-        continue;
-      }
-      const roundness =
-        type === "round"
-          ? ({ type: ROUNDNESS.PROPORTIONAL_RADIUS } as ExcalidrawElement["roundness"])
-          : null;
-      if (type === "elbow" && !el.elbowed) {
-        const elbow = el as ExcalidrawElbowArrowElement;
-        mutateElement(elbow, map, {
-          elbowed: true,
-          roundness: null,
-          fixedSegments: [],
-        });
-        mutateElement(
-          elbow,
-          map,
-          updateElbowArrowPoints(
-            elbow,
-            map as unknown as NonDeletedSceneElementsMap,
-            { points: elbow.points },
-            { isBindingEnabled: this.appState.current.isBindingEnabled },
-          ),
-        );
-      } else if (type !== "elbow" && el.elbowed) {
-        mutateElement(el, map, { elbowed: false, roundness });
-      } else {
-        mutateElement(el, map, { roundness });
+    const selectedArrowIds = new Set(
+      this.selectedElements.filter(isArrowElement).map((el) => el.id),
+    );
+
+    if (!selectedArrowIds.size) {
+      return;
+    }
+
+    const elementsMap = this.scene.scene.getNonDeletedElementsMap();
+    this.#elements = this.#elements.map((element) => {
+      if (!selectedArrowIds.has(element.id) || !isArrowElement(element)) {
+        return element;
       }
       changed = true;
-    }
+      return this.#changeArrowTypeElement(element, type, elementsMap);
+    });
+
     if (changed) {
+      syncInvalidIndices(this.#elements);
+      this.scene.replaceAllElements(this.#elements);
+      const selectedLinearElement = this.appState.current.selectedLinearElement;
+      if (selectedLinearElement) {
+        const nextMap = this.scene.scene.getNonDeletedElementsMap();
+        const selected = LinearElementEditor.getElement(
+          selectedLinearElement.elementId,
+          nextMap,
+        );
+        if (selected) {
+          this.appState.setState({
+            selectedLinearElement: new LinearElementEditor(
+              selected,
+              nextMap,
+              selectedLinearElement.isEditing,
+            ),
+          });
+        }
+      }
       this.scene.scene.triggerUpdate();
       this.#commit();
     }
+  }
+
+  #changeArrowTypeElement(
+    el: NonDeleted<ExcalidrawArrowElement>,
+    type: "sharp" | "round" | "elbow",
+    elementsMap: NonDeletedSceneElementsMap,
+  ): NonDeleted<ExcalidrawArrowElement> {
+    const startPoint = LinearElementEditor.getPointAtIndexGlobalCoordinates(
+      el,
+      0,
+      elementsMap,
+    );
+    const endPoint = LinearElementEditor.getPointAtIndexGlobalCoordinates(
+      el,
+      -1,
+      elementsMap,
+    );
+    const unrotatedElement = {
+      ...el,
+      x: startPoint[0],
+      y: startPoint[1],
+      angle: 0 as Radians,
+    };
+    let next = newElementWith(el, {
+      x: type === "elbow" ? startPoint[0] : el.x,
+      y: type === "elbow" ? startPoint[1] : el.y,
+      roundness:
+        type === "round"
+          ? {
+              type: ROUNDNESS.PROPORTIONAL_RADIUS,
+            }
+          : null,
+      elbowed: type === "elbow",
+      angle: type === "elbow" ? (0 as Radians) : el.angle,
+      points:
+        type === "elbow" || el.elbowed
+          ? [
+              LinearElementEditor.pointFromAbsoluteCoords(
+                unrotatedElement,
+                startPoint,
+                elementsMap,
+              ),
+              LinearElementEditor.pointFromAbsoluteCoords(
+                unrotatedElement,
+                endPoint,
+                elementsMap,
+              ),
+            ]
+          : el.points,
+    }) as NonDeleted<ExcalidrawArrowElement>;
+
+    if (isElbowArrow(next)) {
+      next.fixedSegments = null;
+      const nextElementsMap = new Map(elementsMap);
+      nextElementsMap.set(
+        next.id,
+        next as Ordered<NonDeletedExcalidrawElement>,
+      );
+      const nextMap = nextElementsMap as NonDeletedSceneElementsMap;
+      const startGlobalPoint =
+        LinearElementEditor.getPointAtIndexGlobalCoordinates(
+          next,
+          0,
+          nextMap,
+        );
+      const endGlobalPoint =
+        LinearElementEditor.getPointAtIndexGlobalCoordinates(
+          next,
+          -1,
+          nextMap,
+        );
+      const startElement =
+        next.startBinding &&
+        (nextMap.get(
+          next.startBinding.elementId,
+        ) as ExcalidrawBindableElement | undefined);
+      const endElement =
+        next.endBinding &&
+        (nextMap.get(
+          next.endBinding.elementId,
+        ) as ExcalidrawBindableElement | undefined);
+      const startBinding =
+        startElement && next.startBinding
+          ? {
+              ...next.startBinding,
+              ...calculateFixedPointForElbowArrowBinding(
+                next,
+                startElement,
+                "start",
+                nextMap,
+                this.appState.current.isBindingEnabled,
+              ),
+            }
+          : null;
+      const endBinding =
+        endElement && next.endBinding
+          ? {
+              ...next.endBinding,
+              ...calculateFixedPointForElbowArrowBinding(
+                next,
+                endElement,
+                "end",
+                nextMap,
+                this.appState.current.isBindingEnabled,
+              ),
+            }
+          : null;
+
+      next = {
+        ...next,
+        startBinding,
+        endBinding,
+        ...updateElbowArrowPoints(next, nextMap, {
+          points: [startGlobalPoint, endGlobalPoint].map((point) =>
+            pointFrom<LocalPoint>(point[0] - next.x, point[1] - next.y),
+          ),
+          startBinding,
+          endBinding,
+          fixedSegments: null,
+        }),
+      };
+    } else {
+      if (next.startBinding) {
+        const startElement = elementsMap.get(
+          next.startBinding.elementId,
+        ) as ExcalidrawBindableElement | undefined;
+        if (startElement) {
+          bindBindingElement(
+            next,
+            startElement,
+            this.appState.current.bindMode === "inside" ? "inside" : "orbit",
+            "start",
+            this.scene.scene,
+          );
+        }
+      }
+      if (next.endBinding) {
+        const endElement = elementsMap.get(
+          next.endBinding.elementId,
+        ) as ExcalidrawBindableElement | undefined;
+        if (endElement) {
+          bindBindingElement(
+            next,
+            endElement,
+            this.appState.current.bindMode === "inside" ? "inside" : "orbit",
+            "end",
+            this.scene.scene,
+          );
+        }
+      }
+    }
+
+    return next;
   }
 
   /** The text element currently being edited (drives the textarea overlay), if any. */
@@ -1068,7 +1334,7 @@ export class DrawController {
       this.scene.replaceAllElements(this.#elements);
     }
     this.#commit();
-    this.activeTool = "selection";
+    this.#resetToolAfterCreation();
   }
 
   /** Clear the current selection (and exit any point-editor). */
@@ -1177,13 +1443,23 @@ export class DrawController {
     this.#commit();
   }
 
-  /** Align the selection (Excalidraw actionAlign). Needs ≥2 elements. */
+  /** Align the selection (Excalidraw actionAlign). Needs ≥2 selected groups. */
   alignSelected(position: "start" | "center" | "end", axis: "x" | "y"): void {
     const sel = this.selectedElements;
-    if (sel.length < 2) {
+    const elementsMap = this.scene.scene.getNonDeletedElementsMap();
+    if (
+      getSelectedElementsByGroup([...sel], elementsMap, this.appState.current)
+        .length <= 1 ||
+      sel.some((el) => isFrameLikeElement(el))
+    ) {
       return;
     }
-    alignElements([...sel], { position, axis }, this.scene.scene, this.appState.current);
+    alignElements(
+      [...sel],
+      { position, axis },
+      this.scene.scene,
+      this.appState.current,
+    );
     this.scene.scene.triggerUpdate();
     this.#commit();
   }
@@ -1356,7 +1632,7 @@ export class DrawController {
     syncInvalidIndices(this.#elements);
     this.scene.replaceAllElements(this.#elements);
     this.#select(el.id);
-    this.activeTool = "selection";
+    this.#resetToolAfterCreation();
     this.scene.scene.triggerUpdate();
     this.#commit();
   }
@@ -1681,7 +1957,7 @@ export class DrawController {
     // OS clipboard had non-Excalidraw text → paste it as text (unless plain-paste
     // is explicitly requested elsewhere); else fall back to the in-memory mirror.
     if (text.trim()) {
-      this.#pasteTextElement(text, clientX, clientY);
+      this.#pasteTextElement(text, clientX, clientY, false);
       return;
     }
     if (this.#clipboard.length) {
@@ -1692,8 +1968,11 @@ export class DrawController {
   /** Paste the OS clipboard's text as a plain text element (⇧⌘V). */
   async pasteAsPlaintext(clientX?: number, clientY?: number): Promise<void> {
     const text = (await readSystemClipboardText()).trim();
-    if (text) {
-      this.#pasteTextElement(text, clientX, clientY);
+    const fromOS = parseClipboardElements(text);
+    if (fromOS?.length) {
+      this.#pasteElements(fromOS, clientX, clientY);
+    } else if (text) {
+      this.#pasteTextElement(text, clientX, clientY, true);
     }
   }
 
@@ -1728,8 +2007,13 @@ export class DrawController {
     this.#commit();
   }
 
-  /** Create a text element from pasted plaintext at the point (or 100,100). */
-  #pasteTextElement(text: string, clientX?: number, clientY?: number): void {
+  /** Create text element(s) from pasted text at the point (or 100,100). */
+  #pasteTextElement(
+    text: string,
+    clientX?: number,
+    clientY?: number,
+    isPlainPaste = false,
+  ): void {
     let x = 100;
     let y = 100;
     if (clientX != null && clientY != null) {
@@ -1737,19 +2021,64 @@ export class DrawController {
       x = p.x;
       y = p.y;
     }
-    const el = newTextElement({
-      text,
-      originalText: text,
-      x,
-      y,
-      ...this.#createStyle(),
-      ...this.#textStyle(),
+
+    const textStyle = this.#textStyle();
+    const fontString = getFontString({
+      fontSize: textStyle.fontSize,
+      fontFamily: textStyle.fontFamily,
     });
-    redrawTextBoundingBox(el, null, this.scene.scene);
-    this.#elements.push(el);
+    const lineHeight = getLineHeight(textStyle.fontFamily);
+    const [x1, , x2] = getVisibleSceneBounds(this.appState.current);
+    const maxTextWidth = Math.max(Math.min((x2 - x1) * 0.5, 800), 200);
+    const lineGap = 10;
+    let currentY = y;
+    const lines = isPlainPaste ? [text] : text.split("\n");
+    const elements: ExcalidrawTextElement[] = [];
+
+    for (const [idx, line] of lines.entries()) {
+      const originalText = normalizeText(line).trim();
+      if (originalText.length) {
+        let metrics = measureText(originalText, fontString, lineHeight);
+        const isTextUnwrapped = metrics.width > maxTextWidth;
+        const wrappedText = isTextUnwrapped
+          ? wrapText(originalText, fontString, maxTextWidth)
+          : originalText;
+        metrics = isTextUnwrapped
+          ? measureText(wrappedText, fontString, lineHeight)
+          : metrics;
+        const topLayerFrame = this.#topLayerFrameAtSceneCoords({
+          x,
+          y: currentY,
+        });
+
+        const element = newTextElement({
+          text: wrappedText,
+          originalText,
+          x: x - metrics.width / 2,
+          y: currentY - metrics.height / 2,
+          ...this.#createStyle(),
+          fontFamily: textStyle.fontFamily,
+          fontSize: textStyle.fontSize,
+          textAlign: DEFAULT_TEXT_ALIGN,
+          lineHeight,
+          autoResize: !isTextUnwrapped,
+          frameId: topLayerFrame ? topLayerFrame.id : null,
+        });
+        elements.push(element);
+        currentY += element.height + lineGap;
+      } else if (lines[idx - 1]?.trim()) {
+        currentY += getLineHeightInPx(textStyle.fontSize, lineHeight) + lineGap;
+      }
+    }
+
+    if (!elements.length) {
+      return;
+    }
+
+    this.#elements.push(...elements);
     syncInvalidIndices(this.#elements);
     this.scene.replaceAllElements(this.#elements);
-    this.#setSelection([el.id]);
+    this.#setSelection(elements.map((element) => element.id));
     this.activeTool = "selection";
     this.#commit();
   }
@@ -2129,21 +2458,220 @@ export class DrawController {
   }
 
   #hitTest(sceneX: number, sceneY: number): string | null {
+    const hit = this.#elementsAtPosition(sceneX, sceneY).at(-1);
+    return hit?.id ?? null;
+  }
+
+  #elementsAtPosition(
+    sceneX: number,
+    sceneY: number,
+    opts: { includeLockedElements?: boolean } = {},
+  ): readonly NonDeletedExcalidrawElement[] {
     const elementsMap = this.scene.scene.getNonDeletedElementsMap();
     const threshold = 10 / this.appState.current.zoom.value;
     const point = pointFrom<GlobalPoint>(sceneX, sceneY);
-    const els = this.scene.elements;
-    // topmost (last in z-order) first
-    for (let i = els.length - 1; i >= 0; i--) {
-      const element = els[i]!;
-      if (element.locked) {
-        continue; // locked elements are not selectable
+    const hits: NonDeletedExcalidrawElement[] = [];
+    for (const element of this.scene.elements) {
+      if (!opts.includeLockedElements && element.locked) {
+        continue;
       }
       if (hitElementItself({ point, element, threshold, elementsMap })) {
-        return element.id;
+        hits.push(element);
       }
     }
+    return hits;
+  }
+
+  #topLayerFrameAtSceneCoords(sceneCoords: {
+    x: number;
+    y: number;
+  }): ExcalidrawFrameLikeElement | null {
+    const scene = this.scene.scene;
+    const elementsMap = scene.getNonDeletedElementsMap();
+    const framesUnderCursor = scene
+      .getNonDeletedFramesLikes()
+      .filter(
+        (frame) =>
+          !frame.locked && isCursorInFrame(sceneCoords, frame, elementsMap),
+      );
+
+    if (!framesUnderCursor.length) {
+      return null;
+    }
+
+    const topLayerFrame = framesUnderCursor.at(-1)!;
+    const hitElement = this.#elementsAtPosition(sceneCoords.x, sceneCoords.y, {
+      includeLockedElements: true,
+    }).at(-1);
+
+    if (hitElement) {
+      if (isFrameLikeElement(hitElement) && !hitElement.locked) {
+        return topLayerFrame;
+      }
+
+      const hitElementIndex = scene.getElementIndex(hitElement.id);
+      const topLayerFrameIndex = scene.getElementIndex(topLayerFrame.id);
+
+      if (
+        hitElementIndex !== -1 &&
+        topLayerFrameIndex !== -1 &&
+        hitElementIndex <= topLayerFrameIndex
+      ) {
+        return topLayerFrame;
+      }
+
+      return hitElement.frameId
+        ? framesUnderCursor.find((frame) => frame.id === hitElement.frameId) ??
+            null
+        : null;
+    }
+
+    return topLayerFrame;
+  }
+
+  #textBindableContainerAtPosition(
+    x: number,
+    y: number,
+  ): ExcalidrawTextContainer | null {
+    const selected = this.selectedElements;
+    if (selected.length === 1) {
+      return isTextBindableContainer(selected[0], false) ? selected[0] : null;
+    }
+
+    const elementsMap = this.scene.scene.getNonDeletedElementsMap();
+    const point = pointFrom<GlobalPoint>(x, y);
+    for (let index = this.scene.elements.length - 1; index >= 0; index -= 1) {
+      const element = this.scene.elements[index]!;
+      if (element.isDeleted || element.locked) {
+        continue;
+      }
+      if (
+        isArrowElement(element) &&
+        hitElementItself({
+          point,
+          element,
+          elementsMap,
+          threshold: 10 / this.appState.current.zoom.value,
+        })
+      ) {
+        return isTextBindableContainer(element, false) ? element : null;
+      }
+
+      const [x1, y1, x2, y2] = getElementAbsoluteCoords(
+        element,
+        elementsMap,
+      );
+      if (x1 < x && x < x2 && y1 < y && y < y2) {
+        if (isFrameLikeElement(element)) {
+          continue;
+        }
+        return isTextBindableContainer(element, false) ? element : null;
+      }
+    }
+
     return null;
+  }
+
+  #startTextToolEditing(
+    x: number,
+    y: number,
+    mods: PointerMods,
+  ): void {
+    const elementsMap = this.scene.scene.getNonDeletedElementsMap();
+    const hitElement =
+      this.#elementsAtPosition(x, y, { includeLockedElements: true }).at(-1) ??
+      null;
+    let container = this.#textBindableContainerAtPosition(x, y);
+
+    if (isTextElement(hitElement) && !hitElement.containerId) {
+      this.#setSelection([hitElement.id]);
+      this.editingTextId = hitElement.id;
+      this.#resetToolAfterCreation();
+      return;
+    }
+
+    if (isTextElement(hitElement) && hitElement.containerId) {
+      container = getContainerElement(hitElement, elementsMap);
+    } else if (
+      isTextBindableContainer(hitElement, false) &&
+      hasBoundTextElement(hitElement)
+    ) {
+      container = hitElement;
+      x = hitElement.x + hitElement.width / 2;
+      y = hitElement.y + hitElement.height / 2;
+    }
+
+    const existingText = container
+      ? getBoundTextElement(container, elementsMap)
+      : null;
+    if (container && existingText) {
+      this.#setSelection([container.id]);
+      this.editingTextId = existingText.id;
+      this.#resetToolAfterCreation();
+      return;
+    }
+
+    const insertAtParentCenter = !mods.altKey;
+    const topLayerFrame = this.#topLayerFrameAtSceneCoords({ x, y });
+    const centeredContainer = insertAtParentCenter ? container : null;
+    const textX = centeredContainer
+      ? centeredContainer.x + centeredContainer.width / 2
+      : x;
+    const textY = centeredContainer
+      ? centeredContainer.y + centeredContainer.height / 2
+      : y;
+    const textStyle = this.#textStyle();
+    const el = newTextElement({
+      text: "",
+      x: textX,
+      y: textY,
+      frameId: container
+        ? container.frameId
+        : topLayerFrame
+          ? topLayerFrame.id
+          : null,
+      containerId: container ? container.id : undefined,
+      groupIds: container?.groupIds ?? [],
+      textAlign: centeredContainer ? "center" : textStyle.textAlign,
+      verticalAlign: centeredContainer
+        ? VERTICAL_ALIGN.MIDDLE
+        : DEFAULT_VERTICAL_ALIGN,
+      angle: container
+        ? isArrowElement(container)
+          ? (0 as Radians)
+          : container.angle
+        : (0 as Radians),
+      ...this.#createStyle(),
+      fontFamily: textStyle.fontFamily,
+      fontSize: textStyle.fontSize,
+    });
+
+    if (container) {
+      mutateElement(container, elementsMap, {
+        boundElements: (container.boundElements || []).concat({
+          type: "text",
+          id: el.id,
+        }),
+      });
+      redrawTextBoundingBox(el, container, this.scene.scene);
+      const containerIndex = this.#elements.findIndex(
+        (element) => element.id === container.id,
+      );
+      this.#elements.splice(
+        containerIndex === -1 ? this.#elements.length : containerIndex + 1,
+        0,
+        el,
+      );
+      syncInvalidIndices(this.#elements);
+      this.scene.replaceAllElements(this.#elements);
+      this.#setSelection([container.id]);
+    } else {
+      this.#elements.push(el);
+      syncInvalidIndices(this.#elements);
+      this.scene.replaceAllElements(this.#elements);
+      this.#select(el.id);
+    }
+    this.editingTextId = el.id;
   }
 
   #select(id: string | null): void {
@@ -2347,6 +2875,208 @@ export class DrawController {
 
   // --- multi-point linear (line/arrow) editor ---
 
+  get isCreatingLinearElement(): boolean {
+    return this.#multiLinearElement() !== null && this.#multiPointCommittedCount > 0;
+  }
+
+  #multiLinearElement(): ExcalidrawLinearElement | null {
+    const creating = this.#creating;
+    return this.#mode === "linear" && creating && isLinearElement(creating)
+      ? creating
+      : null;
+  }
+
+  #linearLocalPoint(
+    element: ExcalidrawLinearElement,
+    x: number,
+    y: number,
+  ): LocalPoint {
+    return pointFrom<LocalPoint>(x - element.x, y - element.y);
+  }
+
+  #mutateLinearPoints(
+    element: ExcalidrawLinearElement,
+    points: readonly LocalPoint[],
+  ): void {
+    const map = this.scene.scene.getNonDeletedElementsMap();
+    if (isElbowArrow(element)) {
+      mutateElement(
+        element,
+        map,
+        updateElbowArrowPoints(
+          element,
+          map as unknown as NonDeletedSceneElementsMap,
+          { points: [...points] },
+          { isBindingEnabled: this.appState.current.isBindingEnabled },
+        ),
+      );
+    } else {
+      mutateElement(element, map, { points: [...points] });
+    }
+  }
+
+  #linearCreationEditor(
+    element: ExcalidrawLinearElement,
+    committedCount: number,
+    isEditing: boolean,
+  ): LinearElementEditor {
+    const map = this.scene.scene.getNonDeletedElementsMap();
+    const editor = new LinearElementEditor(element, map, isEditing);
+    const lastCommittedIndex = Math.max(0, committedCount - 1);
+    return {
+      ...editor,
+      selectedPointsIndices: [Math.min(lastCommittedIndex + 1, element.points.length - 1)],
+      lastCommittedPoint: element.points[lastCommittedIndex] ?? null,
+      initialState: {
+        ...editor.initialState,
+        lastClickedPoint: Math.min(lastCommittedIndex + 1, element.points.length - 1),
+      },
+    };
+  }
+
+  #enterMultiLinearCreation(element: ExcalidrawLinearElement): void {
+    this.#multiPointCommittedCount = 1;
+    const firstPoint = element.points[0] ?? pointFrom<LocalPoint>(0, 0);
+    this.#mutateLinearPoints(element, [firstPoint, firstPoint]);
+    this.#setSelection([element.id]);
+    this.appState.setState({
+      selectedLinearElement: this.#linearCreationEditor(element, 1, true),
+    });
+    this.scene.scene.triggerUpdate();
+  }
+
+  #updateMultiLinearPreview(x: number, y: number): void {
+    const element = this.#multiLinearElement();
+    if (!element || this.#multiPointCommittedCount === 0) {
+      return;
+    }
+    const committed = element.points.slice(0, this.#multiPointCommittedCount);
+    const preview = this.#linearLocalPoint(element, x, y);
+    this.#mutateLinearPoints(element, [...committed, preview]);
+    if (isArrowElement(element)) {
+      this.#updateBindingHighlight(pointFrom<GlobalPoint>(x, y));
+    }
+    this.scene.scene.triggerUpdate();
+  }
+
+  #commitMultiLinearPoint(x: number, y: number): void {
+    const element = this.#multiLinearElement();
+    if (!element || this.#multiPointCommittedCount === 0) {
+      return;
+    }
+
+    const committed = element.points.slice(0, this.#multiPointCommittedCount);
+    const nextPoint = this.#linearLocalPoint(element, x, y);
+    const lastCommitted = committed[committed.length - 1];
+    const zoom = this.appState.current.zoom.value;
+
+    if (
+      lastCommitted &&
+      committed.length > 1 &&
+      pointDistance(lastCommitted, nextPoint) * zoom < LINE_CONFIRM_THRESHOLD
+    ) {
+      this.finalizeLinearCreation();
+      return;
+    }
+
+    const firstPoint = committed[0];
+    if (
+      firstPoint &&
+      isLineElement(element) &&
+      committed.length >= 3 &&
+      pointDistance(firstPoint, nextPoint) * zoom <= LINE_CONFIRM_THRESHOLD
+    ) {
+      this.#mutateLinearPoints(element, [...committed, pointFrom(firstPoint[0], firstPoint[1])]);
+      this.#multiPointCommittedCount = committed.length + 1;
+      this.finalizeLinearCreation();
+      return;
+    }
+
+    if (isElbowArrow(element)) {
+      this.#mutateLinearPoints(element, [committed[0] ?? pointFrom<LocalPoint>(0, 0), nextPoint]);
+      this.#multiPointCommittedCount = 2;
+      this.finalizeLinearCreation();
+      return;
+    }
+
+    const nextCommitted = [...committed, nextPoint];
+    this.#multiPointCommittedCount = nextCommitted.length;
+    this.#mutateLinearPoints(element, [...nextCommitted, nextPoint]);
+    this.#setSelection([element.id]);
+    this.appState.setState({
+      selectedLinearElement: this.#linearCreationEditor(
+        element,
+        this.#multiPointCommittedCount,
+        true,
+      ),
+    });
+    this.scene.scene.triggerUpdate();
+  }
+
+  finalizeLinearCreation(): boolean {
+    const element = this.#multiLinearElement();
+    if (!element) {
+      return false;
+    }
+
+    const map = this.scene.scene.getNonDeletedElementsMap();
+    if (
+      this.#multiPointCommittedCount > 0 &&
+      element.points.length > this.#multiPointCommittedCount
+    ) {
+      this.#mutateLinearPoints(
+        element,
+        element.points.slice(0, this.#multiPointCommittedCount),
+      );
+    }
+
+    if (isLineElement(element) && isPathALoop(element.points, this.appState.current.zoom.value)) {
+      const firstPoint = element.points[0]!;
+      const points = element.points.map((point, index) =>
+        index === element.points.length - 1
+          ? pointFrom<LocalPoint>(firstPoint[0], firstPoint[1])
+          : point,
+      );
+      mutateElement(element, map, {
+        points,
+        ...(isLineElement(element) ? { polygon: true } : {}),
+      });
+    } else if (isLineElement(element) && element.polygon) {
+      mutateElement(element, map, { polygon: false });
+    }
+
+    const shouldDiscard =
+      element.points.length < 2 || isInvisiblySmallElement(element);
+    if (shouldDiscard) {
+      this.#elements = this.#elements.filter((candidate) => candidate.id !== element.id);
+      syncInvalidIndices(this.#elements);
+      this.scene.replaceAllElements(this.#elements);
+      this.#clearBindingHighlight();
+      this.#select(null);
+    } else {
+      if (isArrowElement(element)) {
+        this.#bindArrowEndpoints(element as ExcalidrawArrowElement);
+      }
+      this.#clearBindingHighlight();
+      this.#setSelection([element.id]);
+      this.appState.setState({
+        selectedLinearElement: new LinearElementEditor(
+          element,
+          this.scene.scene.getNonDeletedElementsMap(),
+        ),
+      });
+      this.scene.scene.triggerUpdate();
+    }
+
+    this.#creating = null;
+    this.#mode = null;
+    this.#multiPointCommittedCount = 0;
+    this.#creationMoved = false;
+    this.#commit();
+    this.#resetToolAfterCreation();
+    return true;
+  }
+
   /** True while a line/arrow is in point-editing mode (point handles shown). */
   get isLineEditing(): boolean {
     return this.appState.current.selectedLinearElement?.isEditing === true;
@@ -2379,8 +3109,8 @@ export class DrawController {
     return {
       shiftKey: mods.shiftKey,
       altKey: mods.altKey,
-      metaKey: false,
-      ctrlKey: false,
+      metaKey: mods.metaKey,
+      ctrlKey: mods.ctrlKey,
       pointerType: "mouse",
     } as unknown as PointerEvent;
   }
@@ -2392,6 +3122,11 @@ export class DrawController {
    */
   doubleClickAt(clientX: number, clientY: number): void {
     const { x, y } = this.#toScene(clientX, clientY);
+    if (this.isCreatingLinearElement) {
+      this.#commitMultiLinearPoint(x, y);
+      this.finalizeLinearCreation();
+      return;
+    }
     const id = this.#hitTest(x, y);
     if (id) {
       const el = this.scene.scene.getNonDeletedElementsMap().get(id);
@@ -2416,7 +3151,14 @@ export class DrawController {
         }
       }
     }
+    const wasLineEditing = this.isLineEditing;
     this.enterLineEditor();
+    if (!wasLineEditing && this.isLineEditing) {
+      return;
+    }
+    if (!this.isLineEditing && this.activeTool === "selection") {
+      this.#startTextToolEditing(x, y, NO_MODS);
+    }
   }
 
   /** Scope selection into `groupId`, selecting only `elementId` within it. */
@@ -2746,19 +3488,7 @@ export class DrawController {
 
     // text tool: click to place an empty text element and start editing it
     if (this.activeTool === "text") {
-      this.#select(null);
-      const el = newTextElement({
-        text: "",
-        x,
-        y,
-        ...this.#createStyle(),
-        ...this.#textStyle(),
-      });
-      this.#elements.push(el);
-      syncInvalidIndices(this.#elements);
-      this.scene.replaceAllElements(this.#elements);
-      this.#select(el.id);
-      this.editingTextId = el.id;
+      this.#startTextToolEditing(x, y, mods);
       return;
     }
 
@@ -2774,6 +3504,17 @@ export class DrawController {
       return;
     }
 
+    if (
+      (this.activeTool === "line" || this.activeTool === "arrow") &&
+      this.isCreatingLinearElement
+    ) {
+      const gridSize =
+        mods.ctrlKey || mods.metaKey ? null : this.#effectiveGridSize();
+      const [gx, gy] = getGridPoint(x, y, gridSize);
+      this.#commitMultiLinearPoint(gx, gy);
+      return;
+    }
+
     // starting a new shape clears any current selection
     this.#select(null);
     // Snap the creation origin to the grid (Ctrl/Cmd bypasses), mirroring
@@ -2786,12 +3527,19 @@ export class DrawController {
     y = gy;
     this.#originX = x;
     this.#originY = y;
+    this.#creationStartX = x;
+    this.#creationStartY = y;
+    this.#creationMoved = false;
+    this.#multiPointCommittedCount = 0;
+    const topLayerFrame = this.#topLayerFrameAtSceneCoords({ x, y });
+    const frameId = topLayerFrame ? topLayerFrame.id : null;
 
     if (this.activeTool === "freedraw") {
       this.#creating = newFreeDrawElement({
         type: "freedraw",
         x,
         y,
+        frameId,
         points: [pointFrom<LocalPoint>(0, 0)],
         pressures: [],
         simulatePressure: true,
@@ -2808,6 +3556,7 @@ export class DrawController {
         startArrowhead: this.appState.current.currentItemStartArrowhead,
         endArrowhead: this.appState.current.currentItemEndArrowhead,
         elbowed,
+        frameId,
         ...this.#createStyle(),
       });
       this.#mode = "linear";
@@ -2816,6 +3565,7 @@ export class DrawController {
         type: "line",
         x,
         y,
+        frameId,
         points: [pointFrom<LocalPoint>(0, 0), pointFrom<LocalPoint>(0, 0)],
         roundness: this.#getCurrentItemRoundness("line"),
         ...this.#createStyle(),
@@ -2825,13 +3575,19 @@ export class DrawController {
       this.#creating = newFrameElement({ x, y, width: 0, height: 0 });
       this.#mode = "generic";
     } else if (this.activeTool === "embeddable") {
-      this.#creating = newEmbeddableElement({ type: "embeddable", x, y });
+      this.#creating = newEmbeddableElement({
+        type: "embeddable",
+        x,
+        y,
+        frameId,
+      });
       this.#mode = "generic";
     } else {
       this.#creating = newElement({
         type: this.activeTool,
         x,
         y,
+        frameId,
         width: 0,
         height: 0,
         roundness: this.#getCurrentItemRoundness(this.activeTool),
@@ -2934,14 +3690,20 @@ export class DrawController {
             y - this.#resizeOffsetY,
             mods.ctrlKey || mods.metaKey ? null : this.#effectiveGridSize(),
           );
+      const selectedElements = this.selectedElements;
+      const shouldMaintainAspectRatio = selectedElements.some((element) =>
+        isImageElement(element),
+      )
+        ? !this.#shiftKey
+        : this.#shiftKey;
       transformElements(
         this.#resizeOriginals,
         this.#resizeHandle,
-        this.selectedElements,
+        selectedElements,
         this.scene.scene,
         this.#shiftKey, // shouldRotateWithDiscreteAngle (shift → 15° rotation snap)
         this.#altKey, // shouldResizeFromCenter (alt → resize anchored at center)
-        this.#shiftKey, // shouldMaintainAspectRatio (shift → aspect-locked resize)
+        shouldMaintainAspectRatio,
         resizeX,
         resizeY,
         this.#resizeCenterX,
@@ -3021,31 +3783,31 @@ export class DrawController {
       }
       mutateElement(el, map, { points: [...el.points, pointFrom<LocalPoint>(dx, dy)] });
     } else if (this.#mode === "linear") {
-      // 2-point linear element: second point tracks the pointer (local coords)
       const el = this.#creating as ExcalidrawLinearElement;
-      const nextPoints = [
-        pointFrom<LocalPoint>(0, 0),
-        pointFrom<LocalPoint>(x - this.#originX, y - this.#originY),
-      ];
-      if (isElbowArrow(el)) {
-        // elbow arrows route their points orthogonally via the elbow solver
-        mutateElement(
-          el,
-          map,
-          updateElbowArrowPoints(
-            el,
-            map as unknown as NonDeletedSceneElementsMap,
-            { points: nextPoints },
-            { isBindingEnabled: this.appState.current.isBindingEnabled },
-          ),
-        );
+      if (this.#multiPointCommittedCount > 0) {
+        this.#updateMultiLinearPreview(x, y);
       } else {
-        mutateElement(el, map, { points: nextPoints });
-      }
-      // binding-highlight: if this is an arrow whose end hovers a bindable shape,
-      // highlight that shape (Excalidraw suggestedBinding overlay)
-      if (isArrowElement(el)) {
-        this.#updateBindingHighlight(pointFrom<GlobalPoint>(x, y));
+        // 2-point linear element: second point tracks the pointer (local coords)
+        const nextPoints = [
+          pointFrom<LocalPoint>(0, 0),
+          pointFrom<LocalPoint>(x - this.#originX, y - this.#originY),
+        ];
+        if (
+          pointDistance(
+            pointFrom<GlobalPoint>(this.#creationStartX, this.#creationStartY),
+            pointFrom<GlobalPoint>(x, y),
+          ) *
+            this.appState.current.zoom.value >=
+          MINIMUM_ARROW_SIZE
+        ) {
+          this.#creationMoved = true;
+        }
+        this.#mutateLinearPoints(el, nextPoints);
+        // binding-highlight: if this is an arrow whose end hovers a bindable shape,
+        // highlight that shape (Excalidraw suggestedBinding overlay)
+        if (isArrowElement(el)) {
+          this.#updateBindingHighlight(pointFrom<GlobalPoint>(x, y));
+        }
       }
     } else {
       // negative-direction aware: position at the min corner, size is the abs delta
@@ -3182,6 +3944,31 @@ export class DrawController {
     if (!creating) {
       return;
     }
+
+    if (mode === "linear" && isLinearElement(creating)) {
+      if (this.#multiPointCommittedCount > 0) {
+        return;
+      }
+
+      const secondPoint = creating.points[1] ?? pointFrom<LocalPoint>(0, 0);
+      const dragDistance =
+        pointDistance(
+          pointFrom<GlobalPoint>(creating.x, creating.y),
+          pointFrom<GlobalPoint>(
+            creating.x + secondPoint[0],
+            creating.y + secondPoint[1],
+          ),
+        ) * this.appState.current.zoom.value;
+
+      if (!this.#creationMoved && dragDistance < MINIMUM_ARROW_SIZE) {
+        this.#enterMultiLinearCreation(creating);
+        return;
+      }
+
+      this.finalizeLinearCreation();
+      return;
+    }
+
     this.#creating = null;
     this.#mode = null;
 
@@ -3196,22 +3983,19 @@ export class DrawController {
       this.#select(creating.id);
       this.pendingEmbedId = creating.id;
       this.#commit();
-      this.activeTool = "selection";
+      this.#resetToolAfterCreation();
       return;
     }
 
-    // discard an accidental click (no drag → zero size) for shapes and linear elements
+    // discard an accidental click (no drag → zero size) for shapes
     const discarded =
-      (mode === "generic" || mode === "linear") &&
+      mode === "generic" &&
       creating.width < 1 &&
       creating.height < 1;
     if (discarded) {
       this.#elements = this.#elements.filter((e) => e !== creating);
       syncInvalidIndices(this.#elements);
       this.scene.replaceAllElements(this.#elements);
-      this.#clearBindingHighlight();
-    } else if (mode === "linear" && isArrowElement(creating)) {
-      this.#bindArrowEndpoints(creating as ExcalidrawArrowElement);
       this.#clearBindingHighlight();
     } else if (isFrameLikeElement(creating)) {
       // a freshly-drawn frame adopts the elements enclosed within it (they then clip to it)
@@ -3228,7 +4012,8 @@ export class DrawController {
     // one durable history entry per completed gesture (no-op if nothing changed)
     this.#commit();
 
-    // Excalidraw default: revert to selection after drawing one element
-    this.activeTool = "selection";
+    // Excalidraw default: revert to selection after drawing one element unless
+    // the active tool is locked (Q / tool pin).
+    this.#resetToolAfterCreation();
   }
 }

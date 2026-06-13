@@ -35,21 +35,34 @@ Dev server: `pnpm dev` (http://localhost:1420/x). Probes: `node scripts/probe-x-
 
 ---
 
-## 1. DONE — 20 fixes, 24 audit findings, all probe-verified & pushed
+## 1. DONE — Tier 1 + Tier 2 + Tier 3 wiring complete, all entries probe-verified & pushed
 
-All 20 fix-probes pass (`for p in scripts/probe-x-fix*.mjs; do node "$p"; done` → **20/20 PASS**).
-Every commit also passed `pnpm check` 0/0 + 172 unit tests + the existing regression probes.
+Each completed row below landed as an isolated commit with a dedicated probe. Every commit also
+passed `pnpm check` 0/0 + 172 unit tests + the relevant existing regression probes.
 
 | Bug | Commit | Fix (wired the ported fn) | Evidence probe |
 |---|---|---|---|
 | #1 stale shape-cache on style edit | `3731960` | `ShapeCache.delete` per style mutation (= upstream `newElementWith` fresh ref) | `probe-x-fix01-stylecache.mjs` |
+| #2 multi-point linear creation | `f1a2dde` | click starts `multiElement`-style line/arrow creation; move rubber-bands; clicks commit; Enter/Escape/dbl-click finalize | `probe-x-fix02-multipoint-linear.mjs` |
 | #3/#4 roundness ignored at create | `39db1ff` | `#getCurrentItemRoundness` (App.tsx:9500) into line+generic create | `probe-x-fix03-roundness-create.mjs` |
+| #5 frame parenting on create | `7156bcc` | `#topLayerFrameAtSceneCoords` at pointerDown → new elements get `frameId` | `probe-x-fix05-frame-parenting.mjs` |
 | #6 creation origin not grid-snapped | `b19ecfa` | `getGridPoint(x,y, ctrl?null:effectiveGridSize)` | `probe-x-fix06-gridsnap-create.mjs` |
+| #7 text tool container binding | `3b0380a` | `getTextBindableContainerAtPosition` + `hasBoundTextElement`; click container creates/reopens bound text | `probe-x-fix07-text-container-binding.mjs` |
+| #8 double-click text editing flow | `0b63fd0` | selection-mode double-click edits text, creates free text on canvas, or opens bound text on containers | `probe-x-fix08-double-click-text.mjs` |
+| #9 text editor camera transform | `33dff27` | `sceneCoordsToViewportCoords` positions editor overlay and scales dimensions/font by zoom | `probe-x-fix09-text-editor-camera.mjs` |
+| #10 edited text double-renders | `f0c4c70` | active `editingTextId` is filtered from static render element list/map while textarea owns editing | `probe-x-fix10-hide-editing-text-render.mjs` |
+| #11 image resize aspect-lock | `63dc6f7` | image selections invert `shouldMaintainAspectRatio`: no-Shift locks, Shift frees distortion | `probe-x-fix11-image-aspect-lock.mjs` |
 | #12 resize handle teleports | `e9fcf4d` | `getResizeOffsetXY` captured + subtracted on move | `probe-x-fix12-resize-offset.mjs` |
 | #13/#16 group selection/outline | `63d1798` | `selectGroupsForSelectedElements` in `#setSelection` | `probe-x-fix13-group-selection.mjs` |
 | #15 dbl-click deep-enter group | `e0d8230` | `#enterGroup` (App.tsx:6533) sets `editingGroupId` | `probe-x-fix15-dblclick-group.mjs` |
 | #18/#19 arrow endpoint re/un-bind | `f7b4c8b` | `bindOrUnbindBindingElement` on linear pointer-up | `probe-x-fix18-endpoint-rebind.mjs` |
+| #21 arrow type conversion geometry | `663fe6e` | `changeArrowType` rebuilds from absolute endpoints, resets elbow x/y/angle, reroutes/rebinds | `probe-x-fix21-arrow-type-conversion.mjs` |
+| #22 line/arrow finalize selection | `e120372` | finalize selects created linear element + installs `LinearElementEditor` | `probe-x-fix22-linear-finalize-selection.mjs` |
+| #23 linear editor modifier forwarding | `684e2ae` | real Cmd/Ctrl modifiers flow into `#linearEvent` so grid-bypass works | `probe-x-fix23-linear-modifiers.mjs` |
 | #24 font-size doesn't re-anchor | `9099714` | port `offsetElementAfterFontResize` (actionProperties.tsx:230) | `probe-x-fix24-fontsize-anchor.mjs` |
+| #25 active tool lock ignored | `283bdba` | `activeToolLocked` + Q toggle; creation reset gated by lock state | `probe-x-fix25-tool-lock.mjs` |
+| #26 plaintext paste envelope | `fbdbd1a` | `pasteAsPlaintext` parses Excalidraw clipboard envelopes before text fallback | `probe-x-fix26-plain-paste-envelope.mjs` |
+| #27/#28 text paste split/plain/wrap | `248f736` | `isPlainPaste ? [text] : text.split("\n")`, cursor-centering, max-width wrapping | `probe-x-fix27-28-text-paste.mjs` |
 | #29 sloppiness doesn't re-seed | `91b9fbf` | `{ seed: randomInteger(), roughness }` (actionProperties.tsx:611) | `probe-x-fix29-sloppiness-seed.mjs` |
 | #30 setEdges wrong radius/elbow | `a14df6a` | per-type `isUsingAdaptiveRadius` + skip elbow (actionProperties.tsx:1499) | `probe-x-fix30-setedges-pertype.mjs` |
 | #31 naive delete | `46255a9` | port `deleteSelectedElements` + `fixBindingsAfterDeletion` | `probe-x-fix31-delete.mjs` |
@@ -58,9 +71,12 @@ Every commit also passed `pnpm check` 0/0 + 172 unit tests + the existing regres
 | #34 selectAll grabs locked/bound | `4aedafe` | `actionSelectAll` filter `!locked && !(text&&containerId)` | `probe-x-fix34-selectall-filter.mjs` |
 | #36 flip drifts/no swap/no rebind | `1b37569` | 3 branches: arrowhead swap, `bindOrUnbindBindingElements`, recenter | `probe-x-fix36-flip.mjs` |
 | #35/#37/#38/#42/#43 keyboard | `2c67468` | z-order chords (event.code+Darwin Alt), lock, align, zoom, view/zen | `probe-x-fix35-keyboard.mjs` |
+| #39 align guard | `b709f03` | `getSelectedElementsByGroup(...).length > 1` and frame-like selection exclusion | `probe-x-fix39-align-guard.mjs` |
 | #40 reset-zoom loses viewport center | `1b66a2d` | `getStateForZoom({viewportX:w/2,viewportY:h/2,nextZoom:1})` | `probe-x-fix40-reset-zoom-center.mjs` |
 | #41 zoom-to-fit uses 0.85 multiplier | `95b632e` | `zoomValueToFitBoundsOnViewport` cap + `roundToStep` floor | `probe-x-fix41-zoom-to-fit.mjs` |
 | #44 Shift+wheel vertical-pans | `156e7cd` | Shift branch pans X by `(deltaY || deltaX) / zoom` | `probe-x-fix44-shift-wheel-horizontal.mjs` |
+| #52 line→polygon background fill | `50c6083` | non-transparent background on selected closeable lines applies `toggleLinePolygonState(line, true)` | `probe-x-fix52-line-polygon-background.mjs` |
+| #bound-text style propagation | `ea946ea` | stroke/opacity/text-style actions expand selected containers to their bound text labels | `probe-x-fix-bound-text-style-propagation.mjs` |
 | UI empty-canvas panels | `e4731d5` | `showProperties` (= `showSelectedShapeActions`) + `statsOpen` gate; Alt+/ toggles stats | `probe-x-fixUI-panel-visibility.mjs` |
 
 **Precision wins (audit wording was looser than real upstream — verified against source):**
@@ -72,41 +88,22 @@ Every commit also passed `pnpm check` 0/0 + 172 unit tests + the existing regres
 
 ## 2. REMAINING — the real to-do list (one bug per commit, same recipe)
 
-### Tier 1 — Wiring fixes (fast; the ported fn exists, just call it)
+### Tier 1 — Wiring fixes
 
-| Bug | What's wrong | Wire this (upstream ref) | Primary file(s) |
-|---|---|---|---|
-| **#21** | arrow type↔elbow conversion doesn't reposition x/y, reset angle, rebuild points, rebind | port `changeArrowType` (`actionProperties.tsx:1803-1965`) | `draw-controller.svelte.ts` (~`setArrowType`/`#convertArrowType`) |
-| **#5** | new elements never parented to frame under cursor (`frameId` always null) | `getTopLayerFrameAtSceneCoords` at pointerDown → pass `frameId` to create | `draw-controller.svelte.ts` create branches (~2375-2490) |
-| **#22** | drawn line/arrow not auto-selected; no `LinearElementEditor` | set `selectedElementIds`+`selectedLinearElement` on finalize (App.tsx:10934) | `draw-controller.svelte.ts` linear finalize (~3060) |
-| **#23** | linear point-editor Cmd/Ctrl hard-coded false (grid-bypass dead) | forward real `ctrlKey`/`metaKey` into `#linearEvent` | `draw-controller.svelte.ts:2069` `#linearEvent` |
-| **#25** | tool always reverts to selection; `activeTool.locked` (tool pin / Q) not honored | add tool-lock state; gate reset on `!locked` | `draw-controller.svelte.ts` + `EditorPreview.svelte` |
-| **#26** | `pasteAsPlaintext` ignores excalidraw envelope (pastes raw JSON as text) | parse `data.elements` branch first (App.tsx:3762) | `draw-controller.svelte.ts:~1370` |
-| **#27/#28** | plain paste: no newline-split, no center-on-cursor, no wrap | `isPlainPaste ? [text] : text.split("\n")` + center/wrap (App.tsx:4158) | `draw-controller.svelte.ts:~1409` |
-| **#39** | `alignSelected` guards on element count not group count; no frame-exclusion | guard on `getSelectedElementsByGroup(...).length>1 && !some(isFrameLikeElement)` | `draw-controller.svelte.ts` `alignSelected` |
+✅ Complete. All Tier 1 rows are now in the DONE table above.
 
-### Tier 2 — Text cluster (medium; helpers ported, editor wiring needed)
+### Tier 2 — Text cluster
 
-| Bug | What's wrong | Wire this (upstream ref) | Primary file(s) |
-|---|---|---|---|
-| **#7** | text tool always drops free-floating empty text; no container binding / edit-existing | `getTextBindableContainerAtPosition` + `hasBoundTextElement` (App.tsx:8965) | `draw-controller.svelte.ts:~2316` text-tool branch |
-| **#8** | double-click on canvas/element never creates/edits text | add text-edit branch in `doubleClickAt` (App.tsx:6406) | `draw-controller.svelte.ts:~2085` |
-| **#9** | in-place text editor ignores camera transform (mis-positioned when panned/zoomed) | `sceneCoordsToViewportCoords` + scale font by zoom (App.tsx:5745) | `EditorPreview.svelte:~836` editor overlay |
-| **#10** | edited text double-renders (painted on canvas AND in textarea) | filter `editingTextId` out of the renderable map (Renderer.ts:106) | `EditorPreview.svelte:~459-487` |
+✅ Complete. All Tier 2 rows are now in the DONE table above.
 
-### Tier 3 — Property partials (small)
+### Tier 3 — Property partials
 
-| Bug | What's wrong | Wire this | File |
-|---|---|---|---|
-| #11 | resize aspect-lock not inverted for images (shift backwards) | `selectedElements.some(isImageElement) ? !shift : shift` (App.tsx:12661) | `draw-controller.svelte.ts:~2469` |
-| #52 line→polygon | `setBackgroundColor` drops the line-closeable→fill enable | port `actionProperties.tsx:397-421` | `draw-controller.svelte.ts:~515` |
-| #bound-text color | stroke/opacity/font don't propagate to a container's bound text | apply to `getBoundTextElement` too (actionProperties.tsx:322) | `draw-controller.svelte.ts` `#applyStyle`/`#applyTextStyle` |
+✅ Complete. All Tier 3 rows are now in the DONE table above.
 
 ### Tier 4 — Heavy ports (real work, NOT wiring — do last)
 
 | Bug | Scope | Notes |
 |---|---|---|
-| **#2** | multi-point line/arrow creation state machine (click-to-add-points, rubber-band preview, Esc/Enter/dbl-click finalize) | App.tsx:10884-10925 `multiElement`. Largest single item. |
 | **#17** | eraser trail (segment-intersection over the drag path, accumulate delete set) | App.tsx:8114 + eraser trail. Current: 1 element per discrete sample. |
 | **#48–72** | the 6 stub modules — replace placeholders with real (or re-exported) impls | `src/lib/excalidraw/clipboard.ts`, `clients.ts`, `i18n.ts`, `data/library.ts`, `data/types.ts`, `actions/types.ts`. These are `[k: string]: unknown` / `declare class` stubs today. |
 
@@ -160,8 +157,8 @@ run as regression). Audit: `PARITY_E2E_AUDIT.md`, `PARITY_E2E_FINDINGS.json`.
 > `PARITY_REMAINING_WORK.md` first — it has the principle, the done-list with evidence, and the
 > remaining bugs with the exact ported function to wire for each.
 >
-> Work through the remaining bugs **one per commit**, in this order: Tier 1 (wiring) → Tier 2 (text)
-> → Tier 3 (property partials) → Tier 4 (heavy: #2 multi-point, #17 eraser trail, #48–72 stub
+> Work through the remaining bugs **one per commit**, in this order: Tier 4 (heavy: #2 multi-point,
+> #17 eraser trail, #48–72 stub
 > modules). For EACH bug follow the verification recipe in §0: read the upstream reference and cite
 > file:line; wire the **already-ported, byte-identical** helper in `src/lib/x/draw-controller.svelte.ts`
 > or `EditorPreview.svelte` (never re-author ported logic); run `pnpm check` (must be 0/0) and the
