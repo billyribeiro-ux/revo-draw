@@ -5,6 +5,21 @@ Newest first. "Done" = committed on this branch with tests green; "Pending" = no
 
 ## Done
 
+### Web-editor (`/x`) Tier 5 visual fidelity — footer zoom cluster — 2026-06-13 (branch `feat/excalidraw-parity-gaps`)
+
+Completed and pushed the footer/zoom cluster visual fix (`90ecdbc`):
+
+- Rebuilt the bottom-left controls as separate `zoom-actions` and `undo-redo-buttons` groups,
+  matching Excalidraw's footer structure.
+- Zoom, reset, undo, and redo now use `--lg-button-size`, `--lg-icon-size`,
+  `--color-surface-low`, and `--border-radius-lg` instead of hard-coded sizes and a separator.
+- Replaced plus/minus/undo/redo text/raw HTML in the footer with the shared Phosphor icon
+  component while keeping zoom click behavior intact.
+
+Verification: `pnpm check` 0/0, `pnpm test` 172/172, and
+`probe-x-fixUI-footer-zoom.mjs`.
+Screenshot: `/tmp/x-footer-zoom.png`.
+
 ### Web-editor (`/x`) Tier 5 visual fidelity — toolbar island sizing — 2026-06-13 (branch `feat/excalidraw-parity-gaps`)
 
 Completed and pushed the toolbar/island spacing audit fix (`667337c`):

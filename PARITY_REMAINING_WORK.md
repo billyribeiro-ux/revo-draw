@@ -118,7 +118,7 @@ markup/CSS, re-screenshot. Drive via `/tmp/shot.mjs` pattern (headless Chrome �
 | **Panel is two detached islands** | Stroke/width was one floating box, Fill/Sloppiness/Edges/Opacity a separate detached box below — now one continuous rounded panel | `EditorPreview.svelte` `.properties` + transparent internal controls in `StyleControls.svelte` / `TextControls.svelte` / `ArrowheadControls.svelte` | ✅ **DONE** (`5be217c`, probe `probe-x-fixUI-single-properties-panel.mjs`) |
 | **Welcome screen sparse** | only title + 2 links; upstream centers logo + "All your data is saved locally" + richer menu-hint cluster | `WelcomeScreen.svelte` vs `welcome-screen/` | ✅ **DONE** (`f27a498`, probe `probe-x-fixUI-welcome-screen.mjs`) |
 | **Toolbar/island spacing & sizing** | verify glyph size, island padding, gaps, active-state vs upstream `.Island`/`.App-toolbar` CSS | `Toolbar`/`EditorPreview.svelte` + `theme.css` | ✅ **DONE** (`667337c`, probe `probe-x-fixUI-toolbar-island.mjs`) |
-| **Footer / zoom cluster** | confirm position, separators, undo/redo styling vs upstream `.footer` | `EditorPreview.svelte` footer + `theme.css` | ⬜ TODO (audit) |
+| **Footer / zoom cluster** | confirm position, separators, undo/redo styling vs upstream `.footer` | `EditorPreview.svelte` footer + `theme.css` | ✅ **DONE** (`90ecdbc`, probe `probe-x-fixUI-footer-zoom.mjs`) |
 | **Color picker / shade ramp layout** | confirm popover layout, top-picks row, hex input vs `ColorPicker/` | `ColorPicker.svelte` | ⬜ TODO (audit) |
 
 Reference CSS: `excalidraw-master/packages/excalidraw/css/` and per-component `.scss` files.
