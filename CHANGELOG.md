@@ -5,6 +5,21 @@ Newest first. "Done" = committed on this branch with tests green; "Pending" = no
 
 ## Done
 
+### Web-editor (`/x`) Tier 5 visual fidelity — color picker layout — 2026-06-13 (branch `feat/excalidraw-parity-gaps`)
+
+Completed and pushed the color picker/shade-ramp layout fix (`850133c`):
+
+- Reworked `ColorPicker.svelte` around an Excalidraw-style top-picks row, large shade buttons,
+  active outline layer, popup surface token, and full-width hex input row.
+- Preserved the existing full shade-ramp behavior and `.hex-input` contract used by regression
+  probes.
+- Added a dedicated layout probe that measures top-picks, shade-grid, and hex-input dimensions.
+
+Verification: `pnpm check` 0/0, `pnpm test` 172/172,
+`probe-x-fixUI-colorpicker-layout.mjs`, `probe-x-batch12.mjs`, and
+`probe-x-colorpicker.mjs`.
+Screenshot: `/tmp/x-colorpicker-layout.png`.
+
 ### Web-editor (`/x`) Tier 5 visual fidelity — footer zoom cluster — 2026-06-13 (branch `feat/excalidraw-parity-gaps`)
 
 Completed and pushed the footer/zoom cluster visual fix (`90ecdbc`):
