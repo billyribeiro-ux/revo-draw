@@ -1,7 +1,38 @@
-// Port stub — i18n is explicitly out of scope. A minimal shape keeps the type hub self-contained,
-// and a fixed default language keeps consumers (scrollbars RTL check, etc.) working in English.
-export type Language = { code: string; label: string; rtl?: boolean };
+export interface Language {
+  code: string;
+  label: string;
+  rtl?: boolean;
+}
 
-export const defaultLang: Language = { code: "en", label: "English", rtl: false };
+export type TranslationKeys = string;
 
-export const getLanguage = (): Language => defaultLang;
+export const defaultLang: Language = { code: "en", label: "English" };
+export const languages: Language[] = [defaultLang];
+
+let currentLang: Language = defaultLang;
+
+export const setLanguage = async (lang: Language): Promise<void> => {
+  currentLang = lang;
+  if (typeof document !== "undefined") {
+    document.documentElement.dir = currentLang.rtl ? "rtl" : "ltr";
+    document.documentElement.lang = currentLang.code;
+  }
+};
+
+export const getLanguage = (): Language => currentLang;
+
+export const t = (
+  path: TranslationKeys,
+  replacement?: Record<string, string | number> | null,
+  fallback?: string,
+): string => {
+  let translation = fallback ?? path;
+  if (replacement) {
+    for (const key in replacement) {
+      translation = translation.replace(`{{${key}}}`, String(replacement[key]));
+    }
+  }
+  return translation;
+};
+
+export const useI18n = () => ({ t, langCode: currentLang.code });
